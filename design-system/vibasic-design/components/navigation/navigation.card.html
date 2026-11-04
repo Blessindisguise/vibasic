@@ -1,0 +1,13 @@
+<!-- @dsCard group="Components" viewport="700x400" name="Navigation — AppShell" subtitle="Manager sidebar shell (staff role uses bottom tabs)" -->
+<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{background:#fff;padding:20px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.col{display:flex;flex-direction:column;gap:14px}.cap{font:var(--type-overline);letter-spacing:var(--tracking-overline);text-transform:uppercase;color:var(--text-muted);width:84px;flex:none}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const NS = window.VibasicDesignSystem_90e71f;
+const { AppShell, Button } = NS;
+const NAV=[{key:'dash',label:'Tổng quan',icon:'layout-dashboard',section:'Theo dõi'},{key:'alerts',label:'Cảnh báo',icon:'bell',count:5,countTone:'danger',section:'Theo dõi'},{key:'approve',label:'Chờ duyệt',icon:'clipboard-check',count:7,section:'Nghiệp vụ'},{key:'in',label:'Nhập kho',icon:'package-plus',section:'Nghiệp vụ'},{key:'out',label:'Xuất kho',icon:'package-minus',section:'Nghiệp vụ'}];
+ReactDOM.createRoot(document.getElementById('root')).render(<div style={{height:360,margin:-20,width:'calc(100% + 40px)'}}><AppShell navItems={NAV} activeKey="dash" user={{name:'Nguyễn Thu Hà'}} title="Tổng quan kho" subtitle="Thứ Ba, 03/11/2026" brand={<img src="../../assets/mark-white.png" style={{height:22}} alt="Vibasic" />} actions={<Button size="sm" variant="secondary" icon="download">Xuất báo cáo</Button>}><div style={{height:200,border:'1px dashed var(--border-strong)',borderRadius:6,display:'grid',placeItems:'center',color:'var(--text-muted)'}}>Nội dung trang</div></AppShell></div>);
+</script></body></html>

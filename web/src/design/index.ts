@@ -1,0 +1,24 @@
+// Vibasic Design System — React components used as-is (contracts in the neighbouring .d.ts files).
+export { Icon, ICON_NAMES } from './components/core/Icon.jsx';
+export { Button } from './components/core/Button.jsx';
+export { IconButton } from './components/core/IconButton.jsx';
+export { TextField } from './components/forms/TextField.jsx';
+export { SelectField } from './components/forms/SelectField.jsx';
+export { Checkbox } from './components/forms/Checkbox.jsx';
+export { QuantityStepper } from './components/forms/QuantityStepper.jsx';
+export { ScanInput } from './components/forms/ScanInput.jsx';
+export { StatusBadge, STATUS_META } from './components/status/StatusBadge.jsx';
+export type { ApprovalStatus } from './components/status/StatusBadge.jsx';
+export { PriorityChip } from './components/status/PriorityChip.jsx';
+export { ApprovalStepper } from './components/status/ApprovalStepper.jsx';
+export { AlertBanner } from './components/feedback/AlertBanner.jsx';
+export { Toast } from './components/feedback/Toast.jsx';
+export { EmptyState } from './components/feedback/EmptyState.jsx';
+export { ConfirmDialog } from './components/feedback/ConfirmDialog.jsx';
+export { DataTable } from './components/data/DataTable.jsx';
+export type { DataTableColumn } from './components/data/DataTable.jsx';
+export { FilterBar } from './components/data/FilterBar.jsx';
+export { KpiTile } from './components/data/KpiTile.jsx';
+export { LotCard } from './components/data/LotCard.jsx';
+export { AppShell } from './components/navigation/AppShell.jsx';
+export type { NavItem } from './components/navigation/AppShell.jsx';

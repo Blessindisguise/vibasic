@@ -1,0 +1,32 @@
+/* Vibasic — type. One family: Be Vietnam Pro (full Vietnamese diacritics). Quantities always tabular. */
+:root{
+--font-sans:'Be Vietnam Pro',system-ui,-apple-system,'Segoe UI',sans-serif;
+--font-numeric-features:'tnum' 1,'lnum' 1;/* @kind font */
+--weight-regular:400;/* @kind font */--weight-medium:500;/* @kind font */--weight-semibold:600;/* @kind font */--weight-bold:700;/* @kind font */
+
+/* Raw scale (size / line-height) */
+--fs-11:11px;--fs-12:12px;--fs-13:13px;--fs-14:14px;--fs-16:16px;--fs-18:18px;--fs-20:20px;--fs-24:24px;--fs-28:28px;--fs-32:32px;
+--lh-tight:1.2;/* @kind font */--lh-snug:1.35;/* @kind font */--lh-normal:1.5;/* @kind font */
+
+/* Semantic roles — manager (desktop, dense) */
+--type-kpi:600 28px/34px var(--font-sans);
+--type-page-title:600 22px/30px var(--font-sans);
+--type-section-title:600 16px/24px var(--font-sans);
+--type-body:400 14px/20px var(--font-sans);
+--type-body-strong:600 14px/20px var(--font-sans);
+--type-table:400 13px/18px var(--font-sans);
+--type-table-head:600 12px/16px var(--font-sans);
+--type-label:500 13px/18px var(--font-sans);
+--type-helper:400 12px/16px var(--font-sans);
+--type-overline:600 11px/16px var(--font-sans);
+--tracking-overline:.06em;/* @kind font */
+--tracking-code:.02em;/* @kind font */
+
+/* Semantic roles — warehouse (tablet/mobile, touch) */
+--type-touch-title:600 24px/32px var(--font-sans);
+--type-touch-heading:600 20px/28px var(--font-sans);
+--type-touch-body:400 16px/24px var(--font-sans);
+--type-touch-button:600 17px/24px var(--font-sans);
+--type-touch-qty:600 32px/40px var(--font-sans);
+--type-scan:500 20px/28px var(--font-sans);
+}

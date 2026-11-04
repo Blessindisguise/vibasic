@@ -1,0 +1,41 @@
+/* Vibasic — colour tokens. Brand green #068037 is the primary ACTION colour only. */
+:root{
+/* Brand green ramp (500 = logo green) */
+--green-50:#ECF7F0;--green-100:#D2ECDB;--green-200:#A6D8B7;--green-300:#6FBE8C;--green-400:#2F9C5C;--green-500:#068037;--green-600:#056F30;--green-700:#045C28;--green-800:#03481F;--green-900:#023417;
+/* Cool neutral grey */
+--grey-0:#FFFFFF;--grey-25:#FAFBFC;--grey-50:#F4F6F8;--grey-100:#EBEEF2;--grey-200:#DDE2E8;--grey-300:#C4CBD4;--grey-400:#9BA5B1;--grey-500:#6A7583;--grey-600:#525C69;--grey-700:#3B4450;--grey-800:#262D36;--grey-900:#161B22;
+/* Hue ramps for semantics */
+--amber-50:#FFF6DE;--amber-200:#F4D88E;--amber-500:#D69A00;--amber-700:#855700;
+--red-50:#FDEDEC;--red-200:#F4C1BC;--red-500:#D92D20;--red-600:#C2261B;--red-700:#A41E15;
+--orange-50:#FEF0E5;--orange-200:#F8CBA6;--orange-500:#E46A11;--orange-700:#A3460A;
+--blue-50:#EAF2FC;--blue-200:#B9D2F2;--blue-500:#2D6FC4;--blue-700:#1D5299;
+--slate-50:#EEF1F4;--slate-200:#CCD3DB;--slate-700:#46515E;--slate-900:#1F2731;
+
+/* Semantic — text */
+--text-primary:var(--grey-900);--text-secondary:var(--grey-600);--text-muted:var(--grey-500);--text-disabled:var(--grey-400);--text-inverse:#FFFFFF;--text-link:var(--green-700);--text-brand:var(--green-600);
+/* Semantic — surfaces */
+--surface-page:var(--grey-50);--surface-card:#FFFFFF;--surface-sunken:var(--grey-50);--surface-raised:#FFFFFF;--surface-hover:var(--grey-50);--surface-selected:var(--green-50);--surface-header:var(--grey-25);--surface-inverse:var(--grey-900);--surface-overlay:rgba(22,27,34,.48);--surface-brand:var(--green-500);
+/* Semantic — borders */
+--border-subtle:var(--grey-100);--border-default:var(--grey-200);--border-strong:var(--grey-300);--border-input:var(--grey-300);--border-focus:var(--green-500);
+/* Actions */
+--action-primary:var(--green-500);--action-primary-hover:var(--green-600);--action-primary-active:var(--green-700);--action-primary-subtle:var(--green-50);
+--action-danger:var(--red-600);--action-danger-hover:var(--red-700);
+--focus-ring:0 0 0 2px #FFFFFF,0 0 0 4px var(--green-500);
+
+/* Status — approval workflow (always pair with label + icon) */
+--status-draft-fg:var(--grey-700);--status-draft-bg:#FFFFFF;--status-draft-border:var(--grey-300);
+--status-pending-fg:var(--amber-700);--status-pending-bg:var(--amber-50);--status-pending-border:var(--amber-200);--status-pending-solid:var(--amber-500);
+--status-approved-fg:var(--green-700);--status-approved-bg:var(--green-50);--status-approved-border:var(--green-200);--status-approved-solid:var(--green-500);
+--status-rejected-fg:var(--red-700);--status-rejected-bg:var(--red-50);--status-rejected-border:var(--red-200);--status-rejected-solid:var(--red-600);
+--status-hold-fg:var(--slate-700);--status-hold-bg:var(--slate-50);--status-hold-border:var(--slate-200);
+--status-locked-fg:#FFFFFF;--status-locked-bg:var(--slate-900);--status-locked-border:var(--slate-900);
+--status-info-fg:var(--blue-700);--status-info-bg:var(--blue-50);--status-info-border:var(--blue-200);
+
+/* Priority — restock */
+--priority-urgent-fg:#FFFFFF;--priority-urgent-bg:var(--red-600);--priority-urgent-border:var(--red-600);
+--priority-order-fg:var(--orange-700);--priority-order-bg:var(--orange-50);--priority-order-border:var(--orange-200);
+--priority-watch-fg:var(--blue-700);--priority-watch-bg:var(--blue-50);--priority-watch-border:var(--blue-200);
+
+/* Feedback */
+--feedback-success:var(--green-500);--feedback-warning:var(--amber-500);--feedback-danger:var(--red-600);--feedback-info:var(--blue-500);
+}
