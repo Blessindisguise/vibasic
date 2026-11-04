@@ -33,8 +33,15 @@ html, body, #root { height: 100%; }
 .vb-label { background: #fff; border: 1px dashed var(--grey-400); border-radius: var(--radius-sm); padding: 6px 8px; display: flex; flex-direction: column; align-items: center; gap: 2px; break-inside: avoid; min-width: 0; color: #000; }
 .vb-label--lot { align-items: stretch; gap: 8px; padding: 12px 16px; border-style: solid; border-color: #000; }
 .vb-label--lot svg { align-self: center; }
+/* Total row: the last row of a report table. */
+.vb-report tbody tr:last-child td { font-weight: 600; background: var(--grey-25); border-top: 1px solid var(--border-default); }
 @media print {
   @page { size: A4; margin: 10mm; }
+  /* Reports print without the app frame: only the report panel is shown. */
+  body:has(.vb-report) aside, body:has(.vb-report) header { display: none !important; }
+  body:has(.vb-report) main { padding: 0 !important; overflow: visible !important; }
+  body:has(.vb-report) #root > * , body:has(.vb-report) #root > * > div { display: block !important; height: auto !important; }
+  .vb-report, .vb-report .vb-table-wrap { max-height: none !important; overflow: visible !important; border: 0; }
   html, body, #root { height: auto; background: #fff; }
   .vb-no-print { display: none !important; }
   .vb-print { padding: 0; background: #fff; }
@@ -55,6 +62,12 @@ html, body, #root { height: 100%; }
 button.vb-serial { cursor: pointer; height: 36px; }
 button.vb-serial[aria-pressed="true"] { background: var(--red-50); border-color: var(--red-600); color: var(--red-700); }
 button.vb-serial:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* Clickable row in a panel list (dashboard). */
+.vb-list-row { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 8px 16px; border-bottom: 1px solid var(--border-subtle); font: var(--type-body); color: var(--text-primary); cursor: pointer; }
+li:last-child > .vb-list-row { border-bottom: 0; }
+.vb-list-row:hover { background: var(--grey-25); }
+.vb-list-row:focus-visible { box-shadow: inset var(--focus-ring); }
 
 /* Page panel used by list/detail screens (white card, 1px border, 6px radius). */
 .vb-panel { background: var(--surface-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); min-width: 0; }

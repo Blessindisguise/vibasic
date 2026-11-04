@@ -92,6 +92,11 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
   - Mỗi đợt thiếu hàng chỉ có một đề xuất. Đề xuất đã duyệt hoặc từ chối không được tạo lại cho đến khi tồn vượt ROP rồi giảm lại.
   - Quản lý sửa số lượng đề xuất thì phải ghi lý do. `OriginalQuantity` giữ số lượng do hệ thống tính (EOQ), và lần tính lại không ghi đè số đã sửa.
   - Ưu tiên "Khẩn cấp" khi tồn ≤ tồn kho an toàn (SS), còn lại là "Cần đặt". "Theo dõi" là hàng có tồn trong khoảng (ROP, 1,2 × ROP] và không có đề xuất.
+- **Báo cáo (UC_19):**
+  - Báo cáo tồn kho lấy số tại thời điểm xem và tách thành khả dụng, giữ chỗ, tạm cách ly, đã khóa.
+  - Báo cáo biến động nhập xuất cho một kỳ (từ ngày – đến ngày, giờ Việt Nam). Tồn thực tế chỉ thay đổi khi duyệt phiếu nhập (+), giao hàng (−) và duyệt kiểm kê (±), nên tồn cuối kỳ được tính bằng tồn hiện tại trừ đi các phát sinh sau kỳ. Tồn đầu kỳ = tồn cuối − nhập + xuất − điều chỉnh. Nhờ vậy tồn cuối kỳ này luôn bằng tồn đầu kỳ sau.
+  - "Xuất báo cáo" tải file CSV (UTF-8 có BOM, mở được bằng Excel) hoặc in trực tiếp từ trình duyệt.
+  - Hai báo cáo trong sơ đồ BFD ("Báo cáo bất thường" và "Báo cáo hỗ trợ bổ sung hàng") không có màn báo cáo riêng. Nội dung của chúng nằm ở màn Biên bản bất thường (lọc theo trạng thái, nguồn) và các màn Cảnh báo, Đề xuất.
 - **Thời gian:** EF đọc mọi cột `datetime2` với Kind = UTC, nên JSON có hậu tố `Z` và giao diện đổi đúng sang giờ Việt Nam. Trước bản sửa này, giờ hiển thị bị lệch 7 tiếng.
 - **Đơn hàng:** `POST /api/orders` là điểm tiếp nhận đơn từ hệ thống bán hàng. Tạm thời dùng quyền Quản lý thay cho khóa tích hợp.
 - **Thông báo:** gửi duyệt thì báo cho mọi Quản lý đang hoạt động. Duyệt hoặc từ chối phiếu và biên bản thì báo cho người lập.

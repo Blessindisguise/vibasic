@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import { createBrowserRouter, Navigate, useParams } from 'react-router-dom';
 import { homeFor, useAuth, type Role } from './auth';
-import { Placeholder } from './Placeholder';
 import { LoginPage } from '../features/auth/LoginPage';
 import { ManagerLayout, MANAGER_NAV } from '../features/manager/ManagerLayout';
 import { StaffLayout, STAFF_NAV } from '../features/staff/StaffLayout';
@@ -25,6 +24,8 @@ import { StaffStocktakeHome } from '../features/staff/stocktake/StaffStocktakeHo
 import { CountingPage } from '../features/staff/stocktake/CountingPage';
 import { AbnormalReportsPage } from '../features/abnormal/AbnormalReportsPage';
 import { AlertsPage } from '../features/decision/AlertsPage';
+import { DashboardPage } from '../features/dashboard/DashboardPage';
+import { ReportsPage } from '../features/reports/ReportsPage';
 import { ProposalsPage } from '../features/decision/ProposalsPage';
 
 function RequireRole({ role, children }: { role: Role; children: ReactNode }) {
@@ -40,13 +41,6 @@ function Home() {
   if (!ready) return null;
   return <Navigate to={user ? homeFor(user.role) : '/dang-nhap'} replace />;
 }
-
-// Build phase that delivers each screen (see the implementation plan).
-const MANAGER_PHASE: Record<string, number> = {
-  'tong-quan': 7, 'canh-bao': 6, 'de-xuat': 6, 'cho-duyet': 3, 'nhap-kho': 3, 'xuat-kho': 4, 'lo-hang': 5,
-  'kiem-ke': 5, 'bat-thuong': 5, 'bao-cao': 7, 'hang-hoa': 2, 'nha-cung-cap': 2, 'tai-khoan': 2,
-};
-const STAFF_PHASE: Record<string, number> = { 'xuat-kho': 4, 'nhap-kho': 3, 'tra-cuu': 5, 'kiem-ke': 5, 'bao-loi': 5 };
 
 /** A screen receives the path segments after its nav key, e.g. /kho/nhap-kho/12/sua → ['12', 'sua']. */
 type Screen = (rest: string[]) => ReactNode;
@@ -94,6 +88,8 @@ const stocktakeScreen = (role: Role, base: string): Screen => ([first, second]) 
 };
 
 const MANAGER_SCREENS: Record<string, Screen> = {
+  'tong-quan': () => <DashboardPage />,
+  'bao-cao': () => <ReportsPage />,
   'cho-duyet': () => <ApprovalsPage />,
   'canh-bao': () => <AlertsPage />,
   'de-xuat': () => <ProposalsPage />,
@@ -119,14 +115,14 @@ function ManagerPage() {
   const { page = 'tong-quan', '*': rest = '' } = useParams();
   if (!MANAGER_NAV.some(n => n.key === page)) return <Navigate to="/ql" replace />;
   const screen = MANAGER_SCREENS[page];
-  return screen ? screen(rest.split('/').filter(Boolean)) : <Placeholder phase={MANAGER_PHASE[page]} />;
+  return screen ? screen(rest.split('/').filter(Boolean)) : <Navigate to="/ql" replace />;
 }
 
 function StaffPage() {
   const { page = 'xuat-kho', '*': rest = '' } = useParams();
   if (!STAFF_NAV.some(n => n.key === page)) return <Navigate to="/kho" replace />;
   const screen = STAFF_SCREENS[page];
-  return screen ? screen(rest.split('/').filter(Boolean)) : <Placeholder phase={STAFF_PHASE[page]} size="lg" />;
+  return screen ? screen(rest.split('/').filter(Boolean)) : <Navigate to="/kho" replace />;
 }
 
 /** Signed-in, any role (print pages open in a new tab without the app frame). */
