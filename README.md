@@ -46,9 +46,9 @@ cd api; dotnet tool restore; dotnet ef database drop -f -p Vibasic.Infrastructur
 ### Dữ liệu mẫu
 
 - 12 mặt hàng thuộc 4 nhóm hàng và 3 nhà cung cấp.
-- 37 lô với khoảng 4.200 sản phẩm có mã định danh riêng.
+- 37 lô (mỗi lô là một dòng chi tiết phiếu nhập) với khoảng 4.200 sản phẩm có mã định danh riêng.
 - 6 tuần lịch sử xuất kho, đủ để tính ROP từ số liệu 4 tuần gần nhất.
-- 1 lô đã khoá kèm biên bản bất thường.
+- 1 lô hàng không đạt đã khoá, nằm cùng phiếu nhập với lô đạt, kèm biên bản bất thường.
 - 3 đơn hàng đang chờ xuất.
 
 Lịch sử được sinh lùi từ ngày chạy seed nên luôn còn mới.
@@ -64,7 +64,7 @@ cd web; npx tsc -b
 
 | Giai đoạn | Nội dung | Trạng thái |
 |---|---|---|
-| 1 | Nền tảng: CSDL 20 bảng, dữ liệu mẫu, đăng nhập JWT, khung giao diện cho hai vai trò | Xong |
+| 1 | Nền tảng: CSDL 19 bảng theo sơ đồ lớp Hình 3.10, dữ liệu mẫu, đăng nhập JWT, khung giao diện cho hai vai trò | Xong |
 | 2 | Danh mục (UC_01–03) và chính sách tồn kho | Chưa làm |
 | 3 | Nhập kho (UC_04–06, UC_10 phần nhập) | Chưa làm |
 | 4 | Xuất kho FIFO (UC_07–10) | Chưa làm |

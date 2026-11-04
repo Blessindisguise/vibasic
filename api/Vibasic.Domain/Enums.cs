@@ -30,8 +30,8 @@ public enum ItemStatus
     /// <summary>Reserved by a goods issue (FIFO allocation).</summary>
     [Label("Đã giữ chỗ")] Reserved,
     [Label("Đã xuất")] Issued,
-    /// <summary>Removed from stock by a stocktake adjustment.</summary>
-    [Label("Đã điều chỉnh")] Adjusted,
+    /// <summary>Missing at stocktake; removed from stock when the stocktake is approved (UC_15 step 7).</summary>
+    [Label("Thất thoát")] Lost,
 }
 
 public enum ReceiptStatus
@@ -40,12 +40,6 @@ public enum ReceiptStatus
     [Label("Chờ duyệt")] Pending,
     [Label("Đã duyệt")] Approved,
     [Label("Từ chối")] Rejected,
-}
-
-public enum QcResult
-{
-    [Label("Đạt")] Pass,
-    [Label("Không đạt")] Fail,
 }
 
 public enum OrderStatus

@@ -78,17 +78,18 @@ public static class DbSeeder
 
         var lotSeq = new Dictionary<string, int>();
         var serialSeq = new Dictionary<string, int>();
-        var lots = new Dictionary<string, List<(StockLot lot, Queue<StockItem> free)>>();
+        var lots = new Dictionary<string, List<(GoodsReceiptDetail lot, DateTime received, Queue<StockItem> free)>>();
         var receipts = new List<GoodsReceipt>();
 
-        StockLot NewLot(P p, int qty, DateTime receivedUtc, LotStatus status = LotStatus.Normal)
+        // A lot is a receipt detail line (Hình 3.10). Receipts in the seed are already approved, so stock is recorded.
+        GoodsReceiptDetail NewLot(P p, int qty, DateTime receivedUtc, LotStatus status = LotStatus.Normal)
         {
             var yymm = VnTime.Yymm(receivedUtc);
             lotSeq[yymm] = lotSeq.GetValueOrDefault(yymm) + 1;
-            var lot = new StockLot
+            var lot = new GoodsReceiptDetail
             {
                 LotCode = $"LOT-{yymm}-{lotSeq[yymm]:D3}", Product = products[p.Sku],
-                ReceivedDate = receivedUtc, QuantityOnHand = qty, Status = status,
+                Quantity = qty, QuantityOnHand = qty, Status = status,
             };
             var head = $"SP-{CodeGenerator.SkuPart(p.Sku)}-{yymm}-";
             for (var i = 0; i < qty; i++)
@@ -128,8 +129,8 @@ public static class DbSeeder
             {
                 var utc = At(day, 8);
                 var lot = NewLot(p, qty, utc);
-                lots[p.Sku].Add((lot, new Queue<StockItem>(lot.Items)));
-                ReceiptFor(p.Sup, utc).Details.Add(new GoodsReceiptDetail { Lot = lot, Quantity = qty, QcResult = QcResult.Pass });
+                lots[p.Sku].Add((lot, utc, new Queue<StockItem>(lot.Items)));
+                ReceiptFor(p.Sup, utc).Details.Add(lot);
             }
         }
 
@@ -156,13 +157,13 @@ public static class DbSeeder
                 foreach (var sku in group)
                 {
                     order.Details.Add(new OrderDetail { Product = products[sku], Quantity = demand[sku][i] });
+                    // One issue line per product; its items are taken FIFO and may span several lots.
+                    var detail = new GoodsIssueDetail { Product = products[sku] };
                     var need = demand[sku][i];
-                    foreach (var (lot, free) in lots[sku].Where(x => x.lot.ReceivedDate < utc))
+                    foreach (var (lot, _, free) in lots[sku].Where(x => x.received < utc))
                     {
                         if (need == 0) break;
                         var take = Math.Min(need, free.Count);
-                        if (take == 0) continue;
-                        var detail = new GoodsIssueDetail { Lot = lot, Quantity = take };
                         for (var k = 0; k < take; k++)
                         {
                             var item = free.Dequeue();
@@ -171,9 +172,10 @@ public static class DbSeeder
                             detail.Items.Add(item);
                         }
                         lot.QuantityOnHand -= take;
-                        issue.Details.Add(detail);
                         need -= take;
                     }
+                    detail.Quantity = detail.Items.Count;
+                    if (detail.Quantity > 0) issue.Details.Add(detail);
                 }
                 if (issue.Details.Count == 0) continue;
                 db.Orders.Add(order);
@@ -181,12 +183,12 @@ public static class DbSeeder
             }
         }
 
-        // One older lot found defective and locked by the manager (shows the "Lô đã khóa" path).
-        var defect = NewLot(Catalog[0], 12, At(-30, 8));
-        defect.Status = LotStatus.Locked;
-        ReceiptFor("ml", At(-30, 8)).Details.Add(new GoodsReceiptDetail { Lot = defect, Quantity = 12, QcResult = QcResult.Fail, Note = "Nứt mặt thớt khi sấy" });
-        defect.QuantityOnHand = 12;
-        db.StockLots.Add(defect);
+        // UC_04: in the THT-01 delivery 40 days ago, 12 boards failed QC. They became a separate lot on the same receipt,
+        // the abnormal report was approved and the lot is locked ("Đã khóa").
+        var defectAt = At(-40, 8);
+        var defect = NewLot(Catalog[0], 12, defectAt, LotStatus.Locked);
+        defect.Note = "Nứt mặt thớt khi sấy";
+        ReceiptFor(Catalog[0].Sup, defectAt).Details.Add(defect);
 
         // Document codes in date order.
         var seq = new Dictionary<string, int>();
@@ -203,9 +205,9 @@ public static class DbSeeder
 
         db.AbnormalReports.Add(new AbnormalReport
         {
-            Code = Next(CodeGenerator.Abnormal, At(-30, 10)), Lot = defect, SourceType = AbnormalSource.Receipt,
+            Code = Next(CodeGenerator.Abnormal, At(-40, 10)), ReceiptDetail = defect, SourceType = AbnormalSource.Receipt,
             Description = "Nứt mặt thớt khi sấy, 12 cái không đạt kiểm định", Quantity = 12, Creator = staff1,
-            CreatedAt = At(-30, 10), Approver = manager, ApprovedAt = At(-30, 14), Status = ApprovalStatus.Approved,
+            CreatedAt = At(-40, 10), Approver = manager, ApprovedAt = At(-40, 14), Status = ApprovalStatus.Approved,
         });
 
         // Open orders from the sales system, waiting to be issued (UC_07).
@@ -226,7 +228,6 @@ public static class DbSeeder
             db.Orders.Add(o);
         }
 
-        foreach (var l in lots.Values.SelectMany(x => x)) db.StockLots.Add(l.lot);
         await db.SaveChangesAsync();
     }
 }

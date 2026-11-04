@@ -31,7 +31,7 @@ public class CodeGenerator(VibasicDbContext db)
     public async Task<string> NextLotAsync(DateTime utc)
     {
         var head = $"LOT-{VnTime.Yymm(utc)}-";
-        return head + (await NextAsync(head, db.StockLots.Select(x => x.LotCode))).ToString("D3");
+        return head + (await NextAsync(head, db.GoodsReceiptDetails.Select(x => x.LotCode))).ToString("D3");
     }
 
     /// <summary>First serial number for <paramref name="count"/> new items of a SKU received in the month of <paramref name="utc"/>.</summary>

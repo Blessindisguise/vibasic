@@ -9,7 +9,6 @@ public class VibasicDbContext(DbContextOptions<VibasicDbContext> options) : DbCo
     public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<Product> Products => Set<Product>();
-    public DbSet<StockLot> StockLots => Set<StockLot>();
     public DbSet<StockItem> StockItems => Set<StockItem>();
     public DbSet<GoodsReceipt> GoodsReceipts => Set<GoodsReceipt>();
     public DbSet<GoodsReceiptDetail> GoodsReceiptDetails => Set<GoodsReceiptDetail>();
@@ -74,21 +73,12 @@ public class VibasicDbContext(DbContextOptions<VibasicDbContext> options) : DbCo
             e.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId);
             e.HasOne(x => x.Category).WithMany().HasForeignKey(x => x.CategoryId);
         });
-        m.Entity<StockLot>(e =>
-        {
-            e.ToTable("StockLot").HasKey(x => x.LotId);
-            e.Property(x => x.LotCode).HasMaxLength(50).IsRequired();
-            e.HasIndex(x => x.LotCode).IsUnique();
-            e.HasIndex(x => new { x.ProductId, x.ReceivedDate });
-            e.Property(x => x.QuantityOnHand).HasDefaultValue(0);
-            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);
-        });
         m.Entity<StockItem>(e =>
         {
             e.ToTable("StockItem").HasKey(x => x.ItemId);
             e.Property(x => x.SerialCode).HasMaxLength(50).IsRequired();
             e.HasIndex(x => x.SerialCode).IsUnique();
-            e.HasOne(x => x.Lot).WithMany(l => l.Items).HasForeignKey(x => x.LotId);
+            e.HasOne(x => x.ReceiptDetail).WithMany(d => d.Items).HasForeignKey(x => x.ReceiptDetailId);
             e.HasOne(x => x.IssueDetail).WithMany(d => d.Items).HasForeignKey(x => x.IssueDetailId);
         });
         m.Entity<GoodsReceipt>(e =>
@@ -105,9 +95,13 @@ public class VibasicDbContext(DbContextOptions<VibasicDbContext> options) : DbCo
         m.Entity<GoodsReceiptDetail>(e =>
         {
             e.ToTable("GoodsReceiptDetail").HasKey(x => x.ReceiptDetailId);
+            e.Property(x => x.LotCode).HasMaxLength(50).IsRequired();
+            e.HasIndex(x => x.LotCode).IsUnique();
+            e.Property(x => x.QuantityOnHand).HasDefaultValue(0);
+            e.HasIndex(x => new { x.ProductId, x.Status });
             e.Property(x => x.Note).HasMaxLength(255);
             e.HasOne(x => x.Receipt).WithMany(r => r.Details).HasForeignKey(x => x.ReceiptId).OnDelete(DeleteBehavior.Cascade);
-            e.HasOne(x => x.Lot).WithMany().HasForeignKey(x => x.LotId);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);
         });
         m.Entity<Order>(e =>
         {
@@ -139,7 +133,8 @@ public class VibasicDbContext(DbContextOptions<VibasicDbContext> options) : DbCo
         {
             e.ToTable("GoodsIssueDetail").HasKey(x => x.IssueDetailId);
             e.HasOne(x => x.Issue).WithMany(i => i.Details).HasForeignKey(x => x.IssueId).OnDelete(DeleteBehavior.Cascade);
-            e.HasOne(x => x.Lot).WithMany().HasForeignKey(x => x.LotId);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);
+            e.HasIndex(x => new { x.IssueId, x.ProductId }).IsUnique();
         });
         m.Entity<StocktakePlan>(e =>
         {
@@ -153,7 +148,7 @@ public class VibasicDbContext(DbContextOptions<VibasicDbContext> options) : DbCo
         {
             e.ToTable("StocktakePlanDetail").HasKey(x => x.PlanDetailId);
             e.HasOne(x => x.Plan).WithMany(p => p.Details).HasForeignKey(x => x.PlanId).OnDelete(DeleteBehavior.Cascade);
-            e.HasOne(x => x.Lot).WithMany().HasForeignKey(x => x.LotId);
+            e.HasOne(x => x.ReceiptDetail).WithMany().HasForeignKey(x => x.ReceiptDetailId);
         });
         m.Entity<Stocktake>(e =>
         {
@@ -170,7 +165,7 @@ public class VibasicDbContext(DbContextOptions<VibasicDbContext> options) : DbCo
             e.ToTable("StocktakeDetail").HasKey(x => x.DetailId);
             e.Property(x => x.Reason).HasMaxLength(255);
             e.HasOne(x => x.Stocktake).WithMany(s => s.Details).HasForeignKey(x => x.StocktakeId).OnDelete(DeleteBehavior.Cascade);
-            e.HasOne(x => x.Lot).WithMany().HasForeignKey(x => x.LotId);
+            e.HasOne(x => x.ReceiptDetail).WithMany().HasForeignKey(x => x.ReceiptDetailId);
         });
         m.Entity<AbnormalReport>(e =>
         {
@@ -179,7 +174,7 @@ public class VibasicDbContext(DbContextOptions<VibasicDbContext> options) : DbCo
             e.HasIndex(x => x.Code).IsUnique();
             e.Property(x => x.Description).HasMaxLength(500).IsRequired();
             e.Property(x => x.RejectReason).HasMaxLength(255);
-            e.HasOne(x => x.Lot).WithMany().HasForeignKey(x => x.LotId);
+            e.HasOne(x => x.ReceiptDetail).WithMany().HasForeignKey(x => x.ReceiptDetailId);
             e.HasOne(x => x.Creator).WithMany().HasForeignKey(x => x.CreatedBy);
             e.HasOne(x => x.Approver).WithMany().HasForeignKey(x => x.ApprovedBy);
             e.HasOne<GoodsIssue>().WithMany().HasForeignKey(x => x.IssueId);
@@ -217,13 +212,13 @@ public class VibasicDbContext(DbContextOptions<VibasicDbContext> options) : DbCo
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId);
         });
 
-        // Documents reference users and lots many times; never cascade-delete through them.
+        // Documents reference users and lots (receipt detail lines) many times; never cascade-delete through them.
         // Only a detail row is deleted together with its parent document.
         var detailTables = new[] { typeof(GoodsReceiptDetail), typeof(OrderDetail), typeof(GoodsIssueDetail), typeof(StocktakePlanDetail), typeof(StocktakeDetail) };
         foreach (var fk in m.Model.GetEntityTypes().SelectMany(t => t.GetForeignKeys()))
         {
             var isDetailToParent = detailTables.Contains(fk.DeclaringEntityType.ClrType)
-                && fk.PrincipalEntityType.ClrType != typeof(StockLot) && fk.PrincipalEntityType.ClrType != typeof(Product);
+                && fk.PrincipalEntityType.ClrType != typeof(GoodsReceiptDetail) && fk.PrincipalEntityType.ClrType != typeof(Product);
             fk.DeleteBehavior = isDetailToParent ? DeleteBehavior.Cascade : DeleteBehavior.Restrict;
         }
     }

@@ -1,6 +1,7 @@
 namespace Vibasic.Domain;
 
-// Tables follow Chương 3 §3.3.2. Columns not in the report are marked "// + ext" and listed in docs/schema-changes.md.
+// Tables follow the class diagram in Chương 3 (Hình 3.10): a lot is a goods-receipt detail line, there is no StockLot table.
+// Columns not in the report are marked "// + ext" and listed in docs/schema-changes.md.
 
 #region Danh mục
 
@@ -44,26 +45,14 @@ public class Product
 
 #endregion
 
-#region Tồn kho theo lô
-
-public class StockLot
-{
-    public int LotId { get; set; }
-    public string LotCode { get; set; } = "";
-    public int ProductId { get; set; }
-    public Product Product { get; set; } = null!;
-    /// <summary>Determines FIFO order.</summary>
-    public DateTime ReceivedDate { get; set; }
-    public int QuantityOnHand { get; set; }
-    public LotStatus Status { get; set; }
-    public List<StockItem> Items { get; set; } = [];
-}
+#region Sản phẩm trong lô
 
 public class StockItem
 {
     public int ItemId { get; set; }
-    public int LotId { get; set; }
-    public StockLot Lot { get; set; } = null!;
+    public int ReceiptDetailId { get; set; }
+    /// <summary>The lot (receipt detail line) the item belongs to.</summary>
+    public GoodsReceiptDetail ReceiptDetail { get; set; } = null!;
     public string SerialCode { get; set; } = "";
     public ItemStatus Status { get; set; }
     public int? IssueDetailId { get; set; }
@@ -95,18 +84,28 @@ public class GoodsReceipt
     public List<GoodsReceiptDetail> Details { get; set; } = [];
 }
 
+/// <summary>
+/// One line of a receipt = one lot. Passed goods form a "Bình thường" lot; failed goods of the same product form a
+/// separate "Tạm cách ly" lot (UC_04). FIFO order: Receipt.ReceiptDate, then ReceiptDetailId.
+/// </summary>
 public class GoodsReceiptDetail
 {
     public int ReceiptDetailId { get; set; }
     public int ReceiptId { get; set; }
     public GoodsReceipt Receipt { get; set; } = null!;
-    public int LotId { get; set; }
-    public StockLot Lot { get; set; } = null!;
+    public int ProductId { get; set; }
+    public Product Product { get; set; } = null!;
+    /// <summary>Barcode label of the lot, LOT-yymm-nnn. // + ext</summary>
+    public string LotCode { get; set; } = "";
+    /// <summary>Quantity received into this lot.</summary>
     public int Quantity { get; set; }
-    public QcResult QcResult { get; set; }                 // + ext
+    /// <summary>0 until the receipt is approved, then reduced by issues and stocktake adjustments.</summary>
+    public int QuantityOnHand { get; set; }
+    public LotStatus Status { get; set; }
     /// <summary>Quantity on the supplier's delivery note, when it differs. // + ext</summary>
     public int? DocumentQuantity { get; set; }
     public string? Note { get; set; }                      // + ext
+    public List<StockItem> Items { get; set; } = [];
 }
 
 #endregion
@@ -159,8 +158,9 @@ public class GoodsIssueDetail
     public int IssueDetailId { get; set; }
     public int IssueId { get; set; }
     public GoodsIssue Issue { get; set; } = null!;
-    public int LotId { get; set; }
-    public StockLot Lot { get; set; } = null!;
+    /// <summary>One line per product; its items may come from several lots (UC_07 4.1).</summary>
+    public int ProductId { get; set; }
+    public Product Product { get; set; } = null!;
     public int Quantity { get; set; }
     public List<StockItem> Items { get; set; } = [];
 }
@@ -188,8 +188,8 @@ public class StocktakePlanDetail
     public int PlanDetailId { get; set; }
     public int PlanId { get; set; }
     public StocktakePlan Plan { get; set; } = null!;
-    public int LotId { get; set; }
-    public StockLot Lot { get; set; } = null!;
+    public int ReceiptDetailId { get; set; }
+    public GoodsReceiptDetail ReceiptDetail { get; set; } = null!;
 }
 
 public class Stocktake
@@ -214,8 +214,8 @@ public class StocktakeDetail
     public int DetailId { get; set; }
     public int StocktakeId { get; set; }
     public Stocktake Stocktake { get; set; } = null!;
-    public int LotId { get; set; }
-    public StockLot Lot { get; set; } = null!;
+    public int ReceiptDetailId { get; set; }
+    public GoodsReceiptDetail ReceiptDetail { get; set; } = null!;
     public int SystemQuantity { get; set; }
     public int ActualQuantity { get; set; }
     public string? Reason { get; set; }
@@ -229,8 +229,8 @@ public class AbnormalReport
 {
     public int ReportId { get; set; }
     public string Code { get; set; } = "";                 // + ext
-    public int LotId { get; set; }
-    public StockLot Lot { get; set; } = null!;
+    public int ReceiptDetailId { get; set; }
+    public GoodsReceiptDetail ReceiptDetail { get; set; } = null!;
     public AbnormalSource SourceType { get; set; }
     public string Description { get; set; } = "";
     public int Quantity { get; set; }
