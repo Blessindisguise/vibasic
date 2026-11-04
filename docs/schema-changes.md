@@ -61,6 +61,18 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
   - Biên bản của lô cách ly khi nhập chỉ được xử lý sau khi phiếu nhập đã duyệt (UC_05 bước 6 rồi bước 7).
   - Khi phiếu bị từ chối, `ApprovedBy` và `ApprovedAt` ghi người và thời điểm từ chối. Khi phiếu được gửi lại, hai cột này được xoá.
   - Mỗi dòng nhận tối đa 2.000 sản phẩm, vì mã sản phẩm có 4 chữ số cho mỗi SKU trong tháng.
+- **Xuất kho (UC_07–10):**
+  - Sản phẩm được phân bổ khi đang "Trong kho", chưa gắn phiếu nào, thuộc lô "Bình thường" của phiếu nhập đã duyệt. Thứ tự FIFO tính theo ngày phiếu nhập, rồi theo lô, rồi theo mã sản phẩm.
+  - Lập phiếu thì sản phẩm chuyển "Đã giữ chỗ" và vẫn được tính trong tồn của lô cho đến khi giao hàng.
+  - Thiếu hàng thì không tạo phiếu: đơn chuyển "Chờ xử lý" và Quản lý nhận thông báo.
+  - Quản lý từ chối phiếu thì sản phẩm được trả về tồn kho và đơn trở về "Chưa xuất".
+  - Mỗi sản phẩm phải được quét trước khi xác nhận giao hàng. Mã quét bị từ chối khi sai phiếu, sai thứ tự FIFO, thuộc lô bị khoá hoặc cách ly, hoặc là mã lô.
+- **Báo hàng lỗi khi xuất (UC_08 3.1, UC_11):**
+  - Mỗi lô có hàng lỗi được lập một biên bản (`IssueId` ghi phiếu xuất) và cả lô chuyển "Tạm cách ly".
+  - Mọi sản phẩm của lô đó đang giữ chỗ trên các phiếu chưa xuất được đổi ngay sang sản phẩm kế tiếp theo FIFO. Hàng đã quét phải trả lại kệ. Người lập các phiếu khác bị đổi hàng nhận được thông báo.
+  - Việc thay thế làm ngay khi lập biên bản, không chờ Quản lý duyệt, vì lô đã cách ly thì không xuất được nữa.
+  - Không đủ hàng thay thế thì phiếu chuyển "Chờ xử lý" (UC_08 3.2): mọi sản phẩm được gỡ khỏi phiếu và đơn chuyển "Chờ xử lý".
+- **Đơn hàng:** `POST /api/orders` là điểm tiếp nhận đơn từ hệ thống bán hàng. Tạm thời dùng quyền Quản lý thay cho khóa tích hợp.
 - **Thông báo:** gửi duyệt thì báo cho mọi Quản lý đang hoạt động. Duyệt hoặc từ chối phiếu và biên bản thì báo cho người lập.
 
 ## Cần sửa trong báo cáo cho khớp với Hình 3.10

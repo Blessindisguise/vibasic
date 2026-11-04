@@ -13,7 +13,8 @@ public record ReasonInput(string? Reason);
 
 public record ReportRow(int Id, string Code, int ReceiptDetailId, string LotCode, string Sku, string ProductName, string Unit,
     AbnormalSource SourceType, string Description, int Quantity, ApprovalStatus Status, string CreatorName, DateTime CreatedAt,
-    string? ApproverName, DateTime? ApprovedAt, string? RejectReason, int ReceiptId, string ReceiptCode, ReceiptStatus ReceiptStatus);
+    string? ApproverName, DateTime? ApprovedAt, string? RejectReason, int ReceiptId, string ReceiptCode, ReceiptStatus ReceiptStatus,
+    int? IssueId);
 
 public static class ReportQueries
 {
@@ -21,7 +22,7 @@ public static class ReportQueries
         a.ReportId, a.Code, a.ReceiptDetailId, a.ReceiptDetail.LotCode, a.ReceiptDetail.Product.SKU, a.ReceiptDetail.Product.ProductName,
         a.ReceiptDetail.Product.Unit, a.SourceType, a.Description, a.Quantity, a.Status, a.Creator.FullName, a.CreatedAt,
         a.Approver != null ? a.Approver.FullName : null, a.ApprovedAt, a.RejectReason,
-        a.ReceiptDetail.ReceiptId, a.ReceiptDetail.Receipt.Code, a.ReceiptDetail.Receipt.Status));
+        a.ReceiptDetail.ReceiptId, a.ReceiptDetail.Receipt.Code, a.ReceiptDetail.Receipt.Status, a.IssueId));
 }
 
 /// <summary>UC_04–06 (staff) and UC_10 for receipts (manager).</summary>
@@ -142,14 +143,15 @@ public class AbnormalReportsController(VibasicDbContext db, AbnormalReportServic
 [Authorize(Policy = Policies.Manager)]
 public class ApprovalsController(VibasicDbContext db) : ControllerBase
 {
-    public record Summary(int Receipts, int AbnormalReports, int Total);
+    public record Summary(int Receipts, int Issues, int AbnormalReports, int Total);
 
     [HttpGet("summary")]
     public async Task<Summary> Get()
     {
         var receipts = await db.GoodsReceipts.CountAsync(r => r.Status == ReceiptStatus.Pending);
+        var issues = await db.GoodsIssues.CountAsync(i => i.Status == IssueStatus.Pending);
         var reports = await db.AbnormalReports.CountAsync(a => a.Status == ApprovalStatus.Pending);
-        return new Summary(receipts, reports, receipts + reports);
+        return new Summary(receipts, issues, reports, receipts + issues + reports);
     }
 }
 

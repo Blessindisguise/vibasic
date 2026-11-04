@@ -7,8 +7,9 @@ import { useToast } from '../../../app/toast';
 import { Code, ListError, Loading } from '../../../app/ui';
 import { ReceiptStatusBadge } from '../../../app/statusBadges';
 import { useApprovalSummary, useReceipts, useReportAction, useReports, type ReceiptRow, type ReportRow } from '../../../app/receiving';
+import { useIssues, type IssueRow } from '../../../app/issuing';
 
-type Tab = 'nhap-kho' | 'bat-thuong';
+type Tab = 'nhap-kho' | 'xuat-kho' | 'bat-thuong';
 
 /** UC_10 / UC_12 step 1: everything waiting for the manager, grouped by document type. */
 export function ApprovalsPage() {
@@ -22,10 +23,13 @@ export function ApprovalsPage() {
         label="Loại chứng từ" value={tab} onChange={t => setParams({ loai: t }, { replace: true })}
         options={[
           { value: 'nhap-kho', label: 'Phiếu nhập kho', count: summary.data?.receipts },
+          { value: 'xuat-kho', label: 'Phiếu xuất kho', count: summary.data?.issues },
           { value: 'bat-thuong', label: 'Biên bản bất thường', count: summary.data?.abnormalReports },
         ]}
       />
-      {tab === 'nhap-kho' ? <PendingReceipts /> : <PendingReports />}
+      {tab === 'nhap-kho' && <PendingReceipts />}
+      {tab === 'xuat-kho' && <PendingIssues />}
+      {tab === 'bat-thuong' && <PendingReports />}
     </div>
   );
 }
@@ -55,6 +59,26 @@ function PendingReceipts() {
   );
 }
 
+function PendingIssues() {
+  const issues = useIssues({ status: 'pending' });
+  const nav = useNavigate();
+  const columns: DataTableColumn<IssueRow>[] = [
+    { key: 'code', header: 'Mã phiếu', width: 130, render: i => <Code>{i.code}</Code> },
+    { key: 'issueDate', header: 'Lập lúc', width: 120, render: i => fmtShort(i.issueDate) },
+    { key: 'order', header: 'Đơn hàng', render: i => <span><Code>{i.orderCode}</Code> <span className="vb-muted">{i.customerName}</span></span> },
+    { key: 'creatorName', header: 'Người lập', width: 160 },
+    { key: 'quantity', header: 'Số lượng', numeric: true, width: 160, render: i => <>{fmt(i.totalQuantity)} <span className="vb-muted">· {i.productCount} mặt hàng</span></> },
+  ];
+  if (issues.isPending) return <Loading />;
+  if (issues.isError) return <ListError onRetry={() => issues.refetch()} />;
+  return (
+    <DataTable
+      columns={columns} rows={issues.data} onRowClick={i => nav(`/ql/xuat-kho/${i.id}`)} caption="Phiếu xuất chờ duyệt"
+      empty={<EmptyState icon="clipboard-check" title="Không có phiếu xuất chờ duyệt" description="Phiếu lập từ đơn hàng sẽ hiện ở đây." />}
+    />
+  );
+}
+
 function PendingReports() {
   const reports = useReports('pending');
   const action = useReportAction();
@@ -77,12 +101,20 @@ function PendingReports() {
     { key: 'description', header: 'Mô tả lỗi', render: r => <span style={{ whiteSpace: 'normal' }}>{r.description}</span> },
     { key: 'quantity', header: 'SL lỗi', numeric: true, width: 80, render: r => fmt(r.quantity) },
     {
-      key: 'receipt', header: 'Phiếu nhập', width: 200,
-      render: r => (
-        <button type="button" className="vb-btn vb-btn--ghost vb-btn--sm" onClick={e => { e.stopPropagation(); nav(`/ql/nhap-kho/${r.receiptId}`); }}>
-          <Code>{r.receiptCode}</Code>&nbsp;<ReceiptStatusBadge status={r.receiptStatus} />
-        </button>
-      ),
+      key: 'receipt', header: 'Phát hiện khi', width: 210,
+      render: r => r.sourceType === 'issue' && r.issueId
+        ? (
+          <button type="button" className="vb-btn vb-btn--ghost vb-btn--sm" onClick={e => { e.stopPropagation(); nav(`/ql/xuat-kho/${r.issueId}`); }}>
+            Xuất kho · xem phiếu xuất
+          </button>
+        )
+        : r.sourceType === 'receipt'
+          ? (
+            <button type="button" className="vb-btn vb-btn--ghost vb-btn--sm" onClick={e => { e.stopPropagation(); nav(`/ql/nhap-kho/${r.receiptId}`); }}>
+              <Code>{r.receiptCode}</Code>&nbsp;<ReceiptStatusBadge status={r.receiptStatus} />
+            </button>
+          )
+          : <span>Kiểm kê</span>,
     },
     {
       key: 'actions', header: '', width: 210, align: 'right',

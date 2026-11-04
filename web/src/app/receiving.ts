@@ -21,6 +21,8 @@ export interface ReportRow {
   sourceType: AbnormalSource; description: string; quantity: number; status: ApprovalStatus;
   creatorName: string; createdAt: string; approverName?: string; approvedAt?: string; rejectReason?: string;
   receiptId: number; receiptCode: string; receiptStatus: ReceiptStatus;
+  /** Goods issue during which the defect was found (source "Xuất kho"). */
+  issueId?: number;
 }
 export interface ReceiptView { header: ReceiptRow; note?: string; lots: LotRow[]; reports: ReportRow[] }
 export interface LabelSheet {
@@ -52,7 +54,7 @@ export const useReports = (status?: ApprovalStatus) =>
 export const useApprovalSummary = (enabled = true) =>
   useQuery({
     queryKey: ['approvals'], enabled, refetchInterval: 60_000,
-    queryFn: () => api<{ receipts: number; abnormalReports: number; total: number }>('/approvals/summary'),
+    queryFn: () => api<{ receipts: number; issues: number; abnormalReports: number; total: number }>('/approvals/summary'),
   });
 
 /** Every receipt or report change can move counts, stock and notifications, so refresh them together. */

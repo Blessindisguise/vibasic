@@ -12,6 +12,7 @@ using Vibasic.Api;
 using Vibasic.Infrastructure;
 using Vibasic.Infrastructure.Abnormal;
 using Vibasic.Infrastructure.Catalog;
+using Vibasic.Infrastructure.Issuing;
 using Vibasic.Infrastructure.Receiving;
 using Vibasic.Infrastructure.Seed;
 
@@ -24,6 +25,7 @@ builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<Notifier>();
 builder.Services.AddScoped<ReceiptService>();
 builder.Services.AddScoped<AbnormalReportService>();
+builder.Services.AddScoped<IssueService>();
 builder.Services.AddSingleton<IClock, SystemClock>();
 
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()!;

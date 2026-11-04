@@ -13,6 +13,10 @@ import { ReceiptListPage } from '../features/receiving/ReceiptListPage';
 import { ReceiptDetail } from '../features/receiving/ReceiptDetail';
 import { ReceiptForm } from '../features/staff/receiving/ReceiptForm';
 import { ReceiptLabelsPage } from '../features/print/ReceiptLabelsPage';
+import { IssueListPage } from '../features/issuing/IssueListPage';
+import { IssueDetail } from '../features/issuing/IssueDetail';
+import { StaffIssueHome } from '../features/staff/issuing/StaffIssueHome';
+import { OrderAllocationPage } from '../features/staff/issuing/OrderAllocationPage';
 
 function RequireRole({ role, children }: { role: Role; children: ReactNode }) {
   const { user, ready } = useAuth();
@@ -48,15 +52,29 @@ const receiptScreen = (role: Role, base: string): Screen => ([first, second]) =>
   return <ReceiptDetail key={id} id={id} role={role} basePath={base} />;
 };
 
+/** /ql/xuat-kho[/:id]; staff /kho/xuat-kho (orders, pick queue, issues), /don/:orderId, /:id. */
+const issueScreen = (role: Role, base: string): Screen => ([first, second]) => {
+  if (!first) return role === 'staff' ? <StaffIssueHome /> : <IssueListPage role={role} basePath={base} />;
+  if (role === 'staff' && first === 'don') {
+    const orderId = Number(second);
+    return Number.isInteger(orderId) && orderId > 0 ? <OrderAllocationPage key={orderId} orderId={orderId} /> : <Navigate to={base} replace />;
+  }
+  const id = Number(first);
+  if (!Number.isInteger(id) || id <= 0) return <Navigate to={base} replace />;
+  return <IssueDetail key={id} id={id} role={role} basePath={base} />;
+};
+
 const MANAGER_SCREENS: Record<string, Screen> = {
   'cho-duyet': () => <ApprovalsPage />,
   'nhap-kho': receiptScreen('manager', '/ql/nhap-kho'),
+  'xuat-kho': issueScreen('manager', '/ql/xuat-kho'),
   'hang-hoa': () => <ProductsPage />,
   'nha-cung-cap': () => <SuppliersPage />,
   'tai-khoan': () => <AccountsPage />,
 };
 
 const STAFF_SCREENS: Record<string, Screen> = {
+  'xuat-kho': issueScreen('staff', '/kho/xuat-kho'),
   'nhap-kho': receiptScreen('staff', '/kho/nhap-kho'),
 };
 

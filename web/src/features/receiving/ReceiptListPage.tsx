@@ -28,7 +28,7 @@ export function ReceiptListPage({ role, basePath }: { role: 'manager' | 'staff';
 
   const columns: DataTableColumn<ReceiptRow>[] = [
     { key: 'code', header: 'Mã phiếu', width: 130, render: r => <Code>{r.code}</Code> },
-    { key: 'receiptDate', header: 'Ngày nhập', width: 140, render: r => fmtDateTime(r.receiptDate) },
+    { key: 'receiptDate', header: 'Ngày nhập', width: 150, render: r => <span style={{ whiteSpace: 'nowrap' }}>{fmtDateTime(r.receiptDate)}</span> },
     { key: 'supplierName', header: 'Nhà cung cấp' },
     {
       key: 'quantity', header: 'Hàng nhập', numeric: true, width: 150,
