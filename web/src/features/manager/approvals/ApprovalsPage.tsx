@@ -1,15 +1,15 @@
-import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Button, ConfirmDialog, DataTable, EmptyState, type DataTableColumn } from '../../../design';
-import { fmt, fmtDateTime, fmtShort } from '../../../app/format';
+import { DataTable, EmptyState, type DataTableColumn } from '../../../design';
+import { fmt, fmtShort } from '../../../app/format';
 import { Segmented } from '../../../app/Segmented';
-import { useToast } from '../../../app/toast';
 import { Code, ListError, Loading } from '../../../app/ui';
 import { ReceiptStatusBadge } from '../../../app/statusBadges';
-import { useApprovalSummary, useReceipts, useReportAction, useReports, type ReceiptRow, type ReportRow } from '../../../app/receiving';
+import { useApprovalSummary, useReceipts, useReports, type ReceiptRow, type ReportRow } from '../../../app/receiving';
 import { useIssues, type IssueRow } from '../../../app/issuing';
+import { useStocktakes, type StocktakeRow } from '../../../app/stock';
+import { ReportDecision } from '../../abnormal/ReportDecision';
 
-type Tab = 'nhap-kho' | 'xuat-kho' | 'bat-thuong';
+type Tab = 'nhap-kho' | 'xuat-kho' | 'kiem-ke' | 'bat-thuong';
 
 /** UC_10 / UC_12 step 1: everything waiting for the manager, grouped by document type. */
 export function ApprovalsPage() {
@@ -24,11 +24,13 @@ export function ApprovalsPage() {
         options={[
           { value: 'nhap-kho', label: 'Phiếu nhập kho', count: summary.data?.receipts },
           { value: 'xuat-kho', label: 'Phiếu xuất kho', count: summary.data?.issues },
+          { value: 'kiem-ke', label: 'Phiếu kiểm kê', count: summary.data?.stocktakes },
           { value: 'bat-thuong', label: 'Biên bản bất thường', count: summary.data?.abnormalReports },
         ]}
       />
       {tab === 'nhap-kho' && <PendingReceipts />}
       {tab === 'xuat-kho' && <PendingIssues />}
+      {tab === 'kiem-ke' && <PendingStocktakes />}
       {tab === 'bat-thuong' && <PendingReports />}
     </div>
   );
@@ -79,20 +81,34 @@ function PendingIssues() {
   );
 }
 
+function PendingStocktakes() {
+  const stocktakes = useStocktakes('pending');
+  const nav = useNavigate();
+  const columns: DataTableColumn<StocktakeRow>[] = [
+    { key: 'code', header: 'Phiếu kiểm kê', width: 130, render: s => <Code>{s.code}</Code> },
+    { key: 'stocktakeDate', header: 'Gửi lúc', width: 120, render: s => fmtShort(s.stocktakeDate) },
+    { key: 'plan', header: 'Kế hoạch', width: 130, render: s => <Code>{s.planCode}</Code> },
+    { key: 'creatorName', header: 'Người kiểm', width: 160 },
+    { key: 'lots', header: 'Lô kiểm', numeric: true, width: 90, render: s => fmt(s.lotCount) },
+    {
+      key: 'diff', header: 'Chênh lệch',
+      render: s => s.diffLots === 0 ? <span className="vb-muted">Khớp hệ thống</span>
+        : <span>{s.diffLots} lô · thiếu {fmt(s.shortage)} · thừa {fmt(s.surplus)}</span>,
+    },
+  ];
+  if (stocktakes.isPending) return <Loading />;
+  if (stocktakes.isError) return <ListError onRetry={() => stocktakes.refetch()} />;
+  return (
+    <DataTable
+      columns={columns} rows={stocktakes.data} onRowClick={s => nav(`/ql/kiem-ke/phieu/${s.id}`)} caption="Phiếu kiểm kê chờ duyệt"
+      empty={<EmptyState icon="list-checks" title="Không có phiếu kiểm kê chờ duyệt" description="Phiếu kiểm kê do nhân viên gửi sẽ hiện ở đây." />}
+    />
+  );
+}
+
 function PendingReports() {
   const reports = useReports('pending');
-  const action = useReportAction();
-  const toast = useToast();
   const nav = useNavigate();
-  const [dialog, setDialog] = useState<{ report: ReportRow; kind: 'approve' | 'reject' } | null>(null);
-
-  const run = (report: ReportRow, kind: 'approve' | 'reject', reason?: string) => action.mutate({ id: report.id, action: kind, reason }, {
-    onSuccess: () => {
-      setDialog(null);
-      toast({ tone: kind === 'approve' ? 'success' : 'info', title: kind === 'approve' ? `Đã khóa lô ${report.lotCode}` : `Lô ${report.lotCode} trở về Bình thường` });
-    },
-    onError: e => { setDialog(null); toast({ tone: 'danger', title: 'Không thực hiện được', message: e.message }); },
-  });
 
   const columns: DataTableColumn<ReportRow>[] = [
     { key: 'code', header: 'Biên bản', width: 130, render: r => <Code>{r.code}</Code> },
@@ -116,41 +132,15 @@ function PendingReports() {
           )
           : <span>Kiểm kê</span>,
     },
-    {
-      key: 'actions', header: '', width: 210, align: 'right',
-      render: r => r.receiptStatus !== 'approved'
-        ? <span className="vb-muted">Duyệt phiếu {r.receiptCode} trước</span>
-        : (
-          <div className="vb-row" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-            <Button size="sm" variant="danger-outline" onClick={() => setDialog({ report: r, kind: 'reject' })}>Từ chối</Button>
-            <Button size="sm" variant="secondary" icon="lock" onClick={() => setDialog({ report: r, kind: 'approve' })}>Duyệt, khóa lô</Button>
-          </div>
-        ),
-    },
+    { key: 'actions', header: '', width: 220, align: 'right', render: r => <ReportDecision report={r} /> },
   ];
 
   if (reports.isPending) return <Loading />;
   if (reports.isError) return <ListError onRetry={() => reports.refetch()} />;
   return (
-    <>
-      <DataTable
-        columns={columns} rows={reports.data} caption="Biên bản bất thường chờ duyệt"
-        empty={<EmptyState icon="shield-alert" title="Không có biên bản chờ duyệt" description="Biên bản lập khi nhập kho, xuất kho hoặc kiểm kê sẽ hiện ở đây." />}
-      />
-      {dialog?.kind === 'approve' && (
-        <ConfirmDialog
-          title={`Duyệt biên bản ${dialog.report.code} và khóa lô ${dialog.report.lotCode}?`}
-          description={`${fmt(dialog.report.quantity)} ${dialog.report.unit} ${dialog.report.productName} bị loại khỏi tồn kho khả dụng và không được xuất. Lập lúc ${fmtDateTime(dialog.report.createdAt)} bởi ${dialog.report.creatorName}.`}
-          confirmLabel="Duyệt, khóa lô" onConfirm={() => run(dialog.report, 'approve')} onCancel={() => setDialog(null)}
-        />
-      )}
-      {dialog?.kind === 'reject' && (
-        <ConfirmDialog
-          tone="danger" requireReason title={`Từ chối biên bản ${dialog.report.code}?`}
-          description={`Lô ${dialog.report.lotCode} trở về Bình thường; ${fmt(dialog.report.quantity)} ${dialog.report.unit} được tính vào tồn kho khả dụng.`}
-          confirmLabel="Từ chối biên bản" onConfirm={reason => run(dialog.report, 'reject', reason)} onCancel={() => setDialog(null)}
-        />
-      )}
-    </>
+    <DataTable
+      columns={columns} rows={reports.data} caption="Biên bản bất thường chờ duyệt"
+      empty={<EmptyState icon="shield-alert" title="Không có biên bản chờ duyệt" description="Biên bản lập khi nhập kho, xuất kho hoặc kiểm kê sẽ hiện ở đây." />}
+    />
   );
 }

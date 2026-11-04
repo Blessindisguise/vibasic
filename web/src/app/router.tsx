@@ -17,6 +17,13 @@ import { IssueListPage } from '../features/issuing/IssueListPage';
 import { IssueDetail } from '../features/issuing/IssueDetail';
 import { StaffIssueHome } from '../features/staff/issuing/StaffIssueHome';
 import { OrderAllocationPage } from '../features/staff/issuing/OrderAllocationPage';
+import { LotLookupPage } from '../features/stock/LotLookupPage';
+import { LotDetailPage } from '../features/stock/LotDetailPage';
+import { StocktakeManagerPage } from '../features/stocktake/StocktakeManagerPage';
+import { StocktakeDetail } from '../features/stocktake/StocktakeDetail';
+import { StaffStocktakeHome } from '../features/staff/stocktake/StaffStocktakeHome';
+import { CountingPage } from '../features/staff/stocktake/CountingPage';
+import { AbnormalReportsPage } from '../features/abnormal/AbnormalReportsPage';
 
 function RequireRole({ role, children }: { role: Role; children: ReactNode }) {
   const { user, ready } = useAuth();
@@ -64,8 +71,31 @@ const issueScreen = (role: Role, base: string): Screen => ([first, second]) => {
   return <IssueDetail key={id} id={id} role={role} basePath={base} />;
 };
 
+const positiveId = (s?: string) => { const n = Number(s); return Number.isInteger(n) && n > 0 ? n : null; };
+
+/** /…/lo-hang (manager) or /…/tra-cuu (staff), and /:lotId. */
+const lotScreen = (role: Role, base: string): Screen => ([first]) => {
+  if (!first) return <LotLookupPage role={role} basePath={base} />;
+  const id = positiveId(first);
+  return id ? <LotDetailPage key={id} id={id} role={role} basePath={base} /> : <Navigate to={base} replace />;
+};
+
+/** Manager: plans + stocktakes, /phieu/:id. Staff: plans to count, /:planId (counting), /phieu/:id. */
+const stocktakeScreen = (role: Role, base: string): Screen => ([first, second]) => {
+  if (!first) return role === 'manager' ? <StocktakeManagerPage /> : <StaffStocktakeHome />;
+  if (first === 'phieu') {
+    const id = positiveId(second);
+    return id ? <StocktakeDetail key={id} id={id} role={role} back={role === 'manager' ? `${base}?tab=phieu` : base} /> : <Navigate to={base} replace />;
+  }
+  const planId = positiveId(first);
+  return role === 'staff' && planId ? <CountingPage key={planId} planId={planId} /> : <Navigate to={base} replace />;
+};
+
 const MANAGER_SCREENS: Record<string, Screen> = {
   'cho-duyet': () => <ApprovalsPage />,
+  'lo-hang': lotScreen('manager', '/ql/lo-hang'),
+  'kiem-ke': stocktakeScreen('manager', '/ql/kiem-ke'),
+  'bat-thuong': () => <AbnormalReportsPage role="manager" />,
   'nhap-kho': receiptScreen('manager', '/ql/nhap-kho'),
   'xuat-kho': issueScreen('manager', '/ql/xuat-kho'),
   'hang-hoa': () => <ProductsPage />,
@@ -76,6 +106,9 @@ const MANAGER_SCREENS: Record<string, Screen> = {
 const STAFF_SCREENS: Record<string, Screen> = {
   'xuat-kho': issueScreen('staff', '/kho/xuat-kho'),
   'nhap-kho': receiptScreen('staff', '/kho/nhap-kho'),
+  'tra-cuu': lotScreen('staff', '/kho/tra-cuu'),
+  'kiem-ke': stocktakeScreen('staff', '/kho/kiem-ke'),
+  'bao-loi': () => <AbnormalReportsPage role="staff" />,
 };
 
 function ManagerPage() {

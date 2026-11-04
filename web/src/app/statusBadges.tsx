@@ -1,6 +1,7 @@
 import { StatusBadge } from '../design';
-import type { ApprovalStatus, LotStatus, ReceiptStatus } from './receiving';
-import type { IssueStatus, OrderStatus } from './issuing';
+import type { AbnormalSource, ApprovalStatus, LotStatus, ReceiptStatus } from './receiving';
+import type { IssueStatus, ItemStatus, OrderStatus } from './issuing';
+import type { PlanStatus } from './stock';
 
 type Size = 'md' | 'lg';
 
@@ -44,6 +45,29 @@ export function OrderStatusBadge({ status, size }: { status: OrderStatus; size?:
     case 'issued': return <StatusBadge status="info" label="Đã xuất" icon="truck" size={size} />;
   }
 }
+
+export function PlanStatusBadge({ status, size }: { status: PlanStatus; size?: Size }) {
+  switch (status) {
+    case 'waiting': return <StatusBadge status="draft" label="Chờ thực hiện" icon="clock" size={size} />;
+    case 'inProgress': return <StatusBadge status="pending" label="Đang kiểm kê" icon="list-checks" size={size} />;
+    case 'done': return <StatusBadge status="approved" label="Hoàn thành" size={size} />;
+  }
+}
+
+const ITEM_STATUS: Record<ItemStatus, { status: 'draft' | 'pending' | 'approved' | 'rejected' | 'hold' | 'info'; label: string; icon: string }> = {
+  incoming: { status: 'draft', label: 'Chờ nhập', icon: 'package-plus' },
+  inStock: { status: 'approved', label: 'Trong kho', icon: 'warehouse' },
+  reserved: { status: 'pending', label: 'Đã giữ chỗ', icon: 'lock' },
+  issued: { status: 'info', label: 'Đã xuất', icon: 'truck' },
+  lost: { status: 'rejected', label: 'Thất thoát', icon: 'circle-x' },
+};
+export function ItemStatusBadge({ status, size }: { status: ItemStatus; size?: Size }) {
+  const m = ITEM_STATUS[status];
+  return <StatusBadge status={m.status} label={m.label} icon={m.icon} size={size} />;
+}
+export const ITEM_STATUS_LABEL = Object.fromEntries(Object.entries(ITEM_STATUS).map(([k, v]) => [k, v.label])) as Record<ItemStatus, string>;
+
+export const SOURCE_LABEL: Record<AbnormalSource, string> = { receipt: 'Nhập kho', issue: 'Xuất kho', stocktake: 'Kiểm kê' };
 
 export const ISSUE_STATUS_OPTIONS: { value: IssueStatus; label: string }[] = [
   { value: 'pending', label: 'Chờ duyệt' },

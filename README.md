@@ -68,6 +68,6 @@ cd web; npx tsc -b
 | 2 | Danh mục (UC_01–03) và chính sách tồn kho | Xong |
 | 3 | Nhập kho (UC_04–06, UC_10 phần nhập), xử lý biên bản của lô cách ly khi nhập (UC_12), thông báo | Xong |
 | 4 | Xuất kho FIFO (UC_07–10), báo hàng lỗi khi xuất (UC_11 nguồn xuất kho) | Xong |
-| 5 | Biên bản bất thường, kiểm kê, tra cứu lô (UC_11–16) | Chưa làm |
+| 5 | Biên bản bất thường, kiểm kê, tra cứu lô (UC_11–16) | Xong |
 | 6 | ROP, EOQ, cảnh báo, đề xuất (UC_17–18) | Chưa làm |
 | 7 | Báo cáo và tổng quan (UC_19) | Chưa làm |

@@ -118,9 +118,13 @@ public class ReceiptsController(VibasicDbContext db, ReceiptService receipts) : 
 public class AbnormalReportsController(VibasicDbContext db, AbnormalReportService reports) : ControllerBase
 {
     [HttpGet]
-    public async Task<List<ReportRow>> List(ApprovalStatus? status) =>
-        await (status is null ? db.AbnormalReports : db.AbnormalReports.Where(a => a.Status == status))
-            .OrderByDescending(a => a.CreatedAt).Take(500).Rows().ToListAsync();
+    public async Task<List<ReportRow>> List(ApprovalStatus? status, AbnormalSource? source)
+    {
+        var q = db.AbnormalReports.AsQueryable();
+        if (status is not null) q = q.Where(a => a.Status == status);
+        if (source is not null) q = q.Where(a => a.SourceType == source);
+        return await q.OrderByDescending(a => a.CreatedAt).Take(500).Rows().ToListAsync();
+    }
 
     [HttpPost("{id:int}/approve"), Authorize(Policy = Policies.Manager)]
     public async Task<ReportRow> Approve(int id)
@@ -143,15 +147,16 @@ public class AbnormalReportsController(VibasicDbContext db, AbnormalReportServic
 [Authorize(Policy = Policies.Manager)]
 public class ApprovalsController(VibasicDbContext db) : ControllerBase
 {
-    public record Summary(int Receipts, int Issues, int AbnormalReports, int Total);
+    public record Summary(int Receipts, int Issues, int Stocktakes, int AbnormalReports, int Total);
 
     [HttpGet("summary")]
     public async Task<Summary> Get()
     {
         var receipts = await db.GoodsReceipts.CountAsync(r => r.Status == ReceiptStatus.Pending);
         var issues = await db.GoodsIssues.CountAsync(i => i.Status == IssueStatus.Pending);
+        var stocktakes = await db.Stocktakes.CountAsync(s => s.Status == ApprovalStatus.Pending);
         var reports = await db.AbnormalReports.CountAsync(a => a.Status == ApprovalStatus.Pending);
-        return new Summary(receipts, issues, reports, receipts + issues + reports);
+        return new Summary(receipts, issues, stocktakes, reports, receipts + issues + stocktakes + reports);
     }
 }
 

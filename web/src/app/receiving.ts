@@ -49,12 +49,15 @@ export const useReceipt = (id: number) =>
   useQuery({ queryKey: ['receipt', id], queryFn: () => api<ReceiptView>(`/receipts/${id}`), enabled: id > 0 });
 export const useLabels = (id: number) =>
   useQuery({ queryKey: ['receipt', id, 'labels'], queryFn: () => api<LabelSheet>(`/receipts/${id}/labels`) });
-export const useReports = (status?: ApprovalStatus) =>
-  useQuery({ queryKey: ['abnormal-reports', status ?? 'all'], queryFn: () => api<ReportRow[]>(`/abnormal-reports${qs({ status })}`) });
+export const useReports = (status?: ApprovalStatus, source?: AbnormalSource) =>
+  useQuery({
+    queryKey: ['abnormal-reports', status ?? 'all', source ?? 'all'],
+    queryFn: () => api<ReportRow[]>(`/abnormal-reports${qs({ status, source })}`),
+  });
 export const useApprovalSummary = (enabled = true) =>
   useQuery({
     queryKey: ['approvals'], enabled, refetchInterval: 60_000,
-    queryFn: () => api<{ receipts: number; issues: number; abnormalReports: number; total: number }>('/approvals/summary'),
+    queryFn: () => api<{ receipts: number; issues: number; stocktakes: number; abnormalReports: number; total: number }>('/approvals/summary'),
   });
 
 /** Every receipt or report change can move counts, stock and notifications, so refresh them together. */

@@ -288,17 +288,31 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
     // ---------------- helpers ----------------
 
     /// <summary>
-    /// Lots in <paramref name="lotIds"/> are no longer issuable. Swap their reserved items on every open issue for the next free
-    /// items by FIFO. Returns the issues that could not be refilled and were put "Chờ xử lý" (UC_08 3.2).
+    /// Lots in <paramref name="lotIds"/> are no longer issuable (quarantined). Swap their reserved items on every open issue for the
+    /// next free items by FIFO. Returns the issues that could not be refilled and were put "Chờ xử lý" (UC_08 3.2).
+    /// Does not save; the caller commits with its own change.
     /// </summary>
-    private async Task<HashSet<int>> ReplaceFromLotsAsync(List<int> lotIds, int currentIssueId)
+    public async Task<HashSet<int>> ReplaceFromLotsAsync(List<int> lotIds, int? currentIssueId = null)
+    {
+        var affected = await db.StockItems
+            .Where(i => lotIds.Contains(i.ReceiptDetailId) && i.Status == ItemStatus.Reserved)
+            .Select(i => i.ItemId).ToListAsync();
+        return await ReplaceReservedAsync(affected, lotIds, currentIssueId, "Không đủ hàng thay thế cho sản phẩm thuộc lô bị cách ly.");
+    }
+
+    /// <summary>
+    /// Take the given reserved items off their issues and refill each line by FIFO from lots other than <paramref name="excludeLots"/>.
+    /// Used when a lot is quarantined and when a stocktake finds reserved items missing. Does not save.
+    /// </summary>
+    public async Task<HashSet<int>> ReplaceReservedAsync(List<int> itemIds, List<int> excludeLots, int? currentIssueId, string holdReason)
     {
         var affected = await db.StockItems
             .Include(i => i.IssueDetail!).ThenInclude(d => d.Issue).ThenInclude(i => i.Order)
             .Include(i => i.IssueDetail!).ThenInclude(d => d.Product)
             .Include(i => i.ReceiptDetail)
-            .Where(i => lotIds.Contains(i.ReceiptDetailId) && i.Status == ItemStatus.Reserved)
+            .Where(i => itemIds.Contains(i.ItemId) && i.Status == ItemStatus.Reserved)
             .ToListAsync();
+        var lotIds = excludeLots;
         var taken = new HashSet<int>();
         var held = new HashSet<int>();
 
@@ -310,11 +324,12 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
             foreach (var byLine in byIssue.GroupBy(i => i.IssueDetail!))
             {
                 var need = byLine.Count();
+                // Items released in this pass are still free in the database but must not come back; neither may items already taken.
                 var candidates = await FreeItems(byLine.Key.ProductId)
                     .Include(i => i.ReceiptDetail)
-                    .Where(i => !lotIds.Contains(i.ReceiptDetailId))
+                    .Where(i => !lotIds.Contains(i.ReceiptDetailId) && !itemIds.Contains(i.ItemId))
                     .Take(need + taken.Count).ToListAsync();
-                var fresh = candidates.Where(c => !taken.Contains(c.ItemId)).Take(need).ToList();
+                var fresh = candidates.Where(c => !taken.Contains(c.ItemId) && c.Status == ItemStatus.InStock && c.IssueDetail == null).Take(need).ToList();
                 if (fresh.Count < need) { short_ = true; break; }
                 swaps.AddRange(byLine.Zip(fresh, (o, n) => (byLine.Key, o, n)));
             }
@@ -325,7 +340,7 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
                 await db.Entry(issue).Collection(i => i.Details).Query().Include(d => d.Items).LoadAsync();
                 Release(issue);
                 issue.Status = IssueStatus.OnHold;
-                issue.HoldReason = "Không đủ hàng thay thế cho sản phẩm thuộc lô bị cách ly.";
+                issue.HoldReason = holdReason;
                 issue.Order.Status = OrderStatus.OnHold;
                 held.Add(issue.IssueId);
                 notify.ToUser(issue.CreatedBy, $"Phiếu xuất {issue.Code} chuyển Chờ xử lý", issue.HoldReason, $"/kho/xuat-kho/{issue.IssueId}", Notifier.Danger);
@@ -341,7 +356,7 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
             }
             if (issue.IssueId != currentIssueId)
                 notify.ToUser(issue.CreatedBy, $"Phiếu xuất {issue.Code} đổi {swaps.Count} sản phẩm",
-                    $"Lô {string.Join(", ", byIssue.Select(i => i.ReceiptDetail.LotCode).Distinct())} đã tạm cách ly; danh sách lấy hàng được cập nhật theo FIFO.",
+                    $"Sản phẩm của lô {string.Join(", ", byIssue.Select(i => i.ReceiptDetail.LotCode).Distinct())} không còn xuất được; danh sách lấy hàng được cập nhật theo FIFO.",
                     $"/kho/xuat-kho/{issue.IssueId}", Notifier.Warning);
         }
         return held;

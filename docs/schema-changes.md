@@ -72,6 +72,17 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
   - Mọi sản phẩm của lô đó đang giữ chỗ trên các phiếu chưa xuất được đổi ngay sang sản phẩm kế tiếp theo FIFO. Hàng đã quét phải trả lại kệ. Người lập các phiếu khác bị đổi hàng nhận được thông báo.
   - Việc thay thế làm ngay khi lập biên bản, không chờ Quản lý duyệt, vì lô đã cách ly thì không xuất được nữa.
   - Không đủ hàng thay thế thì phiếu chuyển "Chờ xử lý" (UC_08 3.2): mọi sản phẩm được gỡ khỏi phiếu và đơn chuyển "Chờ xử lý".
+- **Kiểm kê (UC_13–15):**
+  - Ngày dự kiến của kế hoạch không được trước hôm nay (giờ Việt Nam).
+  - Phạm vi "Toàn bộ kho" gồm mọi lô của phiếu nhập đã duyệt còn tồn tại thời điểm kiểm, kể cả lô tạm cách ly và đã khóa, vì chúng vẫn nằm trong kho.
+  - Số đếm được lưu nháp trên máy nhân viên. Phiếu kiểm kê chỉ được tạo khi gửi, và `SystemQuantity` là tồn của lô tại lúc đó.
+  - Nhân viên phải nhập số cho mọi lô (không tìm thấy thì nhập 0) và ghi lý do cho lô có chênh lệch.
+  - Gửi phiếu thì kế hoạch chuyển "Đang kiểm kê". Từ chối thì kế hoạch trở về "Chờ thực hiện" để kiểm lại (lần sau là phiếu mới). Duyệt thì kế hoạch "Hoàn thành".
+  - Khi duyệt, tồn được điều chỉnh theo chênh lệch (thực tế − hệ thống) của từng lô:
+    - Phần thiếu: sản phẩm "Trong kho" chuyển "Thất thoát" trước. Nếu vẫn thiếu thì đến sản phẩm "Đã giữ chỗ": chúng được gỡ khỏi phiếu xuất và thay theo FIFO; không đủ thay thì phiếu đó chuyển "Chờ xử lý".
+    - Phần thừa: được tạo mã định danh mới.
+  - Biên bản lập trong lúc kiểm kê (nguồn "Kiểm kê") làm lô chuyển "Tạm cách ly" ngay. Sản phẩm của lô đang giữ chỗ trên phiếu xuất được thay theo FIFO, như khi báo lỗi lúc xuất.
+- **Tra cứu lô (UC_16):** chỉ hiện lô của phiếu nhập đã duyệt. Quét mã lô hoặc mã sản phẩm đều mở được lô tương ứng.
 - **Đơn hàng:** `POST /api/orders` là điểm tiếp nhận đơn từ hệ thống bán hàng. Tạm thời dùng quyền Quản lý thay cho khóa tích hợp.
 - **Thông báo:** gửi duyệt thì báo cho mọi Quản lý đang hoạt động. Duyệt hoặc từ chối phiếu và biên bản thì báo cho người lập.
 
