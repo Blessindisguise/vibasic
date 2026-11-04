@@ -5,6 +5,9 @@ import { Placeholder } from './Placeholder';
 import { LoginPage } from '../features/auth/LoginPage';
 import { ManagerLayout, MANAGER_NAV } from '../features/manager/ManagerLayout';
 import { StaffLayout, STAFF_NAV } from '../features/staff/StaffLayout';
+import { ProductsPage } from '../features/manager/catalog/ProductsPage';
+import { SuppliersPage } from '../features/manager/catalog/SuppliersPage';
+import { AccountsPage } from '../features/manager/catalog/AccountsPage';
 
 function RequireRole({ role, children }: { role: Role; children: ReactNode }) {
   const { user, ready } = useAuth();
@@ -27,10 +30,17 @@ const MANAGER_PHASE: Record<string, number> = {
 };
 const STAFF_PHASE: Record<string, number> = { 'xuat-kho': 4, 'nhap-kho': 3, 'tra-cuu': 5, 'kiem-ke': 5, 'bao-loi': 5 };
 
+const MANAGER_SCREENS: Record<string, () => ReactNode> = {
+  'hang-hoa': () => <ProductsPage />,
+  'nha-cung-cap': () => <SuppliersPage />,
+  'tai-khoan': () => <AccountsPage />,
+};
+
 function ManagerPage() {
   const { page = 'tong-quan' } = useParams();
   if (!MANAGER_NAV.some(n => n.key === page)) return <Navigate to="/ql" replace />;
-  return <Placeholder phase={MANAGER_PHASE[page]} />;
+  const screen = MANAGER_SCREENS[page];
+  return screen ? screen() : <Placeholder phase={MANAGER_PHASE[page]} />;
 }
 
 function StaffPage() {

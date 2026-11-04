@@ -50,6 +50,10 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
 - **Thứ tự FIFO:** sắp theo `GoodsReceipt.ReceiptDate` của lô (UC_16: "ngày nhập theo phiếu nhập"); hai lô cùng ngày thì xét theo `ReceiptDetailId`.
 - **Hàng không đạt khi nhập:** phần không đạt của một mặt hàng tạo thành một dòng (lô) riêng ở trạng thái "Tạm cách ly", nằm trên cùng phiếu với lô đạt (UC_04). Vì vậy không cần cột kết quả kiểm định riêng.
 
+- **Chính sách tồn kho (L, SS, S, H):** UC_02 không có các ô này, nhưng ROP và EOQ cần chúng, nên app thêm vào biểu mẫu hàng hóa. ROP và EOQ thì hệ thống tự tính, không nhập tay.
+- **Tài khoản ngừng hoạt động (UC_01 5.1):** phiên đang mở bị từ chối ngay ở request kế tiếp, không phải chờ token hết hạn. Đổi vai trò cũng làm phiên cũ hết hiệu lực. Quản lý không tự ngừng hoạt động hoặc tự đổi vai trò của chính mình.
+- **Mã SKU:** chỉ sửa được khi hàng hóa chưa có lô nhập kho, vì mã định danh sản phẩm (SP-{SKU}-yymm-nnnn) chứa SKU.
+
 ## Cần sửa trong báo cáo cho khớp với Hình 3.10
 
 - **Mục 3.3.1:** đổi "20 bảng" thành "19 bảng". Nhóm "tồn kho theo lô (StockLot, StockItem)" chỉ còn StockItem; lô thuộc nhóm nhập kho (GoodsReceiptDetail).
