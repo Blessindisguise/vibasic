@@ -8,6 +8,11 @@ import { StaffLayout, STAFF_NAV } from '../features/staff/StaffLayout';
 import { ProductsPage } from '../features/manager/catalog/ProductsPage';
 import { SuppliersPage } from '../features/manager/catalog/SuppliersPage';
 import { AccountsPage } from '../features/manager/catalog/AccountsPage';
+import { ApprovalsPage } from '../features/manager/approvals/ApprovalsPage';
+import { ReceiptListPage } from '../features/receiving/ReceiptListPage';
+import { ReceiptDetail } from '../features/receiving/ReceiptDetail';
+import { ReceiptForm } from '../features/staff/receiving/ReceiptForm';
+import { ReceiptLabelsPage } from '../features/print/ReceiptLabelsPage';
 
 function RequireRole({ role, children }: { role: Role; children: ReactNode }) {
   const { user, ready } = useAuth();
@@ -30,23 +35,50 @@ const MANAGER_PHASE: Record<string, number> = {
 };
 const STAFF_PHASE: Record<string, number> = { 'xuat-kho': 4, 'nhap-kho': 3, 'tra-cuu': 5, 'kiem-ke': 5, 'bao-loi': 5 };
 
-const MANAGER_SCREENS: Record<string, () => ReactNode> = {
+/** A screen receives the path segments after its nav key, e.g. /kho/nhap-kho/12/sua → ['12', 'sua']. */
+type Screen = (rest: string[]) => ReactNode;
+
+/** /…/nhap-kho, /…/nhap-kho/:id; staff also /moi and /:id/sua. */
+const receiptScreen = (role: Role, base: string): Screen => ([first, second]) => {
+  if (!first) return <ReceiptListPage role={role} basePath={base} />;
+  if (role === 'staff' && first === 'moi') return <ReceiptForm basePath={base} />;
+  const id = Number(first);
+  if (!Number.isInteger(id) || id <= 0) return <Navigate to={base} replace />;
+  if (role === 'staff' && second === 'sua') return <ReceiptForm key={id} id={id} basePath={base} />;
+  return <ReceiptDetail key={id} id={id} role={role} basePath={base} />;
+};
+
+const MANAGER_SCREENS: Record<string, Screen> = {
+  'cho-duyet': () => <ApprovalsPage />,
+  'nhap-kho': receiptScreen('manager', '/ql/nhap-kho'),
   'hang-hoa': () => <ProductsPage />,
   'nha-cung-cap': () => <SuppliersPage />,
   'tai-khoan': () => <AccountsPage />,
 };
 
+const STAFF_SCREENS: Record<string, Screen> = {
+  'nhap-kho': receiptScreen('staff', '/kho/nhap-kho'),
+};
+
 function ManagerPage() {
-  const { page = 'tong-quan' } = useParams();
+  const { page = 'tong-quan', '*': rest = '' } = useParams();
   if (!MANAGER_NAV.some(n => n.key === page)) return <Navigate to="/ql" replace />;
   const screen = MANAGER_SCREENS[page];
-  return screen ? screen() : <Placeholder phase={MANAGER_PHASE[page]} />;
+  return screen ? screen(rest.split('/').filter(Boolean)) : <Placeholder phase={MANAGER_PHASE[page]} />;
 }
 
 function StaffPage() {
-  const { page = 'xuat-kho' } = useParams();
+  const { page = 'xuat-kho', '*': rest = '' } = useParams();
   if (!STAFF_NAV.some(n => n.key === page)) return <Navigate to="/kho" replace />;
-  return <Placeholder phase={STAFF_PHASE[page]} size="lg" />;
+  const screen = STAFF_SCREENS[page];
+  return screen ? screen(rest.split('/').filter(Boolean)) : <Placeholder phase={STAFF_PHASE[page]} size="lg" />;
+}
+
+/** Signed-in, any role (print pages open in a new tab without the app frame). */
+function RequireUser({ children }: { children: ReactNode }) {
+  const { user, ready } = useAuth();
+  if (!ready) return null;
+  return user ? children : <Navigate to="/dang-nhap" replace />;
 }
 
 export const router = createBrowserRouter([
@@ -68,5 +100,6 @@ export const router = createBrowserRouter([
       { path: ':page/*', element: <StaffPage /> },
     ],
   },
+  { path: '/in/nhap-kho/:id', element: <RequireUser><ReceiptLabelsPage /></RequireUser> },
   { path: '*', element: <Home /> },
 ]);

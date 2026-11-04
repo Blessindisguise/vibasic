@@ -8,7 +8,7 @@ import {
   fieldErrors, formError, useCategories, useProducts, useSaveProduct, useSuppliers, type Product,
 } from '../../../app/catalog';
 import { CategoriesDialog } from './CategoriesDialog';
-import { Code, ListError, Loading } from './shared';
+import { Code, ListError, Loading } from '../../../app/ui';
 
 type Sort = { key: string; dir: 'asc' | 'desc' };
 

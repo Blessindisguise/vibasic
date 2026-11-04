@@ -5,6 +5,8 @@ import wordmarkWhite from '../../design/assets/wordmark-white.png';
 import { useAuth } from '../../app/auth';
 import { ToastProvider } from '../../app/toast';
 import { fmtLongDate } from '../../app/format';
+import { NotificationBell } from '../../app/NotificationBell';
+import { useApprovalSummary } from '../../app/receiving';
 
 export const MANAGER_NAV: (NavItem & { title?: string; subtitle?: () => string })[] = [
   { key: 'tong-quan', label: 'Tổng quan', icon: 'layout-dashboard', section: 'Theo dõi', title: 'Tổng quan kho', subtitle: () => `${fmtLongDate()} · Kho Bình Dương` },
@@ -28,13 +30,16 @@ export function ManagerLayout() {
   const { pathname } = useLocation();
   const key = pathname.split('/')[2] || 'tong-quan';
   const item = MANAGER_NAV.find(n => n.key === key);
+  const pending = useApprovalSummary().data?.total ?? 0;
+  const navItems = MANAGER_NAV.map(n => (n.key === 'cho-duyet' && pending ? { ...n, count: pending, countTone: 'danger' as const } : n));
 
   return (
     <ToastProvider placement="desktop">
       <div style={{ height: '100vh' }}>
         <AppShell
           role="manager"
-          navItems={MANAGER_NAV}
+          navItems={navItems}
+          actions={<NotificationBell />}
           activeKey={key}
           onNavigate={k => nav(`/ql/${k}`)}
           user={{ name: user?.fullName }}

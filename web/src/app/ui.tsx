@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Button, EmptyState } from '../../../design';
+import { Button, EmptyState } from '../design';
 
 /** Codes (SKU, username) get +0.02em tracking and weight 600. */
 export function Code({ children }: { children: ReactNode }) {

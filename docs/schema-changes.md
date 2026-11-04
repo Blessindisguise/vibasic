@@ -54,6 +54,15 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
 - **Tài khoản ngừng hoạt động (UC_01 5.1):** phiên đang mở bị từ chối ngay ở request kế tiếp, không phải chờ token hết hạn. Đổi vai trò cũng làm phiên cũ hết hiệu lực. Quản lý không tự ngừng hoạt động hoặc tự đổi vai trò của chính mình.
 - **Mã SKU:** chỉ sửa được khi hàng hóa chưa có lô nhập kho, vì mã định danh sản phẩm (SP-{SKU}-yymm-nnnn) chứa SKU.
 
+- **Nhập kho (UC_04, UC_05):**
+  - Mỗi mặt hàng nhập 2 con số: số thực nhận và số không đạt. Phần đạt thành lô "Bình thường", phần không đạt thành lô "Tạm cách ly" trên cùng phiếu. Mã lô và mã sản phẩm được tạo ngay khi lưu phiếu.
+  - Mô tả lỗi nhập cùng dòng hàng. Khi nhân viên xác nhận nhập kho và gửi duyệt, hệ thống lập mỗi lô cách ly một biên bản bất thường ("Chờ duyệt").
+  - Phiếu "Từ chối" được sửa rồi gửi lại. Mặt hàng giữ nguyên số đạt và không đạt thì giữ mã lô cũ; mặt hàng đổi số lượng được tạo mã mới và phải in lại nhãn.
+  - Biên bản của lô cách ly khi nhập chỉ được xử lý sau khi phiếu nhập đã duyệt (UC_05 bước 6 rồi bước 7).
+  - Khi phiếu bị từ chối, `ApprovedBy` và `ApprovedAt` ghi người và thời điểm từ chối. Khi phiếu được gửi lại, hai cột này được xoá.
+  - Mỗi dòng nhận tối đa 2.000 sản phẩm, vì mã sản phẩm có 4 chữ số cho mỗi SKU trong tháng.
+- **Thông báo:** gửi duyệt thì báo cho mọi Quản lý đang hoạt động. Duyệt hoặc từ chối phiếu và biên bản thì báo cho người lập.
+
 ## Cần sửa trong báo cáo cho khớp với Hình 3.10
 
 - **Mục 3.3.1:** đổi "20 bảng" thành "19 bảng". Nhóm "tồn kho theo lô (StockLot, StockItem)" chỉ còn StockItem; lô thuộc nhóm nhập kho (GoodsReceiptDetail).

@@ -4,7 +4,10 @@ export interface NavItem { key: string; label: string; icon: string; count?: num
  * @startingPoint section="Navigation" subtitle="Manager sidebar shell / warehouse tablet shell" viewport="1280x720"
  */
 export interface AppShellProps {
-  role?: 'manager' | 'staff'; navItems: NavItem[]; activeKey?: string; onNavigate?: (key: string) => void;
+  role?: 'manager' | 'staff';
+  /** sidebar (left navigation) or tabs (header + bottom tab bar, for phones). Default: manager → sidebar, staff → tabs. */
+  layout?: 'sidebar' | 'tabs';
+  navItems: NavItem[]; activeKey?: string; onNavigate?: (key: string) => void;
   user?: { name?: string }; title?: React.ReactNode; subtitle?: React.ReactNode; actions?: React.ReactNode;
   /** Brand lockup (e.g. <img src="assets/mark-white.png">); defaults to plain "VIBASIC" text */ brand?: React.ReactNode;
   children?: React.ReactNode; onLogout?: () => void; contentPadding?: number | string;

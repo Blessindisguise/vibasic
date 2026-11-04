@@ -5,7 +5,7 @@ import { matches } from '../../../app/text';
 import { FormDialog } from '../../../app/Modal';
 import { useToast } from '../../../app/toast';
 import { fieldErrors, formError, useSaveSupplier, useSuppliers, type Supplier } from '../../../app/catalog';
-import { ListError, Loading } from './shared';
+import { ListError, Loading } from '../../../app/ui';
 
 /** UC_03 Quản lý nhà cung cấp. */
 export function SuppliersPage() {

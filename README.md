@@ -66,7 +66,7 @@ cd web; npx tsc -b
 |---|---|---|
 | 1 | Nền tảng: CSDL 19 bảng theo sơ đồ lớp Hình 3.10, dữ liệu mẫu, đăng nhập JWT, khung giao diện cho hai vai trò | Xong |
 | 2 | Danh mục (UC_01–03) và chính sách tồn kho | Xong |
-| 3 | Nhập kho (UC_04–06, UC_10 phần nhập) | Chưa làm |
+| 3 | Nhập kho (UC_04–06, UC_10 phần nhập), xử lý biên bản của lô cách ly khi nhập (UC_12), thông báo | Xong |
 | 4 | Xuất kho FIFO (UC_07–10) | Chưa làm |
 | 5 | Biên bản bất thường, kiểm kê, tra cứu lô (UC_11–16) | Chưa làm |
 | 6 | ROP, EOQ, cảnh báo, đề xuất (UC_17–18) | Chưa làm |

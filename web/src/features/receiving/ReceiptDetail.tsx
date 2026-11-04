@@ -1,0 +1,223 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { AlertBanner, ApprovalStepper, Button, ConfirmDialog, DataTable, EmptyState, type DataTableColumn } from '../../design';
+import { fmt, fmtDateTime } from '../../app/format';
+import { useToast } from '../../app/toast';
+import { ApiError } from '../../app/api';
+import { ApprovalBadge, LotStatusBadge, ReceiptStatusBadge } from '../../app/statusBadges';
+import { useReceipt, useReceiptAction, useReportAction, type LotRow, type ReportRow } from '../../app/receiving';
+import { Code, ListError, Loading } from '../../app/ui';
+
+type Role = 'manager' | 'staff';
+type Dialog = { kind: 'submit' | 'approve' | 'reject' } | { kind: 'report-approve' | 'report-reject'; report: ReportRow } | null;
+
+/**
+ * Receipt detail (UC_06 step 5, UC_10 step 2). Staff: print labels, edit, confirm and submit (UC_05).
+ * Manager: approve or reject the receipt, then handle the abnormal reports of its quarantined lots (UC_12).
+ */
+export function ReceiptDetail({ id, role, basePath }: { id: number; role: Role; basePath: string }) {
+  const receipt = useReceipt(id);
+  const action = useReceiptAction();
+  const reportAction = useReportAction();
+  const toast = useToast();
+  const nav = useNavigate();
+  const [dialog, setDialog] = useState<Dialog>(null);
+  const touch = role === 'staff';
+  const size = touch ? 'lg' : 'md';
+
+  if (receipt.isPending) return <Loading />;
+  if (receipt.error instanceof ApiError && receipt.error.status === 404) {
+    return (
+      <div className="vb-panel">
+        <EmptyState icon="search" title="Không tìm thấy phiếu nhập" description="Phiếu không tồn tại hoặc đã bị xoá."
+          action={<Button variant="secondary" onClick={() => nav(basePath)}>Về danh sách phiếu nhập</Button>} />
+      </div>
+    );
+  }
+  if (receipt.isError) return <ListError onRetry={() => receipt.refetch()} />;
+  const { header: h, lots, reports, note } = receipt.data;
+  const editable = h.status === 'receiving' || h.status === 'rejected';
+  const normalQty = lots.filter(l => l.status === 'normal').reduce((s, l) => s + l.quantity, 0);
+  const quarantined = lots.filter(l => l.status === 'quarantined');
+  const recorded = h.status === 'approved';
+
+  const run = (kind: 'submit' | 'approve' | 'reject', reason?: string) => action.mutate({ id, action: kind, reason }, {
+    onSuccess: () => {
+      setDialog(null);
+      toast({
+        tone: kind === 'reject' ? 'info' : 'success',
+        title: kind === 'submit' ? `Đã gửi phiếu ${h.code} cho quản lý duyệt` : kind === 'approve' ? `Đã duyệt phiếu ${h.code}` : `Đã từ chối phiếu ${h.code}`,
+        message: kind === 'approve' && quarantined.length > 0 ? 'Xử lý tiếp biên bản bất thường của lô tạm cách ly.' : undefined,
+      });
+    },
+    onError: e => { setDialog(null); toast({ tone: 'danger', title: 'Không thực hiện được', message: e.message }); },
+  });
+
+  const runReport = (report: ReportRow, kind: 'approve' | 'reject', reason?: string) => reportAction.mutate({ id: report.id, action: kind, reason }, {
+    onSuccess: () => {
+      setDialog(null);
+      toast({ tone: kind === 'approve' ? 'success' : 'info', title: kind === 'approve' ? `Đã khóa lô ${report.lotCode}` : `Lô ${report.lotCode} trở về Bình thường` });
+    },
+    onError: e => { setDialog(null); toast({ tone: 'danger', title: 'Không thực hiện được', message: e.message }); },
+  });
+
+  const lotColumns: DataTableColumn<LotRow>[] = [
+    { key: 'lotCode', header: 'Mã lô', width: 130, render: l => <Code>{l.lotCode}</Code> },
+    { key: 'product', header: 'Mặt hàng', render: l => <><Code>{l.sku}</Code> <span>{l.productName}</span></> },
+    { key: 'quantity', header: 'SL nhập', numeric: true, width: 100, render: l => `${fmt(l.quantity)} ${l.unit}` },
+    { key: 'onHand', header: 'Tồn còn lại', numeric: true, width: 110, render: l => recorded ? fmt(l.quantityOnHand) : <span className="vb-muted">Chưa ghi nhận</span> },
+    { key: 'status', header: 'Trạng thái lô', width: 140, render: l => <LotStatusBadge status={l.status} /> },
+    {
+      key: 'note', header: 'Ghi chú',
+      render: l => (
+        <span style={{ whiteSpace: 'normal' }}>
+          {l.documentQuantity != null && <span style={{ fontWeight: 500 }}>Chứng từ: {fmt(l.documentQuantity)} {l.unit}. </span>}
+          {l.note ?? (l.documentQuantity == null && <span className="vb-muted">—</span>)}
+        </span>
+      ),
+    },
+  ];
+
+  const reportColumns: DataTableColumn<ReportRow>[] = [
+    { key: 'code', header: 'Biên bản', width: 130, render: r => <Code>{r.code}</Code> },
+    { key: 'lot', header: 'Lô', width: 130, render: r => <Code>{r.lotCode}</Code> },
+    { key: 'description', header: 'Mô tả lỗi', render: r => <span style={{ whiteSpace: 'normal' }}>{r.description}</span> },
+    { key: 'quantity', header: 'SL lỗi', numeric: true, width: 90, render: r => `${fmt(r.quantity)} ${r.unit}` },
+    {
+      key: 'status', header: 'Trạng thái', width: 120,
+      render: r => <span title={r.rejectReason ? `Lý do: ${r.rejectReason}` : undefined}><ApprovalBadge status={r.status} /></span>,
+    },
+    ...(role === 'manager' ? [{
+      key: 'actions', header: '', width: 200, align: 'right' as const,
+      render: (r: ReportRow) => r.status !== 'pending' ? <span className="vb-muted">{r.approverName} · {fmtDateTime(r.approvedAt)}</span>
+        : !recorded ? <span className="vb-muted">Duyệt phiếu trước</span>
+        : (
+          <div className="vb-row" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
+            <Button size="sm" variant="danger-outline" onClick={() => setDialog({ kind: 'report-reject', report: r })}>Từ chối</Button>
+            <Button size="sm" variant="secondary" icon="lock" onClick={() => setDialog({ kind: 'report-approve', report: r })}>Duyệt, khóa lô</Button>
+          </div>
+        ),
+    }] : []),
+  ];
+
+  const stepStatus = h.status === 'receiving' ? 'draft' : h.status;
+
+  return (
+    <div className="vb-stack">
+      <div className="vb-row">
+        <Button variant="ghost" size={size} icon="chevron-left" onClick={() => nav(basePath)}>Danh sách phiếu nhập</Button>
+      </div>
+
+      <section className="vb-panel">
+        <div className="vb-panel__head" style={{ flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div className="vb-row" style={{ gap: 10 }}>
+              <h2 className="vb-panel__title" style={{ fontSize: touch ? 20 : 18, letterSpacing: 'var(--tracking-code)' }}>{h.code}</h2>
+              <ReceiptStatusBadge status={h.status} size={size} />
+            </div>
+            <div className="vb-muted" style={{ marginTop: 2, fontSize: touch ? 14 : undefined }}>
+              {h.supplierName} · Lập {fmtDateTime(h.receiptDate)} bởi {h.creatorName}
+            </div>
+          </div>
+          <div className="vb-row">
+            {role === 'staff' && <>
+              <Button variant="secondary" size={size} icon="printer" onClick={() => window.open(`/in/nhap-kho/${id}`, '_blank')}>In mã vạch</Button>
+              {editable && <Button variant="secondary" size={size} icon="square-pen" onClick={() => nav(`${basePath}/${id}/sua`)}>Sửa phiếu</Button>}
+              {editable && <Button size={size} icon="send" onClick={() => setDialog({ kind: 'submit' })}>Xác nhận nhập kho và gửi duyệt</Button>}
+            </>}
+            {role === 'manager' && h.status === 'pending' && <>
+              <Button variant="danger-outline" icon="circle-x" onClick={() => setDialog({ kind: 'reject' })}>Từ chối phiếu</Button>
+              <Button icon="check" onClick={() => setDialog({ kind: 'approve' })}>Duyệt phiếu</Button>
+            </>}
+          </div>
+        </div>
+        <div className="vb-panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <ApprovalStepper
+            status={stepStatus} draftLabel="Đang nhập kho" size={size}
+            history={{
+              draft: { by: h.creatorName, at: fmtDateTime(h.receiptDate) },
+              pending: h.submittedAt ? { at: fmtDateTime(h.submittedAt) } : undefined,
+              [h.status === 'rejected' ? 'rejected' : 'approved']: h.approvedAt ? { by: h.approverName, at: fmtDateTime(h.approvedAt) } : undefined,
+            }}
+          />
+          {h.status === 'rejected' && (
+            <AlertBanner tone="danger" title={`Phiếu bị từ chối bởi ${h.approverName ?? 'quản lý'}`}>
+              Lý do: {h.rejectReason}. {role === 'staff' ? 'Sửa phiếu rồi gửi duyệt lại.' : 'Nhân viên kho sẽ sửa và gửi lại.'}
+            </AlertBanner>
+          )}
+          {h.status === 'pending' && h.rejectReason && (
+            <AlertBanner tone="info" title="Phiếu đã được gửi lại sau khi bị từ chối">Lý do lần trước: {h.rejectReason}</AlertBanner>
+          )}
+          {role === 'staff' && h.status === 'receiving' && (
+            <AlertBanner tone="info" title="Bước tiếp theo">
+              In mã vạch, dán lên lô và từng sản phẩm, xếp hàng vào kho{quarantined.length > 0 ? ' (để riêng hàng không đạt)' : ''}, rồi chọn “Xác nhận nhập kho và gửi duyệt”.
+            </AlertBanner>
+          )}
+          {role === 'manager' && h.status === 'approved' && reports.some(r => r.status === 'pending') && (
+            <AlertBanner tone="warning" title="Còn biên bản bất thường chờ xử lý">
+              Duyệt biên bản để khóa lô lỗi, hoặc từ chối để đưa lô về Bình thường và tính vào tồn kho.
+            </AlertBanner>
+          )}
+          {note && <div><span className="vb-muted">Ghi chú phiếu: </span>{note}</div>}
+        </div>
+      </section>
+
+      <section className="vb-panel">
+        <div className="vb-panel__head">
+          <h3 className="vb-panel__title">Lô hàng</h3>
+          <span className="vb-muted" style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }}>
+            {h.productCount} mặt hàng · {lots.length} lô · {fmt(h.totalQuantity)} sản phẩm
+          </span>
+        </div>
+        <DataTable columns={lotColumns} rows={lots} density={touch ? 'default' : 'compact'} caption="Lô hàng của phiếu" />
+      </section>
+
+      {(reports.length > 0 || quarantined.length > 0) && (
+        <section className="vb-panel">
+          <div className="vb-panel__head"><h3 className="vb-panel__title">Biên bản bất thường</h3></div>
+          {reports.length > 0
+            ? <DataTable columns={reportColumns} rows={reports} density={touch ? 'default' : 'compact'} caption="Biên bản bất thường của phiếu" />
+            : <EmptyState icon="shield-alert" title="Chưa lập biên bản"
+                description={`Hệ thống lập ${quarantined.length} biên bản cho lô tạm cách ly khi bạn xác nhận nhập kho.`} />}
+        </section>
+      )}
+
+      <ConfirmDialog
+        open={dialog?.kind === 'submit'} title={`Gửi phiếu ${h.code} cho quản lý duyệt?`}
+        description={<>
+          Xác nhận đã dán mã vạch và xếp {fmt(normalQty)} sản phẩm đạt vào kho.
+          {quarantined.length > 0 && <> Hệ thống lập {quarantined.length} biên bản bất thường cho {fmt(quarantined.reduce((s, l) => s + l.quantity, 0))} sản phẩm không đạt và giữ lô ở trạng thái Tạm cách ly.</>}
+          {' '}Sau khi gửi, phiếu không sửa được trừ khi bị từ chối.
+        </>}
+        confirmLabel="Gửi duyệt" onConfirm={() => run('submit')} onCancel={() => setDialog(null)}
+      />
+      <ConfirmDialog
+        open={dialog?.kind === 'approve'} title={`Duyệt phiếu ${h.code}?`}
+        description={<>
+          Ghi nhận tồn kho {fmt(normalQty)} sản phẩm của {lots.filter(l => l.status === 'normal').length} lô Bình thường.
+          {quarantined.length > 0 && <> Lô tạm cách ly vẫn chưa xuất được cho đến khi xử lý biên bản bất thường.</>}
+        </>}
+        confirmLabel="Duyệt phiếu" onConfirm={() => run('approve')} onCancel={() => setDialog(null)}
+      />
+      <ConfirmDialog
+        open={dialog?.kind === 'reject'} tone="danger" title={`Từ chối phiếu ${h.code}?`} requireReason
+        description="Tồn kho giữ nguyên. Nhân viên kho nhận được lý do để sửa phiếu và gửi lại."
+        confirmLabel="Từ chối phiếu" onConfirm={reason => run('reject', reason)} onCancel={() => setDialog(null)}
+      />
+      {dialog?.kind === 'report-approve' && (
+        <ConfirmDialog
+          title={`Duyệt biên bản ${dialog.report.code} và khóa lô ${dialog.report.lotCode}?`}
+          description={`${fmt(dialog.report.quantity)} ${dialog.report.unit} ${dialog.report.productName} bị loại khỏi tồn kho khả dụng và không được xuất.`}
+          confirmLabel="Duyệt, khóa lô" onConfirm={() => runReport(dialog.report, 'approve')} onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === 'report-reject' && (
+        <ConfirmDialog
+          tone="danger" requireReason title={`Từ chối biên bản ${dialog.report.code}?`}
+          description={`Lô ${dialog.report.lotCode} trở về Bình thường; ${fmt(dialog.report.quantity)} ${dialog.report.unit} được tính vào tồn kho khả dụng.`}
+          confirmLabel="Từ chối biên bản" onConfirm={reason => runReport(dialog.report, 'reject', reason)} onCancel={() => setDialog(null)}
+        />
+      )}
+    </div>
+  );
+}

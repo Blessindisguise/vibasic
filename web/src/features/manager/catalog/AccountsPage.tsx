@@ -5,7 +5,7 @@ import { matches } from '../../../app/text';
 import { FormDialog } from '../../../app/Modal';
 import { useToast } from '../../../app/toast';
 import { fieldErrors, formError, useAccounts, useSaveAccount, useSetAccountActive, type Account } from '../../../app/catalog';
-import { Code, ListError, Loading } from './shared';
+import { Code, ListError, Loading } from '../../../app/ui';
 
 const ROLE_LABEL: Record<Role, string> = { manager: 'Quản lý', staff: 'Nhân viên kho' };
 const ROLE_OPTIONS = (Object.keys(ROLE_LABEL) as Role[]).map(r => ({ value: r, label: ROLE_LABEL[r] }));

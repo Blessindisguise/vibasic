@@ -10,7 +10,9 @@ using Vibasic.Api.Auth;
 using Vibasic.Domain;
 using Vibasic.Api;
 using Vibasic.Infrastructure;
+using Vibasic.Infrastructure.Abnormal;
 using Vibasic.Infrastructure.Catalog;
+using Vibasic.Infrastructure.Receiving;
 using Vibasic.Infrastructure.Seed;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +21,9 @@ builder.Services.AddDbContext<VibasicDbContext>(o =>
     o.UseSqlServer(builder.Configuration.GetConnectionString("Vibasic")));
 builder.Services.AddScoped<CodeGenerator>();
 builder.Services.AddScoped<CatalogService>();
+builder.Services.AddScoped<Notifier>();
+builder.Services.AddScoped<ReceiptService>();
+builder.Services.AddScoped<AbnormalReportService>();
 builder.Services.AddSingleton<IClock, SystemClock>();
 
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()!;

@@ -4,5 +4,6 @@ export interface ApprovalStepperProps {
   history?: Partial<Record<'draft' | 'pending' | 'approved' | 'rejected', { by?: string; at?: string; note?: string }>>;
   size?: 'md' | 'lg';
   orientation?: 'horizontal' | 'vertical';
+  /** Label of the first step, e.g. "Đang nhập kho". Default "Nháp". */ draftLabel?: string;
 }
 export declare function ApprovalStepper(props: ApprovalStepperProps): JSX.Element;
