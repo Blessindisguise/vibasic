@@ -7,7 +7,7 @@ namespace Vibasic.Infrastructure.Abnormal;
 /// UC_12 Duyệt biên bản bất thường. Approve → the lot is locked ("Đã khóa") and leaves available stock;
 /// reject → the lot returns to "Bình thường" and counts as available.
 /// </summary>
-public class AbnormalReportService(VibasicDbContext db, Notifier notify, IClock clock)
+public class AbnormalReportService(VibasicDbContext db, Notifier notify, IClock clock, Decision.ReplenishmentService replenish)
 {
     public async Task<AbnormalReport> ApproveAsync(int id, int managerId)
     {
@@ -19,6 +19,7 @@ public class AbnormalReportService(VibasicDbContext db, Notifier notify, IClock 
         notify.ToUser(report.CreatedBy, $"Biên bản {report.Code} đã được duyệt",
             $"Lô {report.ReceiptDetail.LotCode} đã bị khóa và không được xuất.", $"/kho/bao-loi/{id}", Notifier.Info);
         await db.SaveChangesAsync();
+        await replenish.CheckLotsAsync([report.ReceiptDetailId]);
         return report;
     }
 
@@ -38,6 +39,7 @@ public class AbnormalReportService(VibasicDbContext db, Notifier notify, IClock 
         notify.ToUser(report.CreatedBy, $"Biên bản {report.Code} bị từ chối",
             $"Lô {report.ReceiptDetail.LotCode} trở về Bình thường và được tính vào tồn kho. Lý do: {text}", $"/kho/bao-loi/{id}", Notifier.Warning);
         await db.SaveChangesAsync();
+        await replenish.CheckLotsAsync([report.ReceiptDetailId]);
         return report;
     }
 

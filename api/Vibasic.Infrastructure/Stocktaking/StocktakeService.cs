@@ -22,7 +22,7 @@ public record SheetLot(int ReceiptDetailId, string LotCode, int ProductId, strin
 /// <item>Approval applies the difference: missing items become "Thất thoát", surplus items get new codes, QuantityOnHand moves by the same amount.</item>
 /// </list>
 /// </summary>
-public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier notify, IClock clock, IssueService issues)
+public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier notify, IClock clock, IssueService issues, Decision.ReplenishmentService replenish)
 {
     public const int MinReason = 5;
 
@@ -162,6 +162,7 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
             $"Phát hiện khi kiểm kê {plan.Code}: {report.Quantity} {lot.Product.Unit} lô {lot.LotCode}. Lô đã tạm cách ly.",
             "/ql/cho-duyet?loai=bat-thuong", Notifier.Warning);
         await db.SaveChangesAsync();
+        await replenish.CheckLotsAsync([lot.ReceiptDetailId]);
         return report;
     }
 
@@ -203,10 +204,10 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
         stocktake.ApprovedBy = managerId;
         stocktake.ApprovedAt = now;
         stocktake.Plan.Status = StocktakePlanStatus.Done;
-        // Phase 6 hooks the ROP check (UC_15 step 8) in here.
         notify.ToUser(stocktake.CreatedBy, $"Phiếu kiểm kê {stocktake.Code} đã được duyệt", "Tồn kho đã điều chỉnh theo số lượng thực tế.",
             $"/kho/kiem-ke", Notifier.Success);
         await db.SaveChangesAsync();
+        await replenish.CheckLotsAsync(stocktake.Details.Select(d => d.ReceiptDetailId));
         return stocktake;
     }
 

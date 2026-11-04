@@ -45,7 +45,7 @@ export const useIssue = (id: number) => useQuery({ queryKey: ['issue', id], quer
 /** Issue changes move orders, stock, approvals, abnormal reports and notifications. */
 function useRefresh() {
   const qc = useQueryClient();
-  return () => ['orders', 'issues', 'issue', 'approvals', 'abnormal-reports', 'products', 'notifications', 'receipt']
+  return () => ['orders', 'issues', 'issue', 'approvals', 'abnormal-reports', 'products', 'notifications', 'receipt', 'decision']
     .forEach(k => qc.invalidateQueries({ queryKey: [k] }));
 }
 

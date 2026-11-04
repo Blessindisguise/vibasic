@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Vibasic.Domain;
 using Vibasic.Infrastructure;
+using Vibasic.Infrastructure.Decision;
 using Vibasic.Infrastructure.Issuing;
 using Vibasic.Infrastructure.Seed;
 
@@ -39,7 +40,7 @@ public class IssuingTests
         var clock = new FixedClock(Now);
         return new Ctx
         {
-            Db = db, Issues = new IssueService(db, new CodeGenerator(db), new Notifier(db, clock), clock),
+            Db = db, Issues = new IssueService(db, new CodeGenerator(db), new Notifier(db, clock), clock, new ReplenishmentService(db, new Notifier(db, clock), clock)),
             Staff = db.Users.First(u => u.Username == "nhanvien1").UserId,
             Manager = db.Users.First(u => u.Username == "quanly").UserId,
         };

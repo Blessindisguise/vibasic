@@ -29,7 +29,10 @@ public class VibasicDbContext(DbContextOptions<VibasicDbContext> options) : DbCo
     protected override void ConfigureConventions(ModelConfigurationBuilder b)
     {
         b.Properties<decimal>().HavePrecision(18, 2);
-        b.Properties<DateTime>().HaveColumnType("datetime2");
+        // datetime2 has no time zone; every value is stored in UTC, so mark it UTC on the way out.
+        // Otherwise JSON omits the "Z" and browsers read the time as local (7 hours off in Vietnam).
+        b.Properties<DateTime>().HaveColumnType("datetime2").HaveConversion<UtcDateTimeConverter>();
+        b.Properties<DateTime?>().HaveColumnType("datetime2").HaveConversion<UtcDateTimeConverter>();
         // Every status enum is persisted as its Vietnamese label in nvarchar(20).
         foreach (var t in typeof(LabelAttribute).Assembly.GetTypes().Where(t => t.IsEnum))
         {

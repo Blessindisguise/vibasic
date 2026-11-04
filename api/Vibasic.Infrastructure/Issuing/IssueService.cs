@@ -28,7 +28,7 @@ public record DefectResult(List<string> ReportCodes, int Replaced, List<string> 
 /// <item>Allocated items are "Đã giữ chỗ" and still counted in their lot's QuantityOnHand until delivery.</item>
 /// </list>
 /// </summary>
-public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier notify, IClock clock)
+public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier notify, IClock clock, Decision.ReplenishmentService replenish)
 {
     /// <summary>Items that can be allocated: in stock, not reserved, in a "Bình thường" lot of an approved receipt; FIFO order.</summary>
     private IQueryable<StockItem> FreeItems(int productId) => db.StockItems
@@ -252,6 +252,7 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
         var returnPicked = mineBefore.Where(i => i.PickedAt != null && !defective.Contains(i)).Select(i => i.SerialCode).ToList();
         var held = await ReplaceFromLotsAsync(lotIds, issue.IssueId);
         await db.SaveChangesAsync();
+        await replenish.CheckLotsAsync(lotIds);
         return new DefectResult(reports, mineBefore.Count, returnPicked, held.Contains(issue.IssueId));
     }
 
@@ -280,8 +281,8 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
         issue.DeliveredAt = now;
         issue.DeliveredBy = userId;
         issue.Order.Status = OrderStatus.Issued;
-        // Phase 6 hooks the ROP check (UC_08 step 7) in here.
         await db.SaveChangesAsync();
+        await replenish.CheckAsync(issue.Details.Select(d => d.ProductId));
         return issue;
     }
 

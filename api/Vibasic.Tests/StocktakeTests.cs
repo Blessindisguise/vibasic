@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Vibasic.Domain;
 using Vibasic.Infrastructure;
+using Vibasic.Infrastructure.Decision;
 using Vibasic.Infrastructure.Issuing;
 using Vibasic.Infrastructure.Seed;
 using Vibasic.Infrastructure.Stocktaking;
@@ -41,10 +42,11 @@ public class StocktakeTests
         var clock = new FixedClock(Now);
         var notifier = new Notifier(db, clock);
         var codes = new CodeGenerator(db);
-        var issues = new IssueService(db, codes, notifier, clock);
+        var replenish = new ReplenishmentService(db, notifier, clock);
+        var issues = new IssueService(db, codes, notifier, clock, replenish);
         return new Ctx
         {
-            Db = db, Issues = issues, Stocktakes = new StocktakeService(db, codes, notifier, clock, issues),
+            Db = db, Issues = issues, Stocktakes = new StocktakeService(db, codes, notifier, clock, issues, replenish),
             Staff = db.Users.First(u => u.Username == "nhanvien1").UserId,
             Manager = db.Users.First(u => u.Username == "quanly").UserId,
         };

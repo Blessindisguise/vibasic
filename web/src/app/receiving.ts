@@ -63,7 +63,7 @@ export const useApprovalSummary = (enabled = true) =>
 /** Every receipt or report change can move counts, stock and notifications, so refresh them together. */
 function useRefresh() {
   const qc = useQueryClient();
-  return () => ['receipts', 'receipt', 'abnormal-reports', 'approvals', 'products', 'notifications']
+  return () => ['receipts', 'receipt', 'abnormal-reports', 'approvals', 'products', 'notifications', 'decision']
     .forEach(k => qc.invalidateQueries({ queryKey: [k] }));
 }
 

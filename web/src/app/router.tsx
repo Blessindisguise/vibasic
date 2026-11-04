@@ -24,6 +24,8 @@ import { StocktakeDetail } from '../features/stocktake/StocktakeDetail';
 import { StaffStocktakeHome } from '../features/staff/stocktake/StaffStocktakeHome';
 import { CountingPage } from '../features/staff/stocktake/CountingPage';
 import { AbnormalReportsPage } from '../features/abnormal/AbnormalReportsPage';
+import { AlertsPage } from '../features/decision/AlertsPage';
+import { ProposalsPage } from '../features/decision/ProposalsPage';
 
 function RequireRole({ role, children }: { role: Role; children: ReactNode }) {
   const { user, ready } = useAuth();
@@ -93,6 +95,8 @@ const stocktakeScreen = (role: Role, base: string): Screen => ([first, second]) 
 
 const MANAGER_SCREENS: Record<string, Screen> = {
   'cho-duyet': () => <ApprovalsPage />,
+  'canh-bao': () => <AlertsPage />,
+  'de-xuat': () => <ProposalsPage />,
   'lo-hang': lotScreen('manager', '/ql/lo-hang'),
   'kiem-ke': stocktakeScreen('manager', '/ql/kiem-ke'),
   'bat-thuong': () => <AbnormalReportsPage role="manager" />,

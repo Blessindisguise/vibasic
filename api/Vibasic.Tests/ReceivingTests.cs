@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Vibasic.Domain;
 using Vibasic.Infrastructure;
+using Vibasic.Infrastructure.Decision;
 using Vibasic.Infrastructure.Abnormal;
 using Vibasic.Infrastructure.Receiving;
 using Vibasic.Infrastructure.Seed;
@@ -34,8 +35,8 @@ public class ReceivingTests
         return new Ctx
         {
             Db = db,
-            Receipts = new ReceiptService(db, new CodeGenerator(db), notifier, clock),
-            Reports = new AbnormalReportService(db, notifier, clock),
+            Receipts = new ReceiptService(db, new CodeGenerator(db), notifier, clock, new ReplenishmentService(db, notifier, clock)),
+            Reports = new AbnormalReportService(db, notifier, clock, new ReplenishmentService(db, notifier, clock)),
             Staff = db.Users.First(u => u.Username == "nhanvien1").UserId,
             Manager = db.Users.First(u => u.Username == "quanly").UserId,
             Board = db.Products.First(p => p.SKU == "THT-01"),

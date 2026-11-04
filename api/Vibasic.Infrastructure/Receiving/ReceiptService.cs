@@ -19,7 +19,7 @@ public record ReceiptInput(int? SupplierId, string? Note, List<ReceiptLineInput>
 /// <item>Lots hold no stock (QuantityOnHand = 0, items "Chờ nhập") until the receipt is approved.</item>
 /// </list>
 /// </summary>
-public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier notify, IClock clock)
+public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier notify, IClock clock, Decision.ReplenishmentService replenish)
 {
     /// <summary>Upper bound per line; item serials are 4 digits per SKU per month.</summary>
     public const int MaxLineQuantity = 2_000;
@@ -136,11 +136,11 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
         receipt.Status = ReceiptStatus.Approved;
         receipt.ApprovedBy = managerId;
         receipt.ApprovedAt = clock.UtcNow;
-        // Phase 6 hooks the ROP check (UC_05 step 8) in here.
         notify.ToUser(receipt.CreatedBy, $"Phiếu nhập {receipt.Code} đã được duyệt",
             $"Đã ghi nhận tồn kho {receipt.Details.Where(d => d.Status == LotStatus.Normal).Sum(d => d.Quantity)} sản phẩm.",
             $"/kho/nhap-kho/{id}", Notifier.Success);
         await db.SaveChangesAsync();
+        await replenish.CheckAsync(receipt.Details.Select(d => d.ProductId));
         return receipt;
     }
 

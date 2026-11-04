@@ -7,6 +7,7 @@ import { ToastProvider } from '../../app/toast';
 import { fmtLongDate } from '../../app/format';
 import { NotificationBell } from '../../app/NotificationBell';
 import { useApprovalSummary } from '../../app/receiving';
+import { useDecisionSummary } from '../../app/decision';
 
 export const MANAGER_NAV: (NavItem & { title?: string; subtitle?: () => string })[] = [
   { key: 'tong-quan', label: 'Tổng quan', icon: 'layout-dashboard', section: 'Theo dõi', title: 'Tổng quan kho', subtitle: () => `${fmtLongDate()} · Kho Bình Dương` },
@@ -31,7 +32,13 @@ export function ManagerLayout() {
   const key = pathname.split('/')[2] || 'tong-quan';
   const item = MANAGER_NAV.find(n => n.key === key);
   const pending = useApprovalSummary().data?.total ?? 0;
-  const navItems = MANAGER_NAV.map(n => (n.key === 'cho-duyet' && pending ? { ...n, count: pending, countTone: 'danger' as const } : n));
+  const decision = useDecisionSummary().data;
+  const counts: Record<string, { count: number; countTone: 'danger' | 'neutral' } | undefined> = {
+    'cho-duyet': pending ? { count: pending, countTone: 'danger' } : undefined,
+    'canh-bao': decision?.openAlerts ? { count: decision.openAlerts, countTone: 'danger' } : undefined,
+    'de-xuat': decision?.pendingProposals ? { count: decision.pendingProposals, countTone: 'neutral' } : undefined,
+  };
+  const navItems = MANAGER_NAV.map(n => (counts[n.key] ? { ...n, ...counts[n.key] } : n));
 
   return (
     <ToastProvider placement="desktop">

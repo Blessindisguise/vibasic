@@ -83,6 +83,16 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
     - Phần thừa: được tạo mã định danh mới.
   - Biên bản lập trong lúc kiểm kê (nguồn "Kiểm kê") làm lô chuyển "Tạm cách ly" ngay. Sản phẩm của lô đang giữ chỗ trên phiếu xuất được thay theo FIFO, như khi báo lỗi lúc xuất.
 - **Tra cứu lô (UC_16):** chỉ hiện lô của phiếu nhập đã duyệt. Quét mã lô hoặc mã sản phẩm đều mở được lô tương ứng.
+- **ROP, EOQ (Hình 3.8, 3.9):**
+  - d = tổng số lượng của các phiếu xuất đã giao trong 28 ngày gần nhất ÷ 28. ROP = d × L + SS. EOQ = √(2DS/H), với D = d × 365 (nhu cầu năm), vì H là chi phí lưu kho trên một đơn vị trong một năm.
+  - "Chưa đủ dữ liệu": hàng hóa chưa có lô của phiếu nhập đã duyệt từ 28 ngày trở lên. Hàng loại này không có ROP, không bị cảnh báo, không có đề xuất.
+  - Tác vụ nền chạy mỗi thứ Hai 02:00 giờ Việt Nam (cấu hình `Replenishment:Cron`). Khi khởi động, nó chạy ngay nếu lần tính gần nhất đã quá 7 ngày. Quản lý có nút "Tính lại ngay".
+  - Việc kiểm tra cảnh báo chạy sau mọi thay đổi tồn khả dụng: duyệt phiếu nhập, giao hàng, báo lỗi (lô bị cách ly), duyệt kiểm kê, duyệt hoặc từ chối biên bản.
+  - Tồn ≤ ROP: mở cảnh báo (kèm thông báo cho Quản lý) hoặc cập nhật cảnh báo đang mở, và tạo hoặc cập nhật đề xuất "Chờ duyệt" với số lượng = EOQ làm tròn lên. Tồn > ROP: cảnh báo chuyển "Đã đóng" (ghi `ClosedAt`) và đề xuất đang chờ chuyển "Đã đóng".
+  - Mỗi đợt thiếu hàng chỉ có một đề xuất. Đề xuất đã duyệt hoặc từ chối không được tạo lại cho đến khi tồn vượt ROP rồi giảm lại.
+  - Quản lý sửa số lượng đề xuất thì phải ghi lý do. `OriginalQuantity` giữ số lượng do hệ thống tính (EOQ), và lần tính lại không ghi đè số đã sửa.
+  - Ưu tiên "Khẩn cấp" khi tồn ≤ tồn kho an toàn (SS), còn lại là "Cần đặt". "Theo dõi" là hàng có tồn trong khoảng (ROP, 1,2 × ROP] và không có đề xuất.
+- **Thời gian:** EF đọc mọi cột `datetime2` với Kind = UTC, nên JSON có hậu tố `Z` và giao diện đổi đúng sang giờ Việt Nam. Trước bản sửa này, giờ hiển thị bị lệch 7 tiếng.
 - **Đơn hàng:** `POST /api/orders` là điểm tiếp nhận đơn từ hệ thống bán hàng. Tạm thời dùng quyền Quản lý thay cho khóa tích hợp.
 - **Thông báo:** gửi duyệt thì báo cho mọi Quản lý đang hoạt động. Duyệt hoặc từ chối phiếu và biên bản thì báo cho người lập.
 
