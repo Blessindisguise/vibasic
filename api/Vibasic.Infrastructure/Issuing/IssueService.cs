@@ -13,7 +13,8 @@ public record OrderLineInput(string? Sku, int? Quantity);
 /// <summary>An order pushed by the sales system (UC_07 precondition: "đơn hàng đã được ghi nhận từ hệ thống khác").</summary>
 public record OrderInput(string? ExternalCode, string? CustomerName, DateTime? OrderDate, List<OrderLineInput>? Lines);
 
-public record ScanResult(string Serial, string LotCode, string Sku, bool AlreadyPicked, int Picked, int Total);
+/// <param name="ReplacedSerial">X1: the scanned item was taken in place of this one (same lot).</param>
+public record ScanResult(string Serial, string LotCode, string Sku, bool AlreadyPicked, int Picked, int Total, string? ReplacedSerial = null);
 
 /// <summary>Outcome of a defect report during picking (UC_08 3.1 / 3.2).</summary>
 /// <param name="Replaced">Items swapped out of this issue because their lot is now quarantined.</param>
@@ -172,6 +173,24 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
         return issue;
     }
 
+    /// <summary>
+    /// Hủy duyệt before delivery: the issue returns to "Chờ duyệt" and keeps its reserved items (and what was already scanned),
+    /// so the manager can approve it again or reject it to release the items.
+    /// </summary>
+    public async Task<GoodsIssue> RevokeAsync(int id, string? reason, int managerId)
+    {
+        var issue = await LoadAsync(id);
+        EnsureStatus(issue, IssueStatus.Approved, "chưa duyệt hoặc đã giao hàng nên không hủy duyệt được");
+        var text = RequireReason(reason);
+        issue.Status = IssueStatus.Pending;
+        issue.ApprovedBy = null;
+        issue.ApprovedAt = null;
+        notify.ToUser(issue.CreatedBy, $"Phiếu xuất {issue.Code} đã bị hủy duyệt",
+            $"Lý do: {text}. Dừng lấy hàng, giữ nguyên hàng đã quét và chờ quản lý duyệt lại.", $"/kho/xuat-kho/{id}", Notifier.Warning);
+        await db.SaveChangesAsync();
+        return issue;
+    }
+
     // ---------------- UC_08: lấy hàng, quét mã, báo lỗi, giao hàng ----------------
 
     /// <summary>UC_08 step 2 / 2.1: the scanned item must be one reserved for this issue.</summary>
@@ -197,10 +216,39 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
             var line = issue.Details.FirstOrDefault(d => d.ProductId == other.ReceiptDetail.ProductId);
             if (line is null)
                 throw new RuleException($"{serial} ({other.ReceiptDetail.Product.SKU}) không có trong phiếu {issue.Code}.");
+
+            // X1: items of one lot are interchangeable for FIFO. Take the scanned one in place of an unscanned item of the same lot.
+            var swapFor = line.Items.Where(i => i.PickedAt == null && i.ReceiptDetailId == other.ReceiptDetailId)
+                .OrderBy(i => i.SerialCode).FirstOrDefault();
+            if (swapFor is not null && other.PickedAt is null && other.Status is ItemStatus.InStock or ItemStatus.Reserved)
+            {
+                if (other.Status == ItemStatus.InStock)
+                {
+                    Unreserve(swapFor);
+                    line.Items.Remove(swapFor);
+                }
+                else
+                {
+                    // Reserved for another issue and not scanned there yet: the two issues trade items.
+                    var otherLine = await db.GoodsIssueDetails.Include(d => d.Items).SingleAsync(d => d.IssueDetailId == other.IssueDetailId);
+                    otherLine.Items.Remove(other);
+                    line.Items.Remove(swapFor);
+                    otherLine.Items.Add(swapFor);
+                }
+                other.Status = ItemStatus.Reserved;
+                other.PickedAt = clock.UtcNow;
+                line.Items.Add(other);
+                await db.SaveChangesAsync();
+                var items = issue.Details.SelectMany(d => d.Items).ToList();
+                return new ScanResult(serial, other.ReceiptDetail.LotCode, other.ReceiptDetail.Product.SKU, false,
+                    items.Count(i => i.PickedAt != null), items.Count, swapFor.SerialCode);
+            }
+
             var next = line.Items.Where(i => i.PickedAt == null).OrderBy(i => i.ReceiptDetailId).ThenBy(i => i.SerialCode).FirstOrDefault();
-            throw new RuleException(next is null
-                ? $"Đã lấy đủ {line.Quantity} {other.ReceiptDetail.Product.Unit} {other.ReceiptDetail.Product.SKU}. Để lại {serial}."
-                : $"Sai thứ tự FIFO: {serial} không có trong danh sách lấy hàng. Lấy từ lô {next.ReceiptDetail.LotCode}, ví dụ {next.SerialCode}.");
+            throw new RuleException(
+                swapFor is not null ? $"{serial} đã được lấy cho phiếu xuất khác. Lấy sản phẩm khác của lô {other.ReceiptDetail.LotCode}."
+                : next is null ? $"Đã lấy đủ {line.Quantity} {other.ReceiptDetail.Product.Unit} {other.ReceiptDetail.Product.SKU}. Để lại {serial}."
+                : $"Sai thứ tự FIFO: {serial} thuộc lô {other.ReceiptDetail.LotCode}, không có trong danh sách lấy hàng. Lấy từ lô {next.ReceiptDetail.LotCode}, ví dụ {next.SerialCode}.");
         }
 
         var already = mine.PickedAt is not null;

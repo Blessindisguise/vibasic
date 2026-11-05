@@ -81,6 +81,8 @@ public class GoodsReceipt
     public ReceiptStatus Status { get; set; }
     public string? RejectReason { get; set; }              // + ext
     public string? Note { get; set; }                      // + ext
+    /// <summary>Số chứng từ giao hàng của nhà cung cấp. // + ext</summary>
+    public string? DeliveryNoteNo { get; set; }
     public List<GoodsReceiptDetail> Details { get; set; } = [];
 }
 
@@ -219,6 +221,23 @@ public class StocktakeDetail
     public int SystemQuantity { get; set; }
     public int ActualQuantity { get; set; }
     public string? Reason { get; set; }
+    /// <summary>When the lot was counted; the system quantity is the shelf quantity at that moment. // + ext</summary>
+    public DateTime? CountedAt { get; set; }
+    public CountMethod Method { get; set; }
+    /// <summary>Counted by scanning: items found without a readable label (counted, get new codes on approval). // + ext</summary>
+    public int UnlabeledQuantity { get; set; }
+    /// <summary>Counted by scanning: the items whose labels were scanned. Empty when the count was typed in. // + ext</summary>
+    public List<StocktakeItem> Items { get; set; } = [];
+}
+
+/// <summary>An item scanned while counting a lot (K4). // + ext table</summary>
+public class StocktakeItem
+{
+    public int StocktakeItemId { get; set; }
+    public int DetailId { get; set; }
+    public StocktakeDetail Detail { get; set; } = null!;
+    public int ItemId { get; set; }
+    public StockItem Item { get; set; } = null!;
 }
 
 #endregion
@@ -296,6 +315,9 @@ public class ReplenishmentProposal
     public int OriginalQuantity { get; set; }
     public string? AdjustReason { get; set; }              // + ext
     public string? RejectReason { get; set; }              // + ext
+    /// <summary>The receipt that brought the goods in (status "Đã nhập hàng"). // + ext</summary>
+    public int? ReceiptId { get; set; }
+    public GoodsReceipt? Receipt { get; set; }
 }
 
 #endregion

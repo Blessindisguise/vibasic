@@ -71,6 +71,13 @@ public enum StocktakeScope
     [Label("Một số lô")] SelectedLots,
 }
 
+/// <summary>How a lot was counted (K4). // + ext</summary>
+public enum CountMethod
+{
+    [Label("Nhập số")] Manual,
+    [Label("Quét tem")] Scan,
+}
+
 public enum StocktakePlanStatus
 {
     [Label("Chờ thực hiện")] Waiting,
@@ -104,4 +111,6 @@ public enum ProposalStatus
     [Label("Đã duyệt")] Approved,
     [Label("Từ chối")] Rejected,
     [Label("Đã đóng")] Closed,
+    /// <summary>Goods of an approved proposal arrived on an approved receipt. // + ext</summary>
+    [Label("Đã nhập hàng")] Received,
 }

@@ -9,13 +9,15 @@ export interface Basis {
 }
 export type StockState = 'insufficient' | 'alert' | 'watch' | 'ok';
 export type Priority = 'urgent' | 'order';
-export type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'closed';
+/** received: goods arrived on an approved receipt (N1). */
+export type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'closed' | 'received';
 
 export interface OverviewRow { basis: Basis; state: StockState; alertDate?: string }
 export interface AlertRow { id: number; basis: Basis; currentQuantity: number; ropValue: number; alertDate: string; status: 'open' | 'closed'; closedAt?: string }
 export interface ProposalRow {
   id: number; basis: Basis; proposedQuantity: number; originalQuantity: number; eoqValue: number; adjustReason?: string;
   proposalDate: string; status: ProposalStatus; priority: Priority; approverName?: string; approvedAt?: string; rejectReason?: string;
+  receiptId?: number; receiptCode?: string;
 }
 export interface DecisionSummary { openAlerts: number; pendingProposals: number; insufficient: number; lastCalculatedAt?: string }
 

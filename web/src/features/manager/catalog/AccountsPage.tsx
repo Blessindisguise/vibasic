@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Button, ConfirmDialog, DataTable, EmptyState, FilterBar, SelectField, StatusBadge, TextField, type DataTableColumn } from '../../../design';
 import { useAuth, type Role } from '../../../app/auth';
 import { matches } from '../../../app/text';
+import { suggestFrom } from '../../../app/suggest';
 import { FormDialog } from '../../../app/Modal';
 import { useToast } from '../../../app/toast';
 import { fieldErrors, formError, useAccounts, useSaveAccount, useSetAccountActive, type Account } from '../../../app/catalog';
@@ -74,6 +75,8 @@ export function AccountsPage() {
     <div className="vb-stack">
       <FilterBar
         search={search} onSearchChange={setSearch} searchPlaceholder="Tìm theo họ tên, tên đăng nhập…"
+        suggestions={suggestFrom(accounts.data, search, a => [a.fullName, a.username], a => ({ key: String(a.id), label: a.fullName, hint: a.username }))}
+        onPickSuggestion={s => setSearch(s.label)}
         filters={[
           { key: 'role', label: 'Vai trò', value: role, options: ROLE_OPTIONS },
           { key: 'status', label: 'Trạng thái', value: status, options: STATUS_OPTIONS },

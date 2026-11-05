@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Button, DataTable, EmptyState, TextField, type DataTableColumn } from '../../design';
+import { Button, DataTable, EmptyState, SearchField, TextField, type DataTableColumn } from '../../design';
 import { fmt, fmtDate, fmtShort } from '../../app/format';
+import { suggestFrom } from '../../app/suggest';
 import { FormDialog, FieldGrid } from '../../app/Modal';
 import { Segmented } from '../../app/Segmented';
 import { useToast } from '../../app/toast';
@@ -100,6 +101,12 @@ function PlanDialog({ onClose }: { onClose: () => void }) {
   const [search, setSearch] = useState('');
   const errors = fieldErrors(create.error);
   const rows = useMemo(() => (lots.data ?? []).filter(l => matches(search, l.lotCode, l.sku, l.productName)), [lots.data, search]);
+  // Picking a suggested lot ticks it and clears the filter, so lots can be added one after another by typing a few characters.
+  const suggestions = suggestFrom(lots.data, search, l => [l.lotCode, l.sku, l.productName], l => ({
+    key: String(l.id), label: l.lotCode, hint: `${l.sku} · ${l.productName}`,
+    meta: selected.includes(l.id) ? <span style={{ color: 'var(--green-700)', fontWeight: 600 }}>Đã chọn</span> : <span>Tồn {fmt(l.quantityOnHand)} {l.unit}</span>,
+  }));
+  const pickLot = (id: number) => { setSelected(s => (s.includes(id) ? s : [...s, id])); setSearch(''); };
 
   const submit = () => create.mutate({ planType, scopeType, plannedDate, note, lotIds: scopeType === 'selectedLots' ? selected.map(Number) : [] }, {
     onSuccess: p => { toast({ tone: 'success', title: `Đã lập kế hoạch ${p.code}`, message: 'Nhân viên kho nhận được thông báo.' }); onClose(); },
@@ -129,7 +136,10 @@ function PlanDialog({ onClose }: { onClose: () => void }) {
         <div className="vb-field">
           <div className="vb-row" style={{ justifyContent: 'space-between' }}>
             <span className="vb-field__label">Lô cần kiểm kê<span className="req" aria-hidden="true">*</span> <span className="vb-muted">({selected.length} đã chọn)</span></span>
-            <TextField icon="search" placeholder="Lọc theo mã lô, SKU, tên" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 260 }} aria-label="Lọc lô" />
+            <SearchField
+              placeholder="Lọc theo mã lô, SKU, tên" value={search} onChange={setSearch} style={{ width: 260 }} aria-label="Lọc lô" align="end"
+              suggestions={suggestions} onPickSuggestion={s => s.value && pickLot((s.value as { id: number }).id)}
+            />
           </div>
           {errors.lotIds && <div className="vb-field__help vb-field__help--error">{errors.lotIds}</div>}
           <DataTable

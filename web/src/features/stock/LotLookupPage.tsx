@@ -7,7 +7,8 @@ import { Segmented } from '../../app/Segmented';
 import { Code, ListError, Loading } from '../../app/ui';
 import { useProducts } from '../../app/catalog';
 import { LotStatusBadge } from '../../app/statusBadges';
-import { findLot, useLots, type LotRow } from '../../app/stock';
+import { findLot, useLotSuggest, useLots, type LotRow, type LotSuggestion } from '../../app/stock';
+import { lotSuggestions } from '../../app/suggest';
 import type { LotStatus } from '../../app/receiving';
 
 /** UC_16 Tra cứu tồn kho theo lô: filter by product or lot status, or scan a lot / item barcode to open its lot. */
@@ -22,6 +23,8 @@ export function LotLookupPage({ role, basePath }: { role: 'manager' | 'staff'; b
   const [code, setCode] = useState('');
   const [scan, setScan] = useState<{ state: 'error' | 'idle'; message?: string; key: number }>({ state: 'idle', key: 0 });
   const lots = useLots({ productId, includeEmpty });
+  const suggest = useLotSuggest(code);
+  const openSuggestion = (s?: LotSuggestion) => s && nav(`${basePath}/${s.lotId}${s.kind === 'item' ? `?sp=${encodeURIComponent(s.code)}` : ''}`);
   const rows = useMemo(() => (lots.data ?? []).filter(l => !status || l.status === status), [lots.data, status]);
   const count = (s: LotStatus) => (lots.data ?? []).filter(l => l.status === s).length;
   const total = rows.filter(l => l.status === 'normal').reduce((s, l) => s + l.quantityOnHand, 0);
@@ -57,6 +60,7 @@ export function LotLookupPage({ role, basePath }: { role: 'manager' | 'staff'; b
           size={touch ? 'lg' : 'md'} label="Quét mã lô hoặc mã sản phẩm" placeholder="LOT-… hoặc SP-…" value={code}
           onChange={v => { setCode(v); if (scan.state === 'error') setScan({ state: 'idle', key: scan.key }); }}
           onSubmit={submitScan} state={scan.state} message={scan.message} scanKey={scan.key}
+          suggestions={lotSuggestions(suggest.data, code)} onPickSuggestion={s => openSuggestion(s.value as LotSuggestion | undefined)}
         />
         <div className="vb-row" style={{ gap: 12, alignItems: 'flex-end' }}>
           <SelectField

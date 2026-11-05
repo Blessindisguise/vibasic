@@ -142,6 +142,70 @@ public class ReceivingTests
     }
 
     [Fact]
+    public async Task Revoking_an_approval_removes_the_stock_and_reopens_the_abnormal_report()
+    {
+        await using var c = await Setup();
+        var r = await c.Receipts.CreateAsync(Input(c, Line(c.Board, 30, 2, "Nứt cạnh thớt")), c.Staff);
+        var before = Available(c, c.Board);
+        await c.Receipts.SubmitAsync(r.ReceiptId, c.Staff);
+        await Assert.ThrowsAsync<RuleException>(() => c.Receipts.RevokeAsync(r.ReceiptId, "Nhầm số lượng", c.Manager)); // not approved yet
+        await c.Receipts.ApproveAsync(r.ReceiptId, c.Manager);
+        var report = await c.Db.AbnormalReports.SingleAsync(a => a.ReceiptDetail.ReceiptId == r.ReceiptId);
+        await c.Reports.RejectAsync(report.ReportId, "Vết nứt nhỏ, vẫn bán được", c.Manager);
+        Assert.Equal(before + 30, Available(c, c.Board));
+
+        await Assert.ThrowsAsync<ValidationException>(() => c.Receipts.RevokeAsync(r.ReceiptId, "", c.Manager));
+        await c.Receipts.RevokeAsync(r.ReceiptId, "Nhầm số lượng thực nhận", c.Manager);
+        Assert.Equal(ReceiptStatus.Pending, r.Status);
+        Assert.Null(r.ApprovedBy);
+        Assert.All(r.Details, d => Assert.Equal(0, d.QuantityOnHand));
+        Assert.All(r.Details.SelectMany(d => d.Items), i => Assert.Equal(ItemStatus.Incoming, i.Status));
+        Assert.Equal(ApprovalStatus.Pending, report.Status);
+        Assert.Equal(LotStatus.Quarantined, report.ReceiptDetail.Status);
+        Assert.Equal(before, Available(c, c.Board));
+        Assert.Contains(c.Db.Notifications, n => n.UserId == c.Staff && n.Title.Contains("hủy duyệt"));
+
+        // Back to "Chờ duyệt": the manager can reject it for the staff to edit.
+        await c.Receipts.RejectAsync(r.ReceiptId, "Đếm lại số thực nhận", c.Manager);
+        await c.Receipts.UpdateAsync(r.ReceiptId, Input(c, Line(c.Board, 28, 2, "Nứt cạnh thớt")));
+    }
+
+    [Fact]
+    public async Task Approval_cannot_be_revoked_once_its_items_are_used()
+    {
+        await using var c = await Setup();
+        var r = await c.Receipts.CreateAsync(Input(c, Line(c.Ladle, 5)), c.Staff);
+        await c.Receipts.SubmitAsync(r.ReceiptId, c.Staff);
+        await c.Receipts.ApproveAsync(r.ReceiptId, c.Manager);
+        r.Details[0].Items[0].Status = ItemStatus.Reserved;
+        await c.Db.SaveChangesAsync();
+        var e = await Assert.ThrowsAsync<RuleException>(() => c.Receipts.RevokeAsync(r.ReceiptId, "Nhầm nhà cung cấp", c.Manager));
+        Assert.Contains("giữ chỗ", e.Message);
+        Assert.Equal(ReceiptStatus.Approved, r.Status);
+    }
+
+    [Fact]
+    public async Task Abnormal_report_decision_can_be_revoked_and_taken_again()
+    {
+        await using var c = await Setup();
+        var r = await c.Receipts.CreateAsync(Input(c, Line(c.Ladle, 10, 3, "Mốc cán vá")), c.Staff);
+        await c.Receipts.SubmitAsync(r.ReceiptId, c.Staff);
+        await c.Receipts.ApproveAsync(r.ReceiptId, c.Manager);
+        var report = await c.Db.AbnormalReports.SingleAsync(a => a.ReceiptDetail.ReceiptId == r.ReceiptId);
+        await Assert.ThrowsAsync<RuleException>(() => c.Reports.RevokeAsync(report.ReportId, "Xem lại lô", c.Manager)); // still pending
+
+        await c.Reports.ApproveAsync(report.ReportId, c.Manager);
+        Assert.Equal(LotStatus.Locked, report.ReceiptDetail.Status);
+        await c.Reports.RevokeAsync(report.ReportId, "Kiểm tra lại, lỗi nhẹ", c.Manager);
+        Assert.Equal(ApprovalStatus.Pending, report.Status);
+        Assert.Equal(LotStatus.Quarantined, report.ReceiptDetail.Status);
+
+        var before = Available(c, c.Ladle);
+        await c.Reports.RejectAsync(report.ReportId, "Lỗi nhẹ, vẫn bán được", c.Manager);
+        Assert.Equal(before + 3, Available(c, c.Ladle));
+    }
+
+    [Fact]
     public async Task Rejected_receipt_is_edited_and_resubmitted_keeping_unchanged_lots()
     {
         await using var c = await Setup();
@@ -182,5 +246,36 @@ public class ReceivingTests
         Assert.Single(r.Details);
         Assert.False(await c.Db.AbnormalReports.AnyAsync(a => a.ReceiptDetail.ReceiptId == r.ReceiptId));
         Assert.Equal(5, await c.Db.StockItems.CountAsync(i => i.ReceiptDetail.ReceiptId == r.ReceiptId));
+    }
+
+    // ---------------- N1 / N2 ----------------
+
+    [Fact]
+    public async Task Approved_receipt_fulfils_approved_proposals_and_keeps_the_delivery_note()
+    {
+        await using var c = await Setup();
+        var proposal = new ReplenishmentProposal
+        {
+            ProductId = c.Board.ProductId, ProposedQuantity = 120, OriginalQuantity = 120, EOQValue = 118.4m,
+            ProposalDate = Now.AddDays(-3), Status = ProposalStatus.Approved, ApprovedBy = c.Manager, ApprovedAt = Now.AddDays(-3),
+        };
+        c.Db.ReplenishmentProposals.Add(proposal);
+        await c.Db.SaveChangesAsync();
+
+        var tooLong = await Assert.ThrowsAsync<ValidationException>(() =>
+            c.Receipts.CreateAsync(Input(c, Line(c.Board, 120)) with { DeliveryNoteNo = new string('9', 51) }, c.Staff));
+        Assert.True(tooLong.Errors.ContainsKey("deliveryNoteNo"));
+        var r = await c.Receipts.CreateAsync(Input(c, Line(c.Board, 120)) with { DeliveryNoteNo = " PGH-00871 " }, c.Staff);
+        Assert.Equal("PGH-00871", r.DeliveryNoteNo);
+        await c.Receipts.SubmitAsync(r.ReceiptId, c.Staff);
+        Assert.Equal(ProposalStatus.Approved, proposal.Status); // only an approved receipt fulfils it
+
+        await c.Receipts.ApproveAsync(r.ReceiptId, c.Manager);
+        Assert.Equal(ProposalStatus.Received, proposal.Status);
+        Assert.Equal(r.ReceiptId, proposal.ReceiptId);
+
+        await c.Receipts.RevokeAsync(r.ReceiptId, "Nhầm nhà cung cấp", c.Manager);
+        Assert.Equal(ProposalStatus.Approved, proposal.Status);
+        Assert.Null(proposal.ReceiptId);
     }
 }

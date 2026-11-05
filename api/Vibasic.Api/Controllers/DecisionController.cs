@@ -29,7 +29,8 @@ public class DecisionController(VibasicDbContext db, ReplenishmentService replen
     public record OverviewRow(Basis Basis, StockState State, DateTime? AlertDate);
     public record AlertRow(int Id, Basis Basis, int CurrentQuantity, decimal RopValue, DateTime AlertDate, AlertStatus Status, DateTime? ClosedAt);
     public record ProposalRow(int Id, Basis Basis, int ProposedQuantity, int OriginalQuantity, decimal EoqValue, string? AdjustReason,
-        DateTime ProposalDate, ProposalStatus Status, Priority Priority, string? ApproverName, DateTime? ApprovedAt, string? RejectReason);
+        DateTime ProposalDate, ProposalStatus Status, Priority Priority, string? ApproverName, DateTime? ApprovedAt, string? RejectReason,
+        int? ReceiptId, string? ReceiptCode);
     public record Summary(int OpenAlerts, int PendingProposals, int Insufficient, DateTime? LastCalculatedAt);
     public record IdsInput(List<int>? Ids);
     public record AdjustInput(int? Quantity, string? Reason);
@@ -73,10 +74,10 @@ public class DecisionController(VibasicDbContext db, ReplenishmentService replen
     {
         var list = await (status is null ? db.ReplenishmentProposals : db.ReplenishmentProposals.Where(r => r.Status == status))
             .OrderByDescending(r => r.ProposalDate).Take(500)
-            .Select(r => new { r, Approver = r.Approver != null ? r.Approver.FullName : null })
+            .Select(r => new { r, Approver = r.Approver != null ? r.Approver.FullName : null, ReceiptCode = r.Receipt != null ? r.Receipt.Code : null })
             .ToListAsync();
         var bases = await BasesAsync(list.Select(x => x.r.ProductId).ToList());
-        return list.Select(x => ToRow(x.r, bases[x.r.ProductId], x.Approver)).ToList();
+        return list.Select(x => ToRow(x.r, bases[x.r.ProductId], x.Approver, x.ReceiptCode)).ToList();
     }
 
     [HttpPost("~/api/proposals/approve")]
@@ -91,13 +92,13 @@ public class DecisionController(VibasicDbContext db, ReplenishmentService replen
     private async Task<ProposalRow> Row(int id)
     {
         var x = await db.ReplenishmentProposals.Where(r => r.ProposalId == id)
-            .Select(r => new { r, Approver = r.Approver != null ? r.Approver.FullName : null }).SingleAsync();
-        return ToRow(x.r, (await BasesAsync([x.r.ProductId]))[x.r.ProductId], x.Approver);
+            .Select(r => new { r, Approver = r.Approver != null ? r.Approver.FullName : null, ReceiptCode = r.Receipt != null ? r.Receipt.Code : null }).SingleAsync();
+        return ToRow(x.r, (await BasesAsync([x.r.ProductId]))[x.r.ProductId], x.Approver, x.ReceiptCode);
     }
 
-    private static ProposalRow ToRow(ReplenishmentProposal r, Basis b, string? approver) => new(
+    private static ProposalRow ToRow(ReplenishmentProposal r, Basis b, string? approver, string? receiptCode) => new(
         r.ProposalId, b, r.ProposedQuantity, r.OriginalQuantity, r.EOQValue, r.AdjustReason, r.ProposalDate, r.Status,
-        b.Available <= b.SafetyStock ? Priority.Urgent : Priority.Order, approver, r.ApprovedAt, r.RejectReason);
+        b.Available <= b.SafetyStock ? Priority.Urgent : Priority.Order, approver, r.ApprovedAt, r.RejectReason, r.ReceiptId, receiptCode);
 
     private static StockState StateOf(Basis b) =>
         b.Rop is null ? StockState.Insufficient : b.Available <= b.Rop ? StockState.Alert : b.Available <= b.Rop * 1.2m ? StockState.Watch : StockState.Ok;

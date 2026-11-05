@@ -23,6 +23,7 @@ import { StocktakeDetail } from '../features/stocktake/StocktakeDetail';
 import { StaffStocktakeHome } from '../features/staff/stocktake/StaffStocktakeHome';
 import { CountingPage } from '../features/staff/stocktake/CountingPage';
 import { AbnormalReportsPage } from '../features/abnormal/AbnormalReportsPage';
+import { ReportDetail } from '../features/abnormal/ReportDetail';
 import { AlertsPage } from '../features/decision/AlertsPage';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
 import { ReportsPage } from '../features/reports/ReportsPage';
@@ -87,6 +88,13 @@ const stocktakeScreen = (role: Role, base: string): Screen => ([first, second]) 
   return role === 'staff' && planId ? <CountingPage key={planId} planId={planId} /> : <Navigate to={base} replace />;
 };
 
+/** /ql/bat-thuong or /kho/bao-loi, and /:reportId. */
+const reportScreen = (role: Role, base: string): Screen => ([first]) => {
+  if (!first) return <AbnormalReportsPage role={role} basePath={base} />;
+  const id = positiveId(first);
+  return id ? <ReportDetail key={id} id={id} role={role} basePath={base} /> : <Navigate to={base} replace />;
+};
+
 const MANAGER_SCREENS: Record<string, Screen> = {
   'tong-quan': () => <DashboardPage />,
   'bao-cao': () => <ReportsPage />,
@@ -95,7 +103,7 @@ const MANAGER_SCREENS: Record<string, Screen> = {
   'de-xuat': () => <ProposalsPage />,
   'lo-hang': lotScreen('manager', '/ql/lo-hang'),
   'kiem-ke': stocktakeScreen('manager', '/ql/kiem-ke'),
-  'bat-thuong': () => <AbnormalReportsPage role="manager" />,
+  'bat-thuong': reportScreen('manager', '/ql/bat-thuong'),
   'nhap-kho': receiptScreen('manager', '/ql/nhap-kho'),
   'xuat-kho': issueScreen('manager', '/ql/xuat-kho'),
   'hang-hoa': () => <ProductsPage />,
@@ -108,7 +116,7 @@ const STAFF_SCREENS: Record<string, Screen> = {
   'nhap-kho': receiptScreen('staff', '/kho/nhap-kho'),
   'tra-cuu': lotScreen('staff', '/kho/tra-cuu'),
   'kiem-ke': stocktakeScreen('staff', '/kho/kiem-ke'),
-  'bao-loi': () => <AbnormalReportsPage role="staff" />,
+  'bao-loi': reportScreen('staff', '/kho/bao-loi'),
 };
 
 function ManagerPage() {

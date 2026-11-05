@@ -100,6 +100,30 @@ public class IssuingTests
     }
 
     [Fact]
+    public async Task Revoked_issue_returns_to_pending_keeping_its_items_until_delivery()
+    {
+        await using var c = await Setup();
+        var order = await c.Order("DH-T-09", ("DUA-02", 4));
+        var issue = await c.Issues.CreateAsync(order.OrderId, c.Staff);
+        await Assert.ThrowsAsync<RuleException>(() => c.Issues.RevokeAsync(issue.IssueId, "Khách hoãn", c.Manager)); // not approved
+        await c.Issues.ApproveAsync(issue.IssueId, c.Manager);
+        var items = c.ItemsOf(issue);
+        await c.Issues.ScanAsync(issue.IssueId, items[0].SerialCode);
+
+        await c.Issues.RevokeAsync(issue.IssueId, "Khách hoãn ngày nhận", c.Manager);
+        Assert.Equal(IssueStatus.Pending, issue.Status);
+        Assert.Null(issue.ApprovedBy);
+        Assert.Equal(OrderStatus.InProgress, order.Status);
+        Assert.All(c.ItemsOf(issue), i => Assert.Equal(ItemStatus.Reserved, i.Status));
+        await Assert.ThrowsAsync<RuleException>(() => c.Issues.ScanAsync(issue.IssueId, items[1].SerialCode)); // picking paused
+
+        await c.Issues.ApproveAsync(issue.IssueId, c.Manager);
+        foreach (var item in items) await c.Issues.ScanAsync(issue.IssueId, item.SerialCode);
+        await c.Issues.DeliverAsync(issue.IssueId, "Chị Mai", c.Staff);
+        await Assert.ThrowsAsync<RuleException>(() => c.Issues.RevokeAsync(issue.IssueId, "Quá muộn", c.Manager)); // delivered
+    }
+
+    [Fact]
     public async Task Picking_validates_scans_then_delivery_deducts_each_lot()
     {
         await using var c = await Setup();
@@ -112,7 +136,10 @@ public class IssuingTests
         var locked = await c.Db.StockItems.FirstAsync(i => i.ReceiptDetail.Status == LotStatus.Locked);
         var e = await Assert.ThrowsAsync<RuleException>(() => c.Issues.ScanAsync(issue.IssueId, locked.SerialCode));
         Assert.Contains("Đã khóa", e.Message);
-        var notOnIssue = await c.Db.StockItems.FirstAsync(i => i.Status == ItemStatus.InStock && i.ReceiptDetail.Product.SKU == "THT-01" && i.ReceiptDetail.Status == LotStatus.Normal);
+        // A newer lot than any on the pick list: out of FIFO order (same-lot items are interchangeable, see Same_lot_scan_*).
+        var pickLots = reserved.Select(i => i.ReceiptDetailId).Distinct().ToList();
+        var notOnIssue = await c.Db.StockItems.FirstAsync(i => i.Status == ItemStatus.InStock && i.ReceiptDetail.Product.SKU == "THT-01"
+            && i.ReceiptDetail.Status == LotStatus.Normal && i.ReceiptDetail.Receipt.Status == ReceiptStatus.Approved && !pickLots.Contains(i.ReceiptDetailId));
         e = await Assert.ThrowsAsync<RuleException>(() => c.Issues.ScanAsync(issue.IssueId, notOnIssue.SerialCode));
         Assert.Contains("FIFO", e.Message);
 
@@ -201,5 +228,53 @@ public class IssuingTests
         await c.Order("DH-T-08", ("THT-01", 1));
         e = await Assert.ThrowsAsync<ValidationException>(() => c.Order("dh-t-08", ("THT-01", 1)));
         Assert.True(e.Errors.ContainsKey("externalCode"));
+    }
+
+    // ---------------- X1: same-lot items are interchangeable when picking ----------------
+
+    [Fact]
+    public async Task Same_lot_scan_takes_a_free_item_in_place_of_a_reserved_one()
+    {
+        await using var c = await Setup();
+        var order = await c.Order("DH-X1-01", ("DUA-02", 3));
+        var issue = await c.Issues.CreateAsync(order.OrderId, c.Staff);
+        await c.Issues.ApproveAsync(issue.IssueId, c.Manager);
+        var reserved = c.ItemsOf(issue);
+        var lotId = reserved[0].ReceiptDetailId;
+        var free = await c.Db.StockItems.FirstAsync(i => i.ReceiptDetailId == lotId && i.Status == ItemStatus.InStock && i.IssueDetailId == null);
+
+        var r = await c.Issues.ScanAsync(issue.IssueId, free.SerialCode);
+        Assert.NotNull(r.ReplacedSerial);
+        Assert.Equal((1, 3), (r.Picked, r.Total));
+        var now = c.ItemsOf(issue);
+        Assert.Equal(3, now.Count);
+        Assert.Contains(now, i => i.ItemId == free.ItemId && i.PickedAt != null && i.Status == ItemStatus.Reserved);
+        var released = await c.Db.StockItems.SingleAsync(i => i.SerialCode == r.ReplacedSerial);
+        Assert.Equal(ItemStatus.InStock, released.Status);
+        Assert.Null(released.IssueDetailId);
+    }
+
+    [Fact]
+    public async Task Same_lot_scan_trades_items_with_another_issue_that_has_not_picked_them()
+    {
+        await using var c = await Setup();
+        var a = await c.Issues.CreateAsync((await c.Order("DH-X1-02", ("DUA-02", 2))).OrderId, c.Staff);
+        var b = await c.Issues.CreateAsync((await c.Order("DH-X1-03", ("DUA-02", 2))).OrderId, c.Staff);
+        await c.Issues.ApproveAsync(a.IssueId, c.Manager);
+        var fromB = c.ItemsOf(b);
+        var sameLot = fromB.First(i => c.ItemsOf(a).Any(x => x.ReceiptDetailId == i.ReceiptDetailId));
+
+        var r = await c.Issues.ScanAsync(a.IssueId, sameLot.SerialCode);
+        Assert.NotNull(r.ReplacedSerial);
+        Assert.Equal(2, c.ItemsOf(a).Count);
+        Assert.Contains(c.ItemsOf(a), i => i.ItemId == sameLot.ItemId);
+        var bNow = c.ItemsOf(b);
+        Assert.Equal(2, bNow.Count);
+        Assert.Contains(bNow, i => i.SerialCode == r.ReplacedSerial && i.Status == ItemStatus.Reserved && i.PickedAt == null);
+
+        // Once scanned for A it cannot be taken again by B.
+        await c.Issues.ApproveAsync(b.IssueId, c.Manager);
+        var e = await Assert.ThrowsAsync<RuleException>(() => c.Issues.ScanAsync(b.IssueId, sameLot.SerialCode));
+        Assert.Contains("phiếu xuất khác", e.Message);
     }
 }

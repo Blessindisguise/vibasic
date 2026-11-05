@@ -9,7 +9,8 @@ namespace Vibasic.Infrastructure.Receiving;
 /// <param name="Note">Ghi chú chênh lệch so với chứng từ.</param>
 /// <param name="DefectDescription">Mô tả lỗi; becomes the abnormal report of the quarantined lot at submission (UC_05 step 3).</param>
 public record ReceiptLineInput(int? ProductId, int? ReceivedQuantity, int? FailedQuantity, int? DocumentQuantity, string? Note, string? DefectDescription);
-public record ReceiptInput(int? SupplierId, string? Note, List<ReceiptLineInput>? Lines);
+/// <param name="DeliveryNoteNo">Số chứng từ giao hàng của nhà cung cấp (N2).</param>
+public record ReceiptInput(int? SupplierId, string? Note, List<ReceiptLineInput>? Lines, string? DeliveryNoteNo = null);
 
 /// <summary>
 /// Goods receipt workflow: UC_04 (lập phiếu, tạo lô và mã định danh), UC_05 (xác nhận, gửi duyệt) and the receipt half of UC_10.
@@ -31,12 +32,12 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
 
     public async Task<GoodsReceipt> CreateAsync(ReceiptInput input, int userId)
     {
-        var (supplierId, note, lines) = await ValidateAsync(input);
+        var (supplierId, note, deliveryNote, lines) = await ValidateAsync(input);
         var now = clock.UtcNow;
         var receipt = new GoodsReceipt
         {
             Code = await codes.NextDocumentAsync(CodeGenerator.Receipt, now), SupplierId = supplierId, ReceiptDate = now,
-            CreatedBy = userId, Status = ReceiptStatus.Receiving, Note = note,
+            CreatedBy = userId, Status = ReceiptStatus.Receiving, Note = note, DeliveryNoteNo = deliveryNote,
         };
         foreach (var line in lines) await AddLotsAsync(receipt, line, now);
         db.GoodsReceipts.Add(receipt);
@@ -52,10 +53,11 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
     {
         var receipt = await LoadAsync(id);
         EnsureEditable(receipt);
-        var (supplierId, note, lines) = await ValidateAsync(input);
+        var (supplierId, note, deliveryNote, lines) = await ValidateAsync(input);
         var now = clock.UtcNow;
         receipt.SupplierId = supplierId;
         receipt.Note = note;
+        receipt.DeliveryNoteNo = deliveryNote;
 
         var reports = await db.AbnormalReports.Where(a => a.ReceiptDetail.ReceiptId == id).ToListAsync();
         var old = receipt.Details.GroupBy(d => d.ProductId).ToDictionary(g => g.Key, g => g.ToList());
@@ -136,6 +138,13 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
         receipt.Status = ReceiptStatus.Approved;
         receipt.ApprovedBy = managerId;
         receipt.ApprovedAt = clock.UtcNow;
+        // N1: approved replenishment proposals for these products are now fulfilled.
+        var products = receipt.Details.Where(d => d.Status == LotStatus.Normal).Select(d => d.ProductId).Distinct().ToList();
+        foreach (var p in await db.ReplenishmentProposals.Where(r => r.Status == ProposalStatus.Approved && products.Contains(r.ProductId)).ToListAsync())
+        {
+            p.Status = ProposalStatus.Received;
+            p.Receipt = receipt;
+        }
         notify.ToUser(receipt.CreatedBy, $"Phiếu nhập {receipt.Code} đã được duyệt",
             $"Đã ghi nhận tồn kho {receipt.Details.Where(d => d.Status == LotStatus.Normal).Sum(d => d.Quantity)} sản phẩm.",
             $"/kho/nhap-kho/{id}", Notifier.Success);
@@ -148,11 +157,7 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
     {
         var receipt = await LoadAsync(id);
         EnsurePending(receipt);
-        var text = Catalog.CatalogService.Clean(reason);
-        new Validator()
-            .Check(text is { Length: >= MinReasonLength }, "reason", $"Bắt buộc nhập lý do (tối thiểu {MinReasonLength} ký tự).")
-            .Check(text is null || text.Length <= 255, "reason", "Lý do tối đa 255 ký tự.")
-            .ThrowIfAny();
+        var text = RequireReason(reason);
         receipt.Status = ReceiptStatus.Rejected;
         receipt.RejectReason = text;
         receipt.ApprovedBy = managerId;
@@ -163,7 +168,68 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
         return receipt;
     }
 
+    /// <summary>
+    /// Hủy duyệt: the manager takes an approval back while the stock it recorded is untouched (no item reserved, issued, counted or
+    /// adjusted). Stock is removed again, the abnormal reports of the receipt return to "Chờ duyệt" with their lots "Tạm cách ly",
+    /// and the receipt goes back to "Chờ duyệt" so it can be approved again or rejected for the staff to edit.
+    /// </summary>
+    public async Task<GoodsReceipt> RevokeAsync(int id, string? reason, int managerId)
+    {
+        var receipt = await LoadAsync(id);
+        if (receipt.Status != ReceiptStatus.Approved)
+            throw new RuleException($"Phiếu {receipt.Code} đang ở trạng thái “{Labels<ReceiptStatus>.ToLabel(receipt.Status)}”, chưa duyệt nên không có gì để hủy.");
+        var text = RequireReason(reason);
+        var lotIds = receipt.Details.Select(d => d.ReceiptDetailId).ToList();
+        var used = receipt.Details.FirstOrDefault(d => d.QuantityOnHand != d.Quantity
+            || d.Items.Any(i => i.Status != ItemStatus.InStock || i.IssueDetailId != null));
+        if (used is not null)
+            throw new RuleException($"Hàng của lô {used.LotCode} đã được giữ chỗ, xuất kho hoặc điều chỉnh, nên không hủy duyệt phiếu {receipt.Code} được.");
+        if (await db.StocktakePlanDetails.AnyAsync(p => lotIds.Contains(p.ReceiptDetailId))
+            || await db.StocktakeDetails.AnyAsync(s => lotIds.Contains(s.ReceiptDetailId)))
+            throw new RuleException($"Lô của phiếu {receipt.Code} đã nằm trong kế hoạch kiểm kê, không hủy duyệt được.");
+        var reports = await db.AbnormalReports.Where(a => lotIds.Contains(a.ReceiptDetailId)).ToListAsync();
+        if (reports.Any(a => a.SourceType != AbnormalSource.Receipt))
+            throw new RuleException($"Lô của phiếu {receipt.Code} đã có biên bản bất thường phát sinh sau khi nhập, không hủy duyệt được.");
+
+        foreach (var report in reports)
+        {
+            report.Status = ApprovalStatus.Pending;
+            report.RejectReason = null;
+            report.ApprovedBy = null;
+            report.ApprovedAt = null;
+            receipt.Details.Single(d => d.ReceiptDetailId == report.ReceiptDetailId).Status = LotStatus.Quarantined;
+        }
+        foreach (var lot in receipt.Details)
+        {
+            lot.QuantityOnHand = 0;
+            foreach (var item in lot.Items) item.Status = ItemStatus.Incoming;
+        }
+        foreach (var p in await db.ReplenishmentProposals.Where(r => r.ReceiptId == id).ToListAsync())
+        {
+            p.Status = ProposalStatus.Approved;
+            p.ReceiptId = null;
+        }
+        receipt.Status = ReceiptStatus.Pending;
+        receipt.ApprovedBy = null;
+        receipt.ApprovedAt = null;
+        notify.ToUser(receipt.CreatedBy, $"Phiếu nhập {receipt.Code} đã bị hủy duyệt",
+            $"Lý do: {text}. Tồn kho của phiếu chưa được tính; phiếu chờ quản lý duyệt lại.", $"/kho/nhap-kho/{id}", Notifier.Warning);
+        await db.SaveChangesAsync();
+        await replenish.CheckAsync(receipt.Details.Select(d => d.ProductId));
+        return receipt;
+    }
+
     // ---------------- helpers ----------------
+
+    private static string RequireReason(string? reason)
+    {
+        var text = Catalog.CatalogService.Clean(reason);
+        new Validator()
+            .Check(text is { Length: >= MinReasonLength }, "reason", $"Bắt buộc nhập lý do (tối thiểu {MinReasonLength} ký tự).")
+            .Check(text is null || text.Length <= 255, "reason", "Lý do tối đa 255 ký tự.")
+            .ThrowIfAny();
+        return text!;
+    }
 
     private async Task<GoodsReceipt> LoadAsync(int id) =>
         await db.GoodsReceipts
@@ -184,10 +250,12 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
             throw new RuleException($"Phiếu {r.Code} đang ở trạng thái “{Labels<ReceiptStatus>.ToLabel(r.Status)}”, không còn chờ duyệt.");
     }
 
-    private async Task<(int supplierId, string? note, List<Line> lines)> ValidateAsync(ReceiptInput input)
+    private async Task<(int supplierId, string? note, string? deliveryNote, List<Line> lines)> ValidateAsync(ReceiptInput input)
     {
         var v = new Validator();
         var note = Catalog.CatalogService.Clean(input.Note);
+        var deliveryNote = Catalog.CatalogService.Clean(input.DeliveryNoteNo);
+        v.Check(deliveryNote is null || deliveryNote.Length <= 50, "deliveryNoteNo", "Số chứng từ tối đa 50 ký tự.");
         v.Check(input.SupplierId is not null, "supplierId", "Chọn nhà cung cấp.");
         if (input.SupplierId is not null && !await db.Suppliers.AnyAsync(s => s.SupplierId == input.SupplierId))
             v.Check(false, "supplierId", "Nhà cung cấp không còn trong danh mục.");
@@ -229,7 +297,7 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
                 lines.Add(new Line(product, passed, failed, l.DocumentQuantity == received ? null : l.DocumentQuantity, lineNote, defect));
         }
         v.ThrowIfAny();
-        return (input.SupplierId!.Value, note, lines);
+        return (input.SupplierId!.Value, note, deliveryNote, lines);
     }
 
     private async Task AddLotsAsync(GoodsReceipt receipt, Line line, DateTime now)

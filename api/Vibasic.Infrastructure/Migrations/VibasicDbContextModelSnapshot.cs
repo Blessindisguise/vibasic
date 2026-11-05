@@ -207,6 +207,10 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<int>("CreatedBy")
                         .HasColumnType("int");
 
+                    b.Property<string>("DeliveryNoteNo")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<string>("Note")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
@@ -546,6 +550,9 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<int>("ProposedQuantity")
                         .HasColumnType("int");
 
+                    b.Property<int?>("ReceiptId")
+                        .HasColumnType("int");
+
                     b.Property<string>("RejectReason")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
@@ -558,6 +565,8 @@ namespace Vibasic.Infrastructure.Migrations
                     b.HasKey("ProposalId");
 
                     b.HasIndex("ApprovedBy");
+
+                    b.HasIndex("ReceiptId");
 
                     b.HasIndex("ProductId", "Status");
 
@@ -701,6 +710,16 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<int>("ActualQuantity")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("CountedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Nhập số");
+
                     b.Property<string>("Reason")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
@@ -714,6 +733,9 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<int>("SystemQuantity")
                         .HasColumnType("int");
 
+                    b.Property<int>("UnlabeledQuantity")
+                        .HasColumnType("int");
+
                     b.HasKey("DetailId");
 
                     b.HasIndex("ReceiptDetailId");
@@ -721,6 +743,30 @@ namespace Vibasic.Infrastructure.Migrations
                     b.HasIndex("StocktakeId");
 
                     b.ToTable("StocktakeDetail", (string)null);
+                });
+
+            modelBuilder.Entity("Vibasic.Domain.StocktakeItem", b =>
+                {
+                    b.Property<int>("StocktakeItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("StocktakeItemId"));
+
+                    b.Property<int>("DetailId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("int");
+
+                    b.HasKey("StocktakeItemId");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("DetailId", "ItemId")
+                        .IsUnique();
+
+                    b.ToTable("StocktakeItem", (string)null);
                 });
 
             modelBuilder.Entity("Vibasic.Domain.StocktakePlan", b =>
@@ -1058,9 +1104,16 @@ namespace Vibasic.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Vibasic.Domain.GoodsReceipt", "Receipt")
+                        .WithMany()
+                        .HasForeignKey("ReceiptId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Approver");
 
                     b.Navigation("Product");
+
+                    b.Navigation("Receipt");
                 });
 
             modelBuilder.Entity("Vibasic.Domain.StockAlert", b =>
@@ -1137,6 +1190,25 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Navigation("Stocktake");
                 });
 
+            modelBuilder.Entity("Vibasic.Domain.StocktakeItem", b =>
+                {
+                    b.HasOne("Vibasic.Domain.StocktakeDetail", "Detail")
+                        .WithMany("Items")
+                        .HasForeignKey("DetailId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Vibasic.Domain.StockItem", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Detail");
+
+                    b.Navigation("Item");
+                });
+
             modelBuilder.Entity("Vibasic.Domain.StocktakePlan", b =>
                 {
                     b.HasOne("Vibasic.Domain.User", "Creator")
@@ -1200,6 +1272,11 @@ namespace Vibasic.Infrastructure.Migrations
             modelBuilder.Entity("Vibasic.Domain.Stocktake", b =>
                 {
                     b.Navigation("Details");
+                });
+
+            modelBuilder.Entity("Vibasic.Domain.StocktakeDetail", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("Vibasic.Domain.StocktakePlan", b =>

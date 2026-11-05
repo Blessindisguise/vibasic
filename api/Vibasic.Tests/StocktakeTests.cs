@@ -165,4 +165,109 @@ public class StocktakeTests
         var s = await c.Stocktakes.SubmitAsync(plan.PlanId, Ctx.Counts((lot, lot.QuantityOnHand, null)), c.Staff);
         Assert.Equal(ApprovalStatus.Pending, s.Status);
     }
+    // ---------------- K1 / K2 / K4 ----------------
+
+    /// <summary>Order <paramref name="qty"/> of the lot's product, approve, and scan every item (PickedAt = Now).</summary>
+    private static async Task<GoodsIssue> PickFrom(Ctx c, GoodsReceiptDetail lot, string sku, int qty, string code)
+    {
+        var order = await c.Issues.RecordOrderAsync(new OrderInput(code, null, null, [new(sku, qty)]));
+        var issue = await c.Issues.CreateAsync(order.OrderId, c.Staff);
+        await c.Issues.ApproveAsync(issue.IssueId, c.Manager);
+        var items = await c.Db.StockItems.Where(i => i.IssueDetail!.IssueId == issue.IssueId).ToListAsync();
+        Assert.All(items, i => Assert.Equal(lot.ReceiptDetailId, i.ReceiptDetailId)); // oldest lot first (FIFO)
+        foreach (var i in items) await c.Issues.ScanAsync(issue.IssueId, i.SerialCode);
+        return issue;
+    }
+
+    [Fact]
+    public async Task System_quantity_is_the_shelf_at_counting_time_not_at_submission()
+    {
+        await using var c = await Setup();
+        var lot = c.Lot("DUA-02");
+        var counted = lot.Items.Count(i => StocktakeService.OnShelfAt(i, Now.AddHours(-1)));
+        var plan = await c.Plan(lot);
+
+        // Counted an hour ago; since then 4 items were picked and delivered from the lot.
+        var issue = await PickFrom(c, lot, "DUA-02", 4, "DH-K1-01");
+        await c.Issues.DeliverAsync(issue.IssueId, "Anh Bình", c.Staff);
+        Assert.Equal(counted - 4, lot.QuantityOnHand);
+
+        var s = await c.Stocktakes.SubmitAsync(plan.PlanId,
+            new StocktakeInput([new CountInput(lot.ReceiptDetailId, counted, null, Now.AddHours(-1))]), c.Staff);
+        var d = Assert.Single(s.Details);
+        Assert.Equal(counted, d.SystemQuantity); // before K1: QOH at submission, a false surplus of 4
+        Assert.Equal(d.SystemQuantity, d.ActualQuantity);
+        await c.Stocktakes.ApproveAsync(s.StocktakeId, c.Manager);
+        Assert.Equal(counted - 4, lot.QuantityOnHand);
+        AssertConsistent(lot);
+    }
+
+    [Fact]
+    public async Task Items_scanned_for_an_issue_are_off_the_shelf_and_never_written_off()
+    {
+        await using var c = await Setup();
+        var lot = c.Lot("DUA-02");
+        var issue = await PickFrom(c, lot, "DUA-02", 3, "DH-K2-01"); // in the staging area, not delivered
+        var plan = await c.Plan(lot);
+        var sheet = Assert.Single(await c.Stocktakes.SheetAsync(plan.PlanId));
+        Assert.Equal(3, sheet.Picking);
+        Assert.Equal(lot.QuantityOnHand - 3, sheet.ShelfQuantity);
+
+        // The counter finds one fewer than the shelf should hold.
+        var s = await c.Stocktakes.SubmitAsync(plan.PlanId, Ctx.Counts((lot, sheet.ShelfQuantity - 1, "Thiếu một hộp trên kệ")), c.Staff);
+        Assert.Equal(sheet.ShelfQuantity, s.Details[0].SystemQuantity);
+        await c.Stocktakes.ApproveAsync(s.StocktakeId, c.Manager);
+
+        Assert.Equal(1, lot.Items.Count(i => i.Status == ItemStatus.Lost));
+        var picked = await c.Db.StockItems.Where(i => i.IssueDetail!.IssueId == issue.IssueId).ToListAsync();
+        Assert.Equal(3, picked.Count);
+        Assert.All(picked, i => Assert.True(i.Status == ItemStatus.Reserved && i.PickedAt != null));
+        AssertConsistent(lot);
+    }
+
+    [Fact]
+    public async Task Scanned_count_writes_off_exactly_the_missing_items()
+    {
+        await using var c = await Setup();
+        var lot = c.Lot("KHA-02");
+        var shelf = lot.Items.Where(i => i.Status == ItemStatus.InStock).OrderBy(i => i.SerialCode).ToList();
+        var missing = shelf.Skip(3).Take(2).ToList();          // two labels not found
+        var lostBefore = shelf[0];                              // written off earlier, found again now
+        lostBefore.Status = ItemStatus.Lost;
+        lot.QuantityOnHand -= 1;
+        await c.Db.SaveChangesAsync();
+        var q0 = lot.QuantityOnHand;
+        var plan = await c.Plan(lot);
+        var serials = shelf.Except(missing).Select(i => i.SerialCode.ToLower()).ToList(); // includes the lost one
+
+        var bad = await Assert.ThrowsAsync<ValidationException>(() => c.Stocktakes.SubmitAsync(plan.PlanId,
+            new StocktakeInput([new CountInput(lot.ReceiptDetailId, null, "Quét lại", null, [.. serials, "SP-XXX-0000-0001"], 0)]), c.Staff));
+        Assert.Contains("SP-XXX-0000-0001", bad.Errors[$"counts[{lot.ReceiptDetailId}].serials"]);
+
+        var s = await c.Stocktakes.SubmitAsync(plan.PlanId,
+            new StocktakeInput([new CountInput(lot.ReceiptDetailId, null, "Thiếu 2 tem, 1 cái mất tem", null, serials, 1)]), c.Staff);
+        var d = Assert.Single(s.Details);
+        Assert.Equal(CountMethod.Scan, d.Method);
+        Assert.Equal(serials.Count + 1, d.ActualQuantity);
+        Assert.Equal(q0, d.SystemQuantity);
+
+        await c.Stocktakes.ApproveAsync(s.StocktakeId, c.Manager);
+        Assert.Equal(missing.Select(i => i.ItemId).Order(), lot.Items.Where(i => i.Status == ItemStatus.Lost).Select(i => i.ItemId).Order());
+        Assert.Equal(ItemStatus.InStock, lostBefore.Status);
+        Assert.Single(lot.Items, i => i.SerialCode.Contains("-2611-"));
+        Assert.Equal(q0 - 2 + 1 + 1, lot.QuantityOnHand);
+        AssertConsistent(lot);
+    }
+
+    [Fact]
+    public async Task A_lot_waiting_in_one_stocktake_cannot_be_submitted_in_another()
+    {
+        await using var c = await Setup();
+        var lot = c.Lot("THT-03");
+        var p1 = await c.Plan(lot);
+        var p2 = await c.Plan(lot);
+        await c.Stocktakes.SubmitAsync(p1.PlanId, Ctx.Counts((lot, lot.QuantityOnHand, null)), c.Staff);
+        var e = await Assert.ThrowsAsync<RuleException>(() => c.Stocktakes.SubmitAsync(p2.PlanId, Ctx.Counts((lot, lot.QuantityOnHand, null)), c.Staff));
+        Assert.Contains(lot.LotCode, e.Message);
+    }
 }

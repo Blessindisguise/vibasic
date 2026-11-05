@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { AlertBanner, Button, DataTable, EmptyState, FilterBar, SelectField, TextField, type DataTableColumn } from '../../../design';
 import { fmt, fmtDateTime } from '../../../app/format';
 import { matches, parseNumber } from '../../../app/text';
+import { suggestFrom } from '../../../app/suggest';
 import { FieldGrid, FormDialog } from '../../../app/Modal';
 import { useToast } from '../../../app/toast';
 import {
@@ -66,6 +67,8 @@ export function ProductsPage() {
       )}
       <FilterBar
         search={search} onSearchChange={setSearch} searchPlaceholder="Tìm theo mã SKU, tên hàng…"
+        suggestions={suggestFrom(products.data, search, p => [p.sku, p.name], p => ({ key: String(p.id), label: p.sku, hint: p.name, meta: `Khả dụng ${fmt(p.available)} ${p.unit}` }))}
+        onPickSuggestion={s => setSearch(s.label)}
         filters={[
           { key: 'category', label: 'Nhóm hàng', value: categoryId, options: (categories.data ?? []).map(c => ({ value: String(c.id), label: c.name })) },
           { key: 'supplier', label: 'Nhà cung cấp', value: supplierId, options: (suppliers.data ?? []).map(s => ({ value: String(s.id), label: s.name })) },

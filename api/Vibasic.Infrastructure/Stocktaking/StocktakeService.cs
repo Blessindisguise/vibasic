@@ -6,13 +6,19 @@ using Vibasic.Infrastructure.Issuing;
 namespace Vibasic.Infrastructure.Stocktaking;
 
 public record PlanInput(StocktakePlanType? PlanType, StocktakeScope? ScopeType, DateOnly? PlannedDate, List<int>? LotIds, string? Note);
-public record CountInput(int? ReceiptDetailId, int? ActualQuantity, string? Reason);
+/// <param name="CountedAt">When the lot was counted on the device; the system quantity is taken at that moment (K1).</param>
+/// <param name="Serials">Counted by scanning: the item codes found on the shelf (K4). Null when the count was typed in.</param>
+/// <param name="Unlabeled">Counted by scanning: items found without a readable label.</param>
+public record CountInput(int? ReceiptDetailId, int? ActualQuantity, string? Reason, DateTime? CountedAt = null, List<string>? Serials = null, int? Unlabeled = null);
 public record StocktakeInput(List<CountInput>? Counts);
 public record StockDefectInput(int? ReceiptDetailId, int? Quantity, string? Description);
 
-/// <summary>One lot to count, with the quantity the system holds now (UC_14 step 2).</summary>
+/// <summary>
+/// One lot to count (UC_14 step 2). <paramref name="SystemQuantity"/> is the stock on hand; <paramref name="Picking"/> of it was
+/// already scanned for an issue and sits in the staging area, so the shelf should hold <paramref name="ShelfQuantity"/>.
+/// </summary>
 public record SheetLot(int ReceiptDetailId, string LotCode, int ProductId, string Sku, string ProductName, string Unit,
-    DateTime ReceivedDate, LotStatus Status, int SystemQuantity);
+    DateTime ReceivedDate, LotStatus Status, int SystemQuantity, int Picking, int ShelfQuantity);
 
 /// <summary>
 /// Stocktake workflow: UC_13 (kế hoạch), UC_14 (kiểm đếm, biên bản khi phát hiện lỗi), UC_15 (duyệt và điều chỉnh tồn).
@@ -75,47 +81,87 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
         var plan = await LoadPlanAsync(planId);
         return await ScopeLots(plan)
             .OrderBy(d => d.Product.SKU).ThenBy(d => d.Receipt.ReceiptDate).ThenBy(d => d.ReceiptDetailId)
-            .Select(d => new SheetLot(d.ReceiptDetailId, d.LotCode, d.ProductId, d.Product.SKU, d.Product.ProductName, d.Product.Unit,
-                d.Receipt.ReceiptDate, d.Status, d.QuantityOnHand))
+            .Select(d => new { d, Picking = d.Items.Count(i => i.Status == ItemStatus.Reserved && i.PickedAt != null) })
+            .Select(x => new SheetLot(x.d.ReceiptDetailId, x.d.LotCode, x.d.ProductId, x.d.Product.SKU, x.d.Product.ProductName, x.d.Product.Unit,
+                x.d.Receipt.ReceiptDate, x.d.Status, x.d.QuantityOnHand, x.Picking, x.d.QuantityOnHand - x.Picking))
             .ToListAsync();
     }
 
-    /// <summary>UC_14 steps 3–6: every lot in scope needs a count (3.2: not found → 0); a difference needs a reason (5.1).</summary>
+    /// <summary>
+    /// K1/K2: was the item on the shelf at <paramref name="at"/>? Items in stock (free or reserved) and items issued later count,
+    /// unless they had already been scanned for an issue by then (staging area or delivered). Lost and incoming items never count.
+    /// </summary>
+    public static bool OnShelfAt(StockItem i, DateTime at) =>
+        i.Status is ItemStatus.InStock or ItemStatus.Reserved or ItemStatus.Issued && (i.PickedAt is null || i.PickedAt > at);
+
+    /// <summary>On the shelf now, so it can still be written off: free, or reserved but not yet scanned.</summary>
+    private static bool OnShelfNow(StockItem i) => i.Status == ItemStatus.InStock || i.Status == ItemStatus.Reserved && i.PickedAt is null;
+
+    /// <summary>
+    /// UC_14 steps 3–6: every lot in scope needs a count (3.2: not found → 0); a difference needs a reason (5.1).
+    /// The system quantity of a lot is what its shelf held when it was counted (K1, K2). A lot counted by scanning (K4) records
+    /// the items found, so approval knows exactly which ones are missing.
+    /// </summary>
     public async Task<Stocktake> SubmitAsync(int planId, StocktakeInput input, int staffId)
     {
         var plan = await LoadPlanAsync(planId);
         EnsureWaiting(plan);
-        var lots = await ScopeLots(plan).Select(d => new { d.ReceiptDetailId, d.LotCode, d.QuantityOnHand }).ToListAsync();
+        var lots = await ScopeLots(plan).Include(d => d.Items).ToListAsync();
+        var lotIds = lots.Select(l => l.ReceiptDetailId).ToList();
+        var busy = await db.StocktakeDetails
+            .Where(d => lotIds.Contains(d.ReceiptDetailId) && d.Stocktake.Status == ApprovalStatus.Pending)
+            .Select(d => new { d.ReceiptDetail.LotCode, d.Stocktake.Code }).FirstOrDefaultAsync();
+        if (busy is not null)
+            throw new RuleException($"Lô {busy.LotCode} đang nằm trong phiếu kiểm kê {busy.Code} chờ duyệt. Chờ quản lý xử lý phiếu đó trước.");
         var counts = (input.Counts ?? []).Where(c => c.ReceiptDetailId is not null).GroupBy(c => c.ReceiptDetailId!.Value).ToDictionary(g => g.Key, g => g.Last());
+        var now = clock.UtcNow;
 
         var v = new Validator().Check(lots.Count > 0, "counts", "Kế hoạch không còn lô nào để kiểm.");
+        var rows = new List<StocktakeDetail>();
         foreach (var lot in lots)
         {
             var key = $"counts[{lot.ReceiptDetailId}]";
             counts.TryGetValue(lot.ReceiptDetailId, out var c);
+            // A count from the device is trusted back to 30 days; never in the future.
+            var at = c?.CountedAt is { } t && t <= now && t >= now.AddDays(-30) ? t : now;
+            var system = lot.Items.Count(i => OnShelfAt(i, at));
+            var found = new List<StockItem>();
+            int? actual = c?.ActualQuantity;
+            if (c?.Serials is { } serials)
+            {
+                var wanted = serials.Select(s => CatalogService.Clean(s)?.ToUpperInvariant()).OfType<string>().Distinct().ToList();
+                var bySerial = lot.Items.ToDictionary(i => i.SerialCode);
+                var foreign = wanted.Where(s => !bySerial.ContainsKey(s)).ToList();
+                found = wanted.Where(bySerial.ContainsKey).Select(s => bySerial[s]).ToList();
+                var gone = found.Where(i => !OnShelfAt(i, at) && i.Status != ItemStatus.Lost).Select(i => i.SerialCode).ToList();
+                v.Check(foreign.Count == 0, key + ".serials", $"Không thuộc lô {lot.LotCode}: {string.Join(", ", foreign.Take(5))}{(foreign.Count > 5 ? "…" : "")}. Bỏ các mã này ra khỏi số đếm.")
+                 .Check(gone.Count == 0, key + ".serials", $"Đã lấy cho phiếu xuất hoặc đã xuất trước lúc đếm: {string.Join(", ", gone.Take(5))}. Bỏ các mã này ra khỏi số đếm.")
+                 .Check(c.Unlabeled is null or >= 0 and <= 100_000, key + ".unlabeled", "Số sản phẩm không có tem không hợp lệ.");
+                actual = found.Count + (c.Unlabeled ?? 0);
+            }
             var reason = CatalogService.Clean(c?.Reason);
-            v.Check(c?.ActualQuantity is >= 0 and <= 100_000, key + ".actualQuantity", $"Nhập số thực tế của lô {lot.LotCode} (không tìm thấy lô thì nhập 0).")
-             .Check(c?.ActualQuantity is null || c.ActualQuantity == lot.QuantityOnHand || reason is { Length: >= MinReason }, key + ".reason",
+            v.Check(actual is >= 0 and <= 100_000, key + ".actualQuantity", $"Nhập số thực tế của lô {lot.LotCode} (không tìm thấy lô thì nhập 0).")
+             .Check(actual is null || actual == system || reason is { Length: >= MinReason }, key + ".reason",
                  $"Lô {lot.LotCode} có chênh lệch: nhập lý do (tối thiểu {MinReason} ký tự).")
              .Check(reason is null || reason.Length <= 255, key + ".reason", "Lý do tối đa 255 ký tự.");
+            if (actual is null) continue;
+            var row = new StocktakeDetail
+            {
+                ReceiptDetailId = lot.ReceiptDetailId, SystemQuantity = system, ActualQuantity = actual.Value, CountedAt = at,
+                Reason = actual == system ? null : reason,
+                Method = c!.Serials is null ? CountMethod.Manual : CountMethod.Scan, UnlabeledQuantity = c.Serials is null ? 0 : c.Unlabeled ?? 0,
+            };
+            foreach (var item in found) row.Items.Add(new StocktakeItem { ItemId = item.ItemId });
+            rows.Add(row);
         }
         v.ThrowIfAny();
 
-        var now = clock.UtcNow;
         var stocktake = new Stocktake
         {
             Code = await codes.NextDocumentAsync(CodeGenerator.Stocktake, now), PlanId = planId, StocktakeDate = now,
             CreatedBy = staffId, Status = ApprovalStatus.Pending,
         };
-        foreach (var lot in lots)
-        {
-            var c = counts[lot.ReceiptDetailId];
-            stocktake.Details.Add(new StocktakeDetail
-            {
-                ReceiptDetailId = lot.ReceiptDetailId, SystemQuantity = lot.QuantityOnHand, ActualQuantity = c.ActualQuantity!.Value,
-                Reason = c.ActualQuantity == lot.QuantityOnHand ? null : CatalogService.Clean(c.Reason),
-            });
-        }
+        stocktake.Details.AddRange(rows);
         plan.Status = StocktakePlanStatus.InProgress;
         db.Stocktakes.Add(stocktake);
         await db.SaveChangesAsync();
@@ -174,30 +220,46 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
         EnsurePending(stocktake);
         var now = clock.UtcNow;
 
-        foreach (var d in stocktake.Details.Where(d => d.ActualQuantity != d.SystemQuantity))
+        foreach (var d in stocktake.Details)
         {
             var lot = d.ReceiptDetail;
-            var delta = d.ActualQuantity - d.SystemQuantity;
-            if (delta < 0)
+            var at = d.CountedAt ?? stocktake.StocktakeDate;
+            List<StockItem> lost;
+            int added;
+            if (d.Method == CountMethod.Scan)
             {
-                // Missing: loose items first; reserved ones are taken off their issues and refilled by FIFO.
-                var missing = -delta;
-                var loose = lot.Items.Where(i => i.Status == ItemStatus.InStock).OrderByDescending(i => i.SerialCode).Take(missing).ToList();
-                foreach (var item in loose) item.Status = ItemStatus.Lost;
-                var reserved = lot.Items.Where(i => i.Status == ItemStatus.Reserved).OrderByDescending(i => i.SerialCode).Take(missing - loose.Count).ToList();
-                if (reserved.Count > 0)
-                    await issues.ReplaceReservedAsync(reserved.Select(i => i.ItemId).ToList(), [lot.ReceiptDetailId], null,
-                        $"Sản phẩm giữ chỗ bị thất thoát khi kiểm kê lô {lot.LotCode} và không đủ hàng thay thế.");
-                foreach (var item in reserved) item.Status = ItemStatus.Lost;
-                lot.QuantityOnHand -= loose.Count + reserved.Count;
+                // K4: exactly the items that were on the shelf and were not scanned; scanned "Thất thoát" items are found again.
+                var scanned = d.Items.Select(x => x.ItemId).ToHashSet();
+                lost = lot.Items.Where(i => OnShelfAt(i, at) && OnShelfNow(i) && !scanned.Contains(i.ItemId)).ToList();
+                var refound = lot.Items.Where(i => i.Status == ItemStatus.Lost && scanned.Contains(i.ItemId)).ToList();
+                foreach (var item in refound) item.Status = ItemStatus.InStock;
+                lot.QuantityOnHand += refound.Count;
+                added = d.UnlabeledQuantity;
             }
             else
             {
-                // Surplus: new identities for the extra items (UC_15 step 7).
-                var (head, first) = await codes.ReserveSerialsAsync(lot.Product.SKU, now, delta);
-                for (var i = 0; i < delta; i++)
+                var delta = d.ActualQuantity - d.SystemQuantity;
+                // Typed count: which items are missing is unknown, so free ones go first, then reserved ones not yet scanned.
+                // Items already scanned for an issue were not on the shelf and are never written off (K2).
+                lost = delta >= 0 ? [] : lot.Items.Where(OnShelfNow)
+                    .OrderBy(i => i.Status == ItemStatus.InStock ? 0 : 1).ThenByDescending(i => i.SerialCode).Take(-delta).ToList();
+                added = Math.Max(0, delta);
+            }
+
+            var reserved = lost.Where(i => i.Status == ItemStatus.Reserved).ToList();
+            if (reserved.Count > 0)
+                await issues.ReplaceReservedAsync(reserved.Select(i => i.ItemId).ToList(), [lot.ReceiptDetailId], null,
+                    $"Sản phẩm giữ chỗ bị thất thoát khi kiểm kê lô {lot.LotCode} và không đủ hàng thay thế.");
+            foreach (var item in lost) item.Status = ItemStatus.Lost;
+            lot.QuantityOnHand -= lost.Count;
+
+            if (added > 0)
+            {
+                // Surplus / unlabeled items: new identities (UC_15 step 7).
+                var (head, first) = await codes.ReserveSerialsAsync(lot.Product.SKU, now, added);
+                for (var i = 0; i < added; i++)
                     lot.Items.Add(new StockItem { SerialCode = head + (first + i).ToString("D4"), Status = ItemStatus.InStock });
-                lot.QuantityOnHand += delta;
+                lot.QuantityOnHand += added;
             }
         }
         stocktake.Status = ApprovalStatus.Approved;
@@ -258,6 +320,7 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
             .Include(s => s.Plan)
             .Include(s => s.Details).ThenInclude(d => d.ReceiptDetail).ThenInclude(l => l.Items)
             .Include(s => s.Details).ThenInclude(d => d.ReceiptDetail).ThenInclude(l => l.Product)
+            .Include(s => s.Details).ThenInclude(d => d.Items)
             .SingleOrDefaultAsync(s => s.StocktakeId == id)
         ?? throw new NotFoundException("Không tìm thấy phiếu kiểm kê.");
 }

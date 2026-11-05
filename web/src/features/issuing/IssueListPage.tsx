@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, DataTable, EmptyState, TextField, type DataTableColumn } from '../../design';
+import { Button, DataTable, EmptyState, SearchField, TextField, type DataTableColumn } from '../../design';
 import { fmt, fmtDateTime } from '../../app/format';
 import { Segmented } from '../../app/Segmented';
 import { Code, ListError, Loading } from '../../app/ui';
 import { matches } from '../../app/text';
+import { suggestFrom } from '../../app/suggest';
 import { IssueStatusBadge, ISSUE_STATUS_OPTIONS } from '../../app/statusBadges';
 import { useIssues, type IssueRow, type IssueStatus } from '../../app/issuing';
 
@@ -24,6 +25,9 @@ export function IssueListPage({ role, basePath }: { role: 'manager' | 'staff'; b
   );
   const count = (s: IssueStatus) => (all.data ?? []).filter(i => i.status === s).length;
   const hasFilter = !!(status || from || to || search);
+  const suggestions = suggestFrom(all.data, search, i => [i.code, i.orderCode, i.customerName, i.creatorName], i => ({
+    key: String(i.id), label: i.code, hint: [`Đơn ${i.orderCode}`, i.customerName].filter(Boolean).join(' · '), meta: <IssueStatusBadge status={i.status} />,
+  }));
 
   const columns: DataTableColumn<IssueRow>[] = [
     { key: 'code', header: 'Mã phiếu', width: 130, render: i => <Code>{i.code}</Code> },
@@ -53,7 +57,10 @@ export function IssueListPage({ role, basePath }: { role: 'manager' | 'staff'; b
         options={[{ value: '', label: 'Tất cả', count: all.data?.length }, ...ISSUE_STATUS_OPTIONS.map(o => ({ ...o, count: count(o.value) }))]}
       />
       <div className="vb-row" style={{ alignItems: 'flex-end', gap: 12 }}>
-        <TextField size={size} label="Tìm phiếu" icon="search" placeholder="Mã phiếu, đơn hàng, khách…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 260 }} />
+        <SearchField
+          size={size} label="Tìm phiếu" placeholder="Mã phiếu, đơn hàng, khách…" value={search} onChange={setSearch} style={{ width: 260 }}
+          suggestions={suggestions} onPickSuggestion={s => s.value && nav(`${basePath}/${(s.value as IssueRow).id}`)}
+        />
         <TextField size={size} label="Từ ngày" type="date" value={from} max={to || undefined} onChange={e => setFrom(e.target.value)} style={{ width: 170 }} />
         <TextField size={size} label="Đến ngày" type="date" value={to} min={from || undefined} onChange={e => setTo(e.target.value)} style={{ width: 170 }} />
         {hasFilter && <Button variant="ghost" size={size} onClick={() => { setStatus(''); setFrom(''); setTo(''); setSearch(''); }}>Xoá bộ lọc</Button>}

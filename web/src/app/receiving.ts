@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
+import type { ItemStatus } from './issuing';
+import type { LotRow as StockLotRow } from './stock';
 
 export type ReceiptStatus = 'receiving' | 'pending' | 'approved' | 'rejected';
 export type LotStatus = 'normal' | 'quarantined' | 'locked';
@@ -11,6 +13,12 @@ export interface ReceiptRow {
   supplierId: number; supplierName: string; createdBy: number; creatorName: string;
   approverName?: string; approvedAt?: string; status: ReceiptStatus;
   productCount: number; totalQuantity: number; lotCount: number; pendingReports: number; rejectReason?: string;
+  /** Số chứng từ giao hàng của nhà cung cấp. */
+  deliveryNoteNo?: string;
+}
+/** Goods ordered through an approved replenishment proposal, not received yet (N1). */
+export interface ExpectedRow {
+  proposalId: number; productId: number; sku: string; productName: string; unit: string; supplierId: number; orderedQuantity: number; approvedAt?: string;
 }
 export interface LotRow {
   id: number; lotCode: string; productId: number; sku: string; productName: string; unit: string;
@@ -34,7 +42,7 @@ export interface ReceiptLineInput {
   productId: number | null; receivedQuantity: number | null; failedQuantity: number | null;
   documentQuantity: number | null; note: string; defectDescription: string;
 }
-export interface ReceiptInput { supplierId: number | null; note: string; lines: ReceiptLineInput[] }
+export interface ReceiptInput { supplierId: number | null; note: string; deliveryNoteNo: string; lines: ReceiptLineInput[] }
 
 export interface ReceiptFilter { status?: string; supplierId?: string; from?: string; to?: string }
 
@@ -47,6 +55,11 @@ export const useReceipts = (f: ReceiptFilter = {}) =>
   useQuery({ queryKey: ['receipts', f], queryFn: () => api<ReceiptRow[]>(`/receipts${qs(f)}`) });
 export const useReceipt = (id: number) =>
   useQuery({ queryKey: ['receipt', id], queryFn: () => api<ReceiptView>(`/receipts/${id}`), enabled: id > 0 });
+export const useExpected = (supplierId: number | null) =>
+  useQuery({
+    queryKey: ['receipts', 'expected', supplierId], enabled: supplierId != null,
+    queryFn: () => api<ExpectedRow[]>(`/receipts/expected${qs({ supplierId: String(supplierId) })}`),
+  });
 export const useLabels = (id: number) =>
   useQuery({ queryKey: ['receipt', id, 'labels'], queryFn: () => api<LabelSheet>(`/receipts/${id}/labels`) });
 export const useReports = (status?: ApprovalStatus, source?: AbnormalSource) =>
@@ -54,7 +67,14 @@ export const useReports = (status?: ApprovalStatus, source?: AbnormalSource) =>
     queryKey: ['abnormal-reports', status ?? 'all', source ?? 'all'],
     queryFn: () => api<ReportRow[]>(`/abnormal-reports${qs({ status, source })}`),
   });
-export const useApprovalSummary = (enabled = true) =>
+/** One abnormal report with its lot, where it was found, how the lot's items stand and the lot's other reports. */
+export interface ReportView {
+  report: ReportRow; lot: StockLotRow; issueCode?: string; stocktakeId?: number; stocktakeCode?: string;
+  items: { status: ItemStatus; count: number }[]; others: ReportRow[];
+}
+export const useReport = (id: number) =>
+  useQuery({ queryKey: ['abnormal-reports', 'detail', id], enabled: id > 0, queryFn: () => api<ReportView>(`/abnormal-reports/${id}`) });
+export const useApprovalSummary =(enabled = true) =>
   useQuery({
     queryKey: ['approvals'], enabled, refetchInterval: 60_000,
     queryFn: () => api<{ receipts: number; issues: number; stocktakes: number; abnormalReports: number; total: number }>('/approvals/summary'),
@@ -63,7 +83,7 @@ export const useApprovalSummary = (enabled = true) =>
 /** Every receipt or report change can move counts, stock and notifications, so refresh them together. */
 function useRefresh() {
   const qc = useQueryClient();
-  return () => ['receipts', 'receipt', 'abnormal-reports', 'approvals', 'products', 'notifications', 'decision']
+  return () => ['receipts', 'receipt', 'abnormal-reports', 'approvals', 'products', 'notifications', 'decision', 'lot', 'lots', 'issue', 'stocktake']
     .forEach(k => qc.invalidateQueries({ queryKey: [k] }));
 }
 
@@ -76,12 +96,13 @@ export function useSaveReceipt() {
   });
 }
 
-type ReceiptAction = 'submit' | 'approve' | 'reject';
+/** 'revoke' = hủy duyệt: an approved receipt goes back to "Chờ duyệt". */
+type ReceiptAction = 'submit' | 'approve' | 'reject' | 'revoke';
 export function useReceiptAction() {
   const refresh = useRefresh();
   return useMutation({
     mutationFn: ({ id, action, reason }: { id: number; action: ReceiptAction; reason?: string }) =>
-      api<ReceiptView>(`/receipts/${id}/${action}`, { method: 'POST', json: action === 'reject' ? { reason } : undefined }),
+      api<ReceiptView>(`/receipts/${id}/${action}`, { method: 'POST', json: action === 'reject' || action === 'revoke' ? { reason } : undefined }),
     onSuccess: refresh,
   });
 }
@@ -89,8 +110,8 @@ export function useReceiptAction() {
 export function useReportAction() {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: ({ id, action, reason }: { id: number; action: 'approve' | 'reject'; reason?: string }) =>
-      api<ReportRow>(`/abnormal-reports/${id}/${action}`, { method: 'POST', json: action === 'reject' ? { reason } : undefined }),
+    mutationFn: ({ id, action, reason }: { id: number; action: 'approve' | 'reject' | 'revoke'; reason?: string }) =>
+      api<ReportRow>(`/abnormal-reports/${id}/${action}`, { method: 'POST', json: action === 'approve' ? undefined : { reason } }),
     onSuccess: refresh,
   });
 }
@@ -109,3 +130,6 @@ export function useMarkRead() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
   });
 }
+
+/** Where an abnormal report's detail page lives for each role. */
+export const reportHref = (role: 'manager' | 'staff', id: number) => `${role === 'manager' ? '/ql/bat-thuong' : '/kho/bao-loi'}/${id}`;

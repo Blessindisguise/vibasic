@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertBanner, ApprovalStepper, Button, ConfirmDialog, DataTable, EmptyState, type DataTableColumn } from '../../design';
 import { ApiError } from '../../app/api';
-import { fmt, fmtDateTime } from '../../app/format';
+import { fmt, fmtDateTime, fmtShort } from '../../app/format';
+import { SerialRanges } from '../../app/SerialRanges';
 import { useToast } from '../../app/toast';
 import { Code, ListError, Loading } from '../../app/ui';
 import { ApprovalBadge, LotStatusBadge } from '../../app/statusBadges';
 import { useStocktake, useStocktakeAction, type StocktakeDetailRow } from '../../app/stock';
-import type { ReportRow } from '../../app/receiving';
+import { reportHref, type ReportRow } from '../../app/receiving';
 import { ReportDecision } from '../abnormal/ReportDecision';
 
 /** UC_15: system vs actual per lot, reasons, attached abnormal reports; approve to adjust stock or reject for a recount. */
@@ -40,7 +41,16 @@ export function StocktakeDetail({ id, role, back }: { id: number; role: 'manager
     { key: 'lotCode', header: 'Mã lô', width: 130, render: d => <Code>{d.lotCode}</Code> },
     { key: 'product', header: 'Mặt hàng', render: d => <span><Code>{d.sku}</Code> {d.productName}</span> },
     { key: 'lotStatus', header: 'Trạng thái lô', width: 130, render: d => <LotStatusBadge status={d.lotStatus} /> },
-    { key: 'system', header: 'Hệ thống', numeric: true, width: 90, render: d => fmt(d.systemQuantity) },
+    {
+      key: 'method', header: 'Cách đếm', width: 130,
+      render: d => (
+        <span style={{ display: 'inline-flex', flexDirection: 'column' }}>
+          <span>{d.method === 'scan' ? 'Quét tem' : 'Nhập số'}</span>
+          {d.countedAt && <span className="vb-muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{fmtShort(d.countedAt)}</span>}
+        </span>
+      ),
+    },
+    { key: 'system', header: <span title="Số sản phẩm hệ thống ghi nhận trên kệ lúc đếm (không gồm hàng đang soạn cho phiếu xuất)">Trên kệ (HT)</span>, numeric: true, width: 110, render: d => fmt(d.systemQuantity) },
     { key: 'actual', header: 'Thực tế', numeric: true, width: 90, render: d => <b>{fmt(d.actualQuantity)}</b> },
     {
       key: 'diff', header: 'Chênh lệch', numeric: true, width: 110,
@@ -50,7 +60,19 @@ export function StocktakeDetail({ id, role, back }: { id: number; role: 'manager
           : <b style={{ color: diff < 0 ? 'var(--red-700)' : 'var(--blue-700)' }}>{diff > 0 ? '+' : '−'}{fmt(Math.abs(diff))} {d.unit}</b>;
       },
     },
-    { key: 'reason', header: 'Lý do', render: d => d.reason ? <span style={{ whiteSpace: 'normal' }}>{d.reason}</span> : <span className="vb-muted">—</span> },
+    {
+      key: 'reason', header: 'Lý do',
+      render: d => (
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 4, whiteSpace: 'normal' }}>
+          {d.reason ? <span>{d.reason}</span> : <span className="vb-muted">—</span>}
+          {d.unlabeled > 0 && <span className="vb-muted">{fmt(d.unlabeled)} {d.unit} không có tem: cấp mã mới khi duyệt.</span>}
+          {(d.missingSerials?.length ?? 0) > 0 && <>
+            <span className="vb-muted">Không quét được, sẽ ghi thất thoát:</span>
+            <SerialRanges serials={d.missingSerials!} unit={d.unit} />
+          </>}
+        </span>
+      ),
+    },
   ];
   const reportColumns: DataTableColumn<ReportRow>[] = [
     { key: 'code', header: 'Biên bản', width: 130, render: r => <Code>{r.code}</Code> },
@@ -90,7 +112,8 @@ export function StocktakeDetail({ id, role, back }: { id: number; role: 'manager
             <span style={{ color: h.surplus ? 'var(--blue-700)' : undefined }}>Thừa {fmt(h.surplus)}</span>
           </div>
           {h.status === 'rejected' && <AlertBanner tone="danger" title={`Bị từ chối bởi ${h.approverName}`}>Lý do: {h.rejectReason}. Tồn kho giữ nguyên, kế hoạch trở về Chờ thực hiện.</AlertBanner>}
-          {h.status === 'approved' && <AlertBanner tone="success">Tồn kho đã điều chỉnh: sản phẩm thiếu được đánh dấu thất thoát, sản phẩm thừa được tạo mã định danh mới.</AlertBanner>}
+          {h.status === 'approved' && <AlertBanner tone="success">Tồn kho đã điều chỉnh: sản phẩm thiếu được đánh dấu thất thoát (lô quét tem: đúng các mã không quét được), sản phẩm thừa hoặc không có tem được tạo mã định danh mới.</AlertBanner>}
+          <div className="vb-muted">“Trên kệ (HT)” là số hệ thống ghi nhận trên kệ tại lúc đếm từng lô; hàng đang soạn cho phiếu xuất không tính.</div>
           {role === 'manager' && h.status === 'pending' && reports.some(r => r.status === 'pending') && (
             <AlertBanner tone="warning" title="Có biên bản bất thường kèm theo">Xử lý biên bản ở bảng bên dưới (UC_15 bước 9).</AlertBanner>
           )}
@@ -103,7 +126,7 @@ export function StocktakeDetail({ id, role, back }: { id: number; role: 'manager
       {reports.length > 0 && (
         <section className="vb-panel">
           <div className="vb-panel__head"><h3 className="vb-panel__title">Biên bản bất thường kèm theo</h3></div>
-          <DataTable columns={reportColumns} rows={reports} density={touch ? 'default' : 'compact'} caption="Biên bản kèm theo" />
+          <DataTable columns={reportColumns} rows={reports} density={touch ? 'default' : 'compact'} onRowClick={r => nav(reportHref(role, r.id))} caption="Biên bản kèm theo" />
         </section>
       )}
       <ConfirmDialog

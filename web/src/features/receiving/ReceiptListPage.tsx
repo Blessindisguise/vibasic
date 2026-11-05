@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, DataTable, EmptyState, SelectField, TextField, type DataTableColumn } from '../../design';
+import { Button, DataTable, EmptyState, SearchField, SelectField, TextField, type DataTableColumn } from '../../design';
 import { fmt, fmtDateTime } from '../../app/format';
 import { Segmented } from '../../app/Segmented';
 import { Code, ListError, Loading } from '../../app/ui';
 import { matches } from '../../app/text';
+import { suggestFrom } from '../../app/suggest';
 import { useSuppliers } from '../../app/catalog';
 import { ReceiptStatusBadge, RECEIPT_STATUS_OPTIONS } from '../../app/statusBadges';
 import { useReceipts, type ReceiptRow, type ReceiptStatus } from '../../app/receiving';
@@ -22,9 +23,14 @@ export function ReceiptListPage({ role, basePath }: { role: 'manager' | 'staff';
   const suppliers = useSuppliers();
   const all = useReceipts({ supplierId, from, to });
   const filtered = useMemo(() => (all.data ?? []).filter(r => !status || r.status === status), [all.data, status]);
-  const rows = useMemo(() => filtered.filter(r => matches(search, r.code, r.supplierName, r.creatorName)), [filtered, search]);
+  const rows = useMemo(() => filtered.filter(r => matches(search, r.code, r.supplierName, r.creatorName, r.deliveryNoteNo)), [filtered, search]);
   const count = (s: ReceiptStatus) => (all.data ?? []).filter(r => r.status === s).length;
   const hasFilter = !!(supplierId || from || to || search || status);
+  const suggestions = suggestFrom(all.data, search, r => [r.code, r.supplierName, r.creatorName, r.deliveryNoteNo], r => ({
+    key: String(r.id), label: r.code,
+    hint: [r.supplierName, r.deliveryNoteNo && `CT ${r.deliveryNoteNo}`, fmtDateTime(r.receiptDate)].filter(Boolean).join(' · '),
+    meta: <ReceiptStatusBadge status={r.status} />,
+  }));
 
   const columns: DataTableColumn<ReceiptRow>[] = [
     { key: 'code', header: 'Mã phiếu', width: 130, render: r => <Code>{r.code}</Code> },
@@ -58,7 +64,10 @@ export function ReceiptListPage({ role, basePath }: { role: 'manager' | 'staff';
       </div>
 
       <div className="vb-row" style={{ alignItems: 'flex-end', gap: 12 }}>
-        <TextField size={size} label="Tìm phiếu" icon="search" placeholder="Mã phiếu, NCC, người lập…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 260 }} />
+        <SearchField
+          size={size} label="Tìm phiếu" placeholder="Mã phiếu, số chứng từ, NCC…" value={search} onChange={setSearch} style={{ width: 260 }}
+          suggestions={suggestions} onPickSuggestion={s => s.value && nav(`${basePath}/${(s.value as ReceiptRow).id}`)}
+        />
         <SelectField
           size={size} label="Nhà cung cấp" placeholder="Tất cả" value={supplierId} onChange={e => setSupplierId(e.target.value)} style={{ width: 240 }}
           options={(suppliers.data ?? []).map(s => ({ value: String(s.id), label: s.name }))}

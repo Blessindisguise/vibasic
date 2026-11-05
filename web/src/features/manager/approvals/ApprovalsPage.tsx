@@ -4,7 +4,7 @@ import { fmt, fmtShort } from '../../../app/format';
 import { Segmented } from '../../../app/Segmented';
 import { Code, ListError, Loading } from '../../../app/ui';
 import { ReceiptStatusBadge } from '../../../app/statusBadges';
-import { useApprovalSummary, useReceipts, useReports, type ReceiptRow, type ReportRow } from '../../../app/receiving';
+import { reportHref, useApprovalSummary, useReceipts, useReports, type ReceiptRow, type ReportRow } from '../../../app/receiving';
 import { useIssues, type IssueRow } from '../../../app/issuing';
 import { useStocktakes, type StocktakeRow } from '../../../app/stock';
 import { ReportDecision } from '../../abnormal/ReportDecision';
@@ -139,7 +139,7 @@ function PendingReports() {
   if (reports.isError) return <ListError onRetry={() => reports.refetch()} />;
   return (
     <DataTable
-      columns={columns} rows={reports.data} caption="Biên bản bất thường chờ duyệt"
+      columns={columns} rows={reports.data} onRowClick={r => nav(reportHref('manager', r.id))} caption="Biên bản bất thường chờ duyệt"
       empty={<EmptyState icon="shield-alert" title="Không có biên bản chờ duyệt" description="Biên bản lập khi nhập kho, xuất kho hoặc kiểm kê sẽ hiện ở đây." />}
     />
   );

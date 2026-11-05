@@ -133,6 +133,9 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
     [HttpPost("{id:int}/reject"), Authorize(Policy = Policies.Manager)]
     public async Task<IssueView> Reject(int id, ReasonInput input) => await View((await issues.RejectAsync(id, input.Reason, User.UserId())).IssueId);
 
+    [HttpPost("{id:int}/revoke"), Authorize(Policy = Policies.Manager)]
+    public async Task<IssueView> Revoke(int id, ReasonInput input) => await View((await issues.RevokeAsync(id, input.Reason, User.UserId())).IssueId);
+
     [HttpPost("{id:int}/scan"), Authorize(Policy = Policies.Staff)]
     public Task<ScanResult> Scan(int id, ScanInput input) => issues.ScanAsync(id, input.Code);
 

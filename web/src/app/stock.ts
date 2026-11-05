@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
 import type { ItemStatus } from './issuing';
 import type { ApprovalStatus, LotStatus, ReportRow } from './receiving';
@@ -8,7 +9,8 @@ export interface LotRow {
   receivedDate: string; receiptId: number; receiptCode: string; supplierName: string;
   quantity: number; quantityOnHand: number; reserved: number; status: LotStatus;
 }
-export interface LotItem { id: number; serial: string; status: ItemStatus; issueId?: number; issueCode?: string }
+/** picked: already scanned for an issue (staging area, not on the shelf). */
+export interface LotItem { id: number; serial: string; status: ItemStatus; issueId?: number; issueCode?: string; picked: boolean }
 export interface LotView { lot: LotRow; items: LotItem[]; reports: ReportRow[] }
 
 export type PlanType = 'periodic' | 'adHoc';
@@ -21,7 +23,9 @@ export interface PlanRow {
 }
 export interface SheetLot {
   receiptDetailId: number; lotCode: string; productId: number; sku: string; productName: string; unit: string;
-  receivedDate: string; status: LotStatus; systemQuantity: number;
+  receivedDate: string; status: LotStatus;
+  /** Stock on hand; `picking` of it is in the staging area, so the shelf should hold `shelfQuantity`. */
+  systemQuantity: number; picking: number; shelfQuantity: number;
 }
 export interface PlanInput { planType: PlanType | ''; scopeType: PlanScope | ''; plannedDate: string; lotIds: number[]; note: string }
 
@@ -33,6 +37,14 @@ export interface StocktakeRow {
 export interface StocktakeDetailRow {
   id: number; receiptDetailId: number; lotCode: string; sku: string; productName: string; unit: string; lotStatus: LotStatus;
   systemQuantity: number; actualQuantity: number; reason?: string;
+  method: CountMethod; countedAt?: string; unlabeled: number;
+  /** Counted by scanning, still waiting for approval: the codes that will be written off. */
+  missingSerials?: string[];
+}
+export type CountMethod = 'manual' | 'scan';
+/** One lot's count as sent to the server. Scanned lots send serials (+ unlabeled) instead of a typed quantity. */
+export interface CountPayload {
+  receiptDetailId: number; actualQuantity: number | null; reason: string; countedAt?: string; serials?: string[]; unlabeled?: number;
 }
 export interface StocktakeView { header: StocktakeRow; details: StocktakeDetailRow[]; reports: ReportRow[] }
 
@@ -77,7 +89,7 @@ export function useCreatePlan() {
 export function useSubmitCount(planId: number) {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: (counts: { receiptDetailId: number; actualQuantity: number | null; reason: string }[]) =>
+    mutationFn: (counts: CountPayload[]) =>
       api<StocktakeRow>(`/stocktake-plans/${planId}/stocktakes`, { method: 'POST', json: { counts } }),
     onSuccess: refresh,
   });
@@ -98,5 +110,28 @@ export function useStocktakeAction() {
     mutationFn: ({ id, action, reason }: { id: number; action: 'approve' | 'reject'; reason?: string }) =>
       api<StocktakeView>(`/stocktakes/${id}/${action}`, { method: 'POST', json: action === 'reject' ? { reason } : undefined }),
     onSuccess: refresh,
+  });
+}
+
+// ---------------- type-ahead (lot code / item serial) ----------------
+
+export interface LotSuggestion {
+  kind: 'lot' | 'item'; lotId: number; code: string; lotCode: string; sku: string; productName: string; unit: string;
+  onHand: number; lotStatus: LotStatus; itemStatus?: ItemStatus;
+}
+
+/** The value once it has stopped changing for `ms` (typing, not every key). */
+export function useDebounced<T>(value: T, ms = 200) {
+  const [v, setV] = useState(value);
+  useEffect(() => { const t = setTimeout(() => setV(value), ms); return () => clearTimeout(t); }, [value, ms]);
+  return v;
+}
+
+/** Lots (code, SKU, name) and item serials containing the typed text; from 2 characters on. */
+export function useLotSuggest(text: string) {
+  const q = useDebounced(text.trim(), 150);
+  return useQuery({
+    queryKey: ['lots', 'suggest', q], enabled: q.length >= 2, staleTime: 30_000, placeholderData: keepPreviousData,
+    queryFn: () => api<LotSuggestion[]>(`/lots/suggest${qs({ q })}`),
   });
 }

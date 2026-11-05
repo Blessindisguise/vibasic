@@ -7,7 +7,7 @@ import { useToast } from '../../../app/toast';
 import { Loading } from '../../../app/ui';
 import { FieldGrid } from '../../../app/Modal';
 import { fieldErrors, formError, useProducts, useSuppliers, type Product } from '../../../app/catalog';
-import { useReceipt, useSaveReceipt, type ReceiptView } from '../../../app/receiving';
+import { useExpected, useReceipt, useSaveReceipt, type ReceiptView } from '../../../app/receiving';
 
 interface LineState { key: number; productId: string; received: string; failed: string; doc: string; note: string; defect: string }
 
@@ -38,13 +38,16 @@ export function ReceiptForm({ id, basePath }: { id?: number; basePath: string })
   const nav = useNavigate();
   const [supplierId, setSupplierId] = useState('');
   const [note, setNote] = useState('');
+  const [deliveryNo, setDeliveryNo] = useState('');
   const [lines, setLines] = useState<LineState[]>([emptyLine()]);
   const [loaded, setLoaded] = useState(!editing);
+  const expected = useExpected(supplierId ? Number(supplierId) : null);
 
   useEffect(() => {
     if (!editing || loaded || !existing.data) return;
     setSupplierId(String(existing.data.header.supplierId));
     setNote(existing.data.note ?? '');
+    setDeliveryNo(existing.data.header.deliveryNoteNo ?? '');
     setLines(linesFrom(existing.data));
     setLoaded(true);
   }, [editing, loaded, existing.data]);
@@ -63,7 +66,7 @@ export function ReceiptForm({ id, basePath }: { id?: number; basePath: string })
     save.mutate({
       id: id ?? null,
       input: {
-        supplierId: supplierId ? Number(supplierId) : null, note,
+        supplierId: supplierId ? Number(supplierId) : null, note, deliveryNoteNo: deliveryNo,
         lines: lines.map(l => ({
           productId: l.productId ? Number(l.productId) : null, receivedQuantity: parseNumber(l.received),
           failedQuantity: parseNumber(l.failed) ?? 0, documentQuantity: parseNumber(l.doc), note: l.note, defectDescription: l.defect,
@@ -80,6 +83,13 @@ export function ReceiptForm({ id, basePath }: { id?: number; basePath: string })
   const supplier = Number(supplierId);
   const own = (products.data ?? []).filter(p => p.supplierId === supplier);
   const others = (products.data ?? []).filter(p => p.supplierId !== supplier);
+  // N1: goods ordered from this supplier (approved proposals) that are not on the form yet.
+  const ordered = new Map((expected.data ?? []).map(e => [e.productId, e]));
+  const notAdded = (expected.data ?? []).filter(e => !lines.some(l => Number(l.productId) === e.productId));
+  const addOrdered = () => setLines(ls => {
+    const kept = ls.filter(l => l.productId || l.received);
+    return [...kept, ...notAdded.map(e => ({ ...emptyLine(), productId: String(e.productId) }))];
+  });
   const totals = lines.reduce((t, l) => {
     const r = parseNumber(l.received) ?? 0, f = Math.min(parseNumber(l.failed) ?? 0, r);
     return { passed: t.passed + r - f, failed: t.failed + f };
@@ -109,14 +119,25 @@ export function ReceiptForm({ id, basePath }: { id?: number; basePath: string })
               onChange={e => setSupplierId(e.target.value)} error={errors.supplierId}
               options={(suppliers.data ?? []).map(s => ({ value: String(s.id), label: s.name }))}
             />
-            <TextField size="xl" label="Ghi chú phiếu" placeholder="Ví dụ: số chứng từ giao hàng" value={note} onChange={e => setNote(e.target.value)} error={errors.note} />
+            <TextField size="xl" label="Số chứng từ giao hàng" placeholder="Số phiếu giao hàng của nhà cung cấp" value={deliveryNo}
+              onChange={e => setDeliveryNo(e.target.value)} error={errors.deliveryNoteNo} />
           </FieldGrid>
+          <TextField size="xl" label="Ghi chú phiếu" placeholder="Ví dụ: giao bằng xe của NCC, kiện bị móp" value={note} onChange={e => setNote(e.target.value)} error={errors.note} />
+          {notAdded.length > 0 && (
+            <AlertBanner tone="info" title={`${notAdded.length} mặt hàng đã đặt từ nhà cung cấp này`}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <span>Theo đề xuất bổ sung đã duyệt: {notAdded.map(e => `${e.sku} (đặt ${fmt(e.orderedQuantity)} ${e.unit})`).join(', ')}.</span>
+                <Button type="button" variant="secondary" size="lg" icon="plus" style={{ alignSelf: 'flex-start' }} onClick={addOrdered}>Thêm vào phiếu</Button>
+              </div>
+            </AlertBanner>
+          )}
         </div>
       </section>
 
       {lines.map((l, i) => (
         <LineEditor
           key={l.key} index={i} line={l} own={own} others={others} product={productById.get(Number(l.productId))}
+          ordered={ordered.get(Number(l.productId))?.orderedQuantity}
           errors={errors} canRemove={lines.length > 1} supplierChosen={!!supplierId}
           onChange={patch => update(l.key, patch)} onRemove={() => setLines(ls => ls.filter(x => x.key !== l.key))}
         />
@@ -137,8 +158,8 @@ export function ReceiptForm({ id, basePath }: { id?: number; basePath: string })
   );
 }
 
-function LineEditor({ index, line, own, others, product, errors, canRemove, supplierChosen, onChange, onRemove }: {
-  index: number; line: LineState; own: Product[]; others: Product[]; product?: Product; errors: Record<string, string>;
+function LineEditor({ index, line, own, others, product, ordered, errors, canRemove, supplierChosen, onChange, onRemove }: {
+  index: number; line: LineState; own: Product[]; others: Product[]; product?: Product; ordered?: number; errors: Record<string, string>;
   canRemove: boolean; supplierChosen: boolean; onChange: (patch: Partial<LineState>) => void; onRemove: () => void;
 }) {
   const k = `lines[${index}].`;
@@ -154,6 +175,7 @@ function LineEditor({ index, line, own, others, product, errors, canRemove, supp
     <section className="vb-panel">
       <div className="vb-panel__head">
         <span style={{ font: 'var(--type-touch-heading)', fontSize: 17 }}>Mặt hàng {index + 1}</span>
+        {ordered != null && <span className="vb-muted" style={{ fontSize: 14 }}>Đã đặt {fmt(ordered)} {unit}</span>}
         {passed != null && passed >= 0 && (
           <span className="vb-row" style={{ marginLeft: 'auto', gap: 12, font: 'var(--type-body)', fontVariantNumeric: 'tabular-nums' }}>
             {passed > 0 && <span><Icon name="circle-check" size={16} style={{ color: 'var(--green-600)', verticalAlign: -3 }} /> Lô đạt: {fmt(passed)} {unit}</span>}

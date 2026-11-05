@@ -4,6 +4,7 @@ import { fmt, fmtDate, fmtDateTime } from '../../../app/format';
 import { useToast } from '../../../app/toast';
 import { Code, ListError, Loading } from '../../../app/ui';
 import { OrderStatusBadge } from '../../../app/statusBadges';
+import { SerialRanges } from '../../../app/SerialRanges';
 import { useAllocation, useCreateIssue, useOrders } from '../../../app/issuing';
 
 const DAY = 86_400_000;
@@ -87,10 +88,7 @@ export function OrderAllocationPage({ orderId }: { orderId: number }) {
                   size="lg" fifoOrder={i + 1} lotCode={lot.lotCode} receivedAt={fmtDate(lot.receivedDate)} ageDays={ageDays(lot.receivedDate)}
                   toPick={lot.take} picked={0} unit={line.unit} state={i === 0 ? 'next' : 'waiting'}
                 />
-                <details style={{ paddingLeft: 68 }}>
-                  <summary className="vb-muted" style={{ cursor: 'pointer', fontSize: 14 }}>Mã sản phẩm cần lấy ({fmt(lot.serials.length)})</summary>
-                  <div className="vb-serials">{lot.serials.map(s => <span key={s} className="vb-serial">{s}</span>)}</div>
-                </details>
+                <div style={{ paddingLeft: 68 }}><SerialRanges serials={lot.serials} unit={line.unit} /></div>
               </div>
             ))}
           </div>

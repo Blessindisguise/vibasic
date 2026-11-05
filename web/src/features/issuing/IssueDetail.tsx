@@ -11,8 +11,9 @@ import { Code, ListError, Loading } from '../../app/ui';
 import { ApprovalBadge, IssueStatusBadge } from '../../app/statusBadges';
 import { fieldErrors, formError } from '../../app/catalog';
 import { useDeliver, useIssue, useIssueAction, useReportDefect, useScan, type IssueLine, type IssueView } from '../../app/issuing';
-import type { ReportRow } from '../../app/receiving';
+import { reportHref, type ReportRow } from '../../app/receiving';
 import { ageDays } from '../staff/issuing/OrderAllocationPage';
+import { SerialRanges } from '../../app/SerialRanges';
 
 type Role = 'manager' | 'staff';
 
@@ -22,7 +23,7 @@ export function IssueDetail({ id, role, basePath }: { id: number; role: Role; ba
   const action = useIssueAction();
   const toast = useToast();
   const nav = useNavigate();
-  const [dialog, setDialog] = useState<'approve' | 'reject' | null>(null);
+  const [dialog, setDialog] = useState<'approve' | 'reject' | 'revoke' | null>(null);
   const touch = role === 'staff';
   const size = touch ? 'lg' : 'md';
 
@@ -39,8 +40,15 @@ export function IssueDetail({ id, role, basePath }: { id: number; role: Role; ba
   const { header: h, lines, reports } = issue.data;
   const picking = role === 'staff' && h.status === 'approved';
 
-  const run = (kind: 'approve' | 'reject', reason?: string) => action.mutate({ id, action: kind, reason }, {
-    onSuccess: () => { setDialog(null); toast({ tone: kind === 'approve' ? 'success' : 'info', title: kind === 'approve' ? `Đã duyệt phiếu ${h.code}` : `Đã từ chối phiếu ${h.code}` }); },
+  const run = (kind: 'approve' | 'reject' | 'revoke', reason?: string) => action.mutate({ id, action: kind, reason }, {
+    onSuccess: () => {
+      setDialog(null);
+      toast({
+        tone: kind === 'approve' ? 'success' : 'info',
+        title: kind === 'approve' ? `Đã duyệt phiếu ${h.code}` : kind === 'reject' ? `Đã từ chối phiếu ${h.code}` : `Đã hủy duyệt phiếu ${h.code}`,
+        message: kind === 'revoke' ? 'Phiếu trở về Chờ duyệt; nhân viên kho đã được báo dừng lấy hàng.' : undefined,
+      });
+    },
     onError: e => { setDialog(null); toast({ tone: 'danger', title: 'Không thực hiện được', message: e.message }); },
   });
 
@@ -68,6 +76,9 @@ export function IssueDetail({ id, role, basePath }: { id: number; role: Role; ba
               <Button variant="danger-outline" icon="circle-x" onClick={() => setDialog('reject')}>Từ chối phiếu</Button>
               <Button icon="check" onClick={() => setDialog('approve')}>Duyệt phiếu</Button>
             </div>
+          )}
+          {role === 'manager' && h.status === 'approved' && (
+            <Button variant="secondary" icon="undo-2" onClick={() => setDialog('revoke')}>Hủy duyệt</Button>
           )}
         </div>
         <div className="vb-panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -104,6 +115,11 @@ export function IssueDetail({ id, role, basePath }: { id: number; role: Role; ba
         description={`Sản phẩm đã giữ chỗ được trả về tồn kho; đơn ${h.orderCode} trở về Chưa xuất.`}
         confirmLabel="Từ chối phiếu" onConfirm={reason => run('reject', reason)} onCancel={() => setDialog(null)}
       />
+      <ConfirmDialog
+        open={dialog === 'revoke'} requireReason reasonPlaceholder="Vì sao cần hủy duyệt phiếu này…" reasonHelp="Lý do được gửi kèm thông báo cho nhân viên lập phiếu." title={`Hủy duyệt phiếu ${h.code}?`}
+        description={`Nhân viên kho dừng lấy hàng; sản phẩm vẫn được giữ chỗ và những mã đã quét được giữ nguyên. Phiếu trở về Chờ duyệt: bạn duyệt lại, hoặc từ chối để trả hàng về tồn kho.`}
+        confirmLabel="Hủy duyệt" onConfirm={reason => run('revoke', reason)} onCancel={() => setDialog(null)}
+      />
     </div>
   );
 }
@@ -127,9 +143,8 @@ function LinesPanel({ lines, touch }: { lines: IssueLine[]; touch: boolean }) {
                   <span className="vb-muted">FIFO {i + 1}</span><Code>{lot.lotCode}</Code>
                   <span className="vb-muted">nhập {fmtDate(lot.receivedDate)} · {fmt(lot.items.length)} {line.unit}</span>
                 </div>
-                <div className="vb-serials">
-                  {lot.items.map(it => <span key={it.itemId} className={`vb-serial${it.pickedAt || it.status === 'issued' ? ' vb-serial--picked' : ''}`}>{it.serial}</span>)}
-                </div>
+                <LotSerials items={lot.items} unit={line.unit} />
+
               </div>
             ))}
           </div>
@@ -139,7 +154,20 @@ function LinesPanel({ lines, touch }: { lines: IssueLine[]; touch: boolean }) {
   );
 }
 
+/** The codes of one lot on the issue as runs: still to pick, then picked/issued (green). */
+function LotSerials({ items, unit }: { items: IssueLine['lots'][number]['items']; unit: string }) {
+  const done = items.filter(it => it.pickedAt || it.status === 'issued').map(it => it.serial);
+  const open = items.filter(it => !(it.pickedAt || it.status === 'issued')).map(it => it.serial);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {open.length > 0 && <SerialRanges serials={open} unit={unit} />}
+      {done.length > 0 && <SerialRanges serials={done} unit={unit} tone="picked" />}
+    </div>
+  );
+}
+
 function ReportsPanel({ reports, touch }: { reports: ReportRow[]; touch: boolean }) {
+  const nav = useNavigate();
   const columns: DataTableColumn<ReportRow>[] = [
     { key: 'code', header: 'Biên bản', width: 130, render: r => <Code>{r.code}</Code> },
     { key: 'lot', header: 'Lô', width: 130, render: r => <Code>{r.lotCode}</Code> },
@@ -150,7 +178,7 @@ function ReportsPanel({ reports, touch }: { reports: ReportRow[]; touch: boolean
   return (
     <section className="vb-panel">
       <div className="vb-panel__head"><h3 className="vb-panel__title">Biên bản bất thường phát sinh khi xuất</h3></div>
-      <DataTable columns={columns} rows={reports} density={touch ? 'default' : 'compact'} caption="Biên bản bất thường của phiếu xuất" />
+      <DataTable columns={columns} rows={reports} density={touch ? 'default' : 'compact'} onRowClick={r => nav(reportHref(touch ? 'staff' : 'manager', r.id))} caption="Biên bản bất thường của phiếu xuất" />
     </section>
   );
 }
@@ -176,7 +204,9 @@ function PickingPanel({ view }: { view: IssueView }) {
         setLastSerial(r.serial);
         setFeedback({
           state: 'success', key: Date.now(),
-          message: r.alreadyPicked ? `${r.serial} đã quét trước đó.` : `Đúng: ${r.serial} · lô ${r.lotCode} · ${r.picked}/${r.total}`,
+          message: r.alreadyPicked ? `${r.serial} đã quét trước đó.`
+            : r.replacedSerial ? `Nhận ${r.serial} thay cho ${r.replacedSerial} (cùng lô ${r.lotCode}) · ${r.picked}/${r.total}`
+            : `Đúng: ${r.serial} · lô ${r.lotCode} · ${r.picked}/${r.total}`,
         });
         setCode('');
       },
@@ -191,7 +221,7 @@ function PickingPanel({ view }: { view: IssueView }) {
           <ScanInput
             value={code} onChange={setCode} onSubmit={submitScan} autoFocus size="lg" scanKey={feedback?.key ?? 0}
             label="Quét mã từng sản phẩm" placeholder="Quét tem sản phẩm (SP-…)" state={feedback?.state ?? 'idle'}
-            message={feedback?.message ?? 'Lấy hàng theo thứ tự FIFO bên dưới, quét mã từng sản phẩm để đối chiếu.'}
+            message={feedback?.message ?? 'Lấy hàng theo thứ tự lô FIFO bên dưới. Trong cùng một lô, lấy sản phẩm nào cũng được: hệ thống tự đổi mã.'}
           />
           <div className="vb-row" style={{ gap: 12 }}>
             <div style={{ flex: 1, minWidth: 200 }}>
@@ -222,9 +252,7 @@ function PickingPanel({ view }: { view: IssueView }) {
                   <div key={lot.receiptDetailId} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <LotCard size="lg" fifoOrder={i + 1} lotCode={lot.lotCode} receivedAt={fmtDate(lot.receivedDate)} ageDays={ageDays(lot.receivedDate)}
                       toPick={lot.items.length} picked={lotPicked} unit={line.unit} state={state} />
-                    <div className="vb-serials" style={{ paddingLeft: 68 }}>
-                      {lot.items.map(it => <span key={it.itemId} className={`vb-serial${it.pickedAt ? ' vb-serial--picked' : ''}`}>{it.pickedAt ? '✓ ' : ''}{it.serial}</span>)}
-                    </div>
+                    <div style={{ paddingLeft: 68 }}><LotSerials items={lot.items} unit={line.unit} /></div>
                   </div>
                 );
               })}

@@ -89,3 +89,18 @@
 .vb-clickable:hover{border-color:var(--grey-400)!important}
 .vb-clickable:focus-visible{outline:none;box-shadow:var(--focus-ring)}
 .vb-toast{animation:vb-toast-in var(--duration-base) var(--ease-standard)}
+
+/* Type-ahead list under a search / scan field (useSuggest). */
+.vb-suggest-anchor{position:relative;min-width:0}
+.vb-suggest{position:absolute;z-index:40;top:calc(100% + 4px);left:0;right:0;min-width:min(420px, calc(100vw - 32px));max-height:340px;overflow-y:auto;margin:0;padding:4px;list-style:none;background:var(--surface-card,#fff);border:1px solid var(--border-default);border-radius:var(--radius-md);box-shadow:var(--shadow-2)}
+.vb-suggest__item{display:flex;align-items:center;gap:12px;min-height:40px;padding:6px 10px;border-radius:var(--radius-sm);cursor:pointer}
+.vb-suggest--lg .vb-suggest__item{min-height:56px;padding:8px 12px}
+.vb-suggest__item.is-active{background:var(--green-50)}
+.vb-suggest__main{display:flex;flex-direction:column;min-width:0;flex:1}
+.vb-suggest__label{font-weight:600;letter-spacing:var(--tracking-code);color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vb-suggest--lg .vb-suggest__label{font-size:16px}
+.vb-suggest__hint{font:var(--type-helper);color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vb-suggest__meta{flex:none;display:inline-flex;align-items:center;gap:6px;color:var(--text-secondary);font:var(--type-helper);font-variant-numeric:tabular-nums}
+.vb-suggest__hit{background:none;color:var(--green-700);font-weight:700;text-decoration:underline;text-underline-offset:2px}
+.vb-suggest__empty{padding:10px;color:var(--text-muted);font:var(--type-helper)}
+.vb-suggest--end{left:auto;right:0}

@@ -18,7 +18,8 @@ public class LotsController(VibasicDbContext db) : ControllerBase
     public record LotRow(int Id, string LotCode, int ProductId, string Sku, string ProductName, string Unit, string CategoryName,
         DateTime ReceivedDate, int ReceiptId, string ReceiptCode, string SupplierName,
         int Quantity, int QuantityOnHand, int Reserved, LotStatus Status);
-    public record ItemRow(int Id, string Serial, ItemStatus Status, int? IssueId, string? IssueCode);
+    /// <param name="Picked">Already scanned for an issue: in the staging area, not on the shelf.</param>
+    public record ItemRow(int Id, string Serial, ItemStatus Status, int? IssueId, string? IssueCode, bool Picked);
     public record LotView(LotRow Lot, List<ItemRow> Items, List<ReportRow> Reports);
     public record Found(int LotId, string? Serial);
 
@@ -51,13 +52,49 @@ public class LotsController(VibasicDbContext db) : ControllerBase
         if (lot is null) return Problem(statusCode: 404, title: "Không tìm thấy lô.");
         var items = await db.StockItems.Where(i => i.ReceiptDetailId == id).OrderBy(i => i.SerialCode)
             .Select(i => new ItemRow(i.ItemId, i.SerialCode, i.Status, i.IssueDetail != null ? i.IssueDetail.IssueId : null,
-                i.IssueDetail != null ? i.IssueDetail.Issue.Code : null))
+                i.IssueDetail != null ? i.IssueDetail.Issue.Code : null, i.PickedAt != null))
             .ToListAsync();
         var reports = await db.AbnormalReports.Where(a => a.ReceiptDetailId == id).OrderByDescending(a => a.CreatedAt).Rows().ToListAsync();
         return new LotView(lot, items, reports);
     }
 
-    private static IQueryable<LotRow> Rows(IQueryable<GoodsReceiptDetail> source) => source.Select(d => new LotRow(
+    /// <param name="Kind">"lot" or "item".</param>
+    public record Suggestion(string Kind, int LotId, string Code, string LotCode, string Sku, string ProductName, string Unit,
+        int OnHand, LotStatus LotStatus, ItemStatus? ItemStatus);
+
+    /// <summary>
+    /// Type-ahead for the scan / lookup field: lots whose code, SKU or product name contains the text, then items whose serial does.
+    /// Separators are ignored, so "2610006" finds LOT-2610-006. Lots of receipts not approved yet are left out (they hold no stock).
+    /// </summary>
+    [HttpGet("suggest")]
+    public async Task<List<Suggestion>> Suggest(string? q, int take = 8)
+    {
+        var text = CatalogService.Clean(q)?.ToUpperInvariant();
+        if (text is null || text.Length < 2) return [];
+        take = Math.Clamp(take, 1, 20);
+        var bare = text.Replace("-", "").Replace(" ", "");
+        var lots = await db.GoodsReceiptDetails
+            .Where(d => d.Receipt.Status == ReceiptStatus.Approved
+                && (d.LotCode.Contains(text) || d.LotCode.Replace("-", "").Contains(bare) || d.Product.SKU.Contains(text) || d.Product.ProductName.Contains(text)))
+            .OrderBy(d => !d.LotCode.StartsWith(text)).ThenByDescending(d => d.QuantityOnHand > 0).ThenByDescending(d => d.Receipt.ReceiptDate)
+            .Take(take)
+            .Select(d => new Suggestion("lot", d.ReceiptDetailId, d.LotCode, d.LotCode, d.Product.SKU, d.Product.ProductName,
+                d.Product.Unit, d.QuantityOnHand, d.Status, (ItemStatus?)null))
+            .ToListAsync();
+        // Item serials only once the text looks like part of one (they number in the thousands).
+        var items = bare.Length < 4 ? [] : await db.StockItems
+            .Where(i => i.ReceiptDetail.Receipt.Status == ReceiptStatus.Approved
+                && (i.SerialCode.Contains(text) || i.SerialCode.Replace("-", "").Contains(bare)))
+            .OrderBy(i => !i.SerialCode.StartsWith(text)).ThenBy(i => i.SerialCode)
+            .Take(take)
+            .Select(i => new { i.ReceiptDetailId, i.SerialCode, i.ReceiptDetail.LotCode, i.ReceiptDetail.Product.SKU, i.ReceiptDetail.Product.ProductName,
+                i.ReceiptDetail.Product.Unit, i.ReceiptDetail.QuantityOnHand, LotStatus = i.ReceiptDetail.Status, i.Status })
+            .ToListAsync();
+        return [.. lots, .. items.Select(i => new Suggestion("item", i.ReceiptDetailId, i.SerialCode, i.LotCode, i.SKU, i.ProductName,
+            i.Unit, i.QuantityOnHand, i.LotStatus, i.Status))];
+    }
+
+    internal static IQueryable<LotRow> Rows(IQueryable<GoodsReceiptDetail> source) => source.Select(d => new LotRow(
         d.ReceiptDetailId, d.LotCode, d.ProductId, d.Product.SKU, d.Product.ProductName, d.Product.Unit, d.Product.Category.CategoryName,
         d.Receipt.ReceiptDate, d.ReceiptId, d.Receipt.Code, d.Receipt.Supplier.SupplierName,
         d.Quantity, d.QuantityOnHand, d.Items.Count(i => i.Status == ItemStatus.Reserved), d.Status));
@@ -122,7 +159,7 @@ public class StocktakesController(VibasicDbContext db, StocktakeService stocktak
     public record StocktakeRow(int Id, string Code, int PlanId, string PlanCode, DateTime StocktakeDate, string CreatorName,
         string? ApproverName, DateTime? ApprovedAt, ApprovalStatus Status, int LotCount, int DiffLots, int Shortage, int Surplus, string? RejectReason);
     public record DetailRow(int Id, int ReceiptDetailId, string LotCode, string Sku, string ProductName, string Unit, LotStatus LotStatus,
-        int SystemQuantity, int ActualQuantity, string? Reason);
+        int SystemQuantity, int ActualQuantity, string? Reason, CountMethod Method, DateTime? CountedAt, int Unlabeled, List<string>? MissingSerials);
     public record StocktakeView(StocktakeRow Header, List<DetailRow> Details, List<ReportRow> Reports);
 
     [HttpGet]
@@ -138,8 +175,23 @@ public class StocktakesController(VibasicDbContext db, StocktakeService stocktak
         var details = await db.StocktakeDetails.Where(d => d.StocktakeId == id)
             .OrderBy(d => d.ActualQuantity == d.SystemQuantity).ThenBy(d => d.ReceiptDetail.Product.SKU).ThenBy(d => d.ReceiptDetail.LotCode)
             .Select(d => new DetailRow(d.DetailId, d.ReceiptDetailId, d.ReceiptDetail.LotCode, d.ReceiptDetail.Product.SKU, d.ReceiptDetail.Product.ProductName,
-                d.ReceiptDetail.Product.Unit, d.ReceiptDetail.Status, d.SystemQuantity, d.ActualQuantity, d.Reason))
+                d.ReceiptDetail.Product.Unit, d.ReceiptDetail.Status, d.SystemQuantity, d.ActualQuantity, d.Reason, d.Method, d.CountedAt, d.UnlabeledQuantity, null))
             .ToListAsync();
+        // K4: while the count waits for approval, show exactly which scanned-lot items will be written off.
+        if (header.Status == ApprovalStatus.Pending)
+        {
+            var scanIds = details.Where(d => d.Method == CountMethod.Scan).Select(d => d.Id).ToList();
+            var scanned = await db.StocktakeItems.Where(x => scanIds.Contains(x.DetailId)).Select(x => x.ItemId).ToListAsync();
+            var scanLots = details.Where(d => d.Method == CountMethod.Scan).Select(d => d.ReceiptDetailId).ToList();
+            var items = await db.StockItems.Where(i => scanLots.Contains(i.ReceiptDetailId)).ToListAsync();
+            var seen = scanned.ToHashSet();
+            details = details.Select(d => d.Method != CountMethod.Scan ? d : d with
+            {
+                MissingSerials = items.Where(i => i.ReceiptDetailId == d.ReceiptDetailId && !seen.Contains(i.ItemId)
+                        && StocktakeService.OnShelfAt(i, d.CountedAt ?? header.StocktakeDate))
+                    .Select(i => i.SerialCode).Order().ToList(),
+            }).ToList();
+        }
         // Reports filed while counting this plan (UC_15 step 2 "biên bản bất thường kèm theo").
         var lots = details.Select(d => d.ReceiptDetailId).ToList();
         var reports = await db.AbnormalReports

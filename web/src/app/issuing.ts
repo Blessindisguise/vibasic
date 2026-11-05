@@ -27,7 +27,8 @@ export interface PickLot { receiptDetailId: number; lotCode: string; receivedDat
 export interface IssueLine { detailId: number; productId: number; sku: string; productName: string; unit: string; quantity: number; picked: number; lots: PickLot[] }
 export interface IssueView { header: IssueRow; lines: IssueLine[]; reports: ReportRow[] }
 
-export interface ScanResult { serial: string; lotCode: string; sku: string; alreadyPicked: boolean; picked: number; total: number }
+/** replacedSerial: the scanned item was taken in place of this one from the same lot (X1). */
+export interface ScanResult { serial: string; lotCode: string; sku: string; alreadyPicked: boolean; picked: number; total: number; replacedSerial?: string }
 export interface DefectResult { reportCodes: string[]; replaced: number; returnPicked: string[]; onHold: boolean }
 
 const qs = (f: object) => {
@@ -60,8 +61,8 @@ export function useCreateIssue() {
 export function useIssueAction() {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: ({ id, action, reason }: { id: number; action: 'approve' | 'reject'; reason?: string }) =>
-      api<IssueView>(`/issues/${id}/${action}`, { method: 'POST', json: action === 'reject' ? { reason } : undefined }),
+    mutationFn: ({ id, action, reason }: { id: number; action: 'approve' | 'reject' | 'revoke'; reason?: string }) =>
+      api<IssueView>(`/issues/${id}/${action}`, { method: 'POST', json: action === 'approve' ? undefined : { reason } }),
     onSuccess: refresh,
   });
 }

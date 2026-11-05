@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
-import { Button, ConfirmDialog, DataTable, EmptyState, FilterBar, KpiTile, PriorityChip, TextField, type DataTableColumn } from '../../design';
+import { Button, ConfirmDialog, DataTable, EmptyState, FilterBar, KpiTile, PriorityChip, StatusBadge, TextField, type DataTableColumn } from '../../design';
+import { useNavigate } from 'react-router-dom';
 import { fmt, fmtDateTime, fmtShort } from '../../app/format';
 import { FormDialog } from '../../app/Modal';
 import { Segmented } from '../../app/Segmented';
 import { useToast } from '../../app/toast';
 import { Code, ListError, Loading } from '../../app/ui';
 import { matches, parseNumber } from '../../app/text';
+import { suggestFrom } from '../../app/suggest';
 import { fieldErrors, formError } from '../../app/catalog';
 import { ApprovalBadge } from '../../app/statusBadges';
 import {
@@ -107,13 +109,16 @@ export function ProposalsPage() {
         label="Trạng thái đề xuất" value={status} onChange={s => { setStatus(s); setSelected([]); }}
         options={[
           { value: 'pending', label: 'Chờ duyệt', count: all.data?.length },
-          { value: 'approved', label: 'Đã duyệt' },
+          { value: 'approved', label: 'Đã duyệt, chờ hàng' },
+          { value: 'received', label: 'Đã nhập hàng' },
           { value: 'rejected', label: 'Từ chối' },
           { value: 'closed', label: 'Đã đóng' },
         ]}
       />
       <FilterBar
         search={search} onSearchChange={setSearch} searchPlaceholder="Tìm theo mã SKU, tên hàng…"
+        suggestions={suggestFrom(source, search, p => [p.basis.sku, p.basis.productName], p => ({ key: String(p.id), label: p.basis.sku, hint: `${p.basis.productName} · ${p.basis.supplierName}` }))}
+        onPickSuggestion={s => setSearch(s.label)}
         filters={[
           { key: 'supplier', label: 'Nhà cung cấp', value: supplierId, options: suppliers.map(([id, name]) => ({ value: String(id), label: name })) },
           { key: 'category', label: 'Nhóm hàng', value: categoryId, options: categories.map(([id, name]) => ({ value: String(id), label: name })) },
@@ -152,7 +157,17 @@ export function ProposalsPage() {
 }
 
 function StatusOf({ p }: { p: ProposalRow }) {
-  return p.status === 'closed' ? <span className="vb-muted">Đã đóng (tồn đã vượt ROP)</span> : <ApprovalBadge status={p.status} />;
+  const nav = useNavigate();
+  if (p.status === 'closed') return <span className="vb-muted">Đã đóng (tồn đã vượt ROP)</span>;
+  if (p.status === 'received') {
+    return (
+      <span className="vb-row" style={{ gap: 4 }}>
+        <StatusBadge status="approved" label="Đã nhập hàng" icon="package-check" />
+        {p.receiptCode && <Button variant="ghost" size="sm" onClick={() => nav(`/ql/nhap-kho/${p.receiptId}`)}>{p.receiptCode}</Button>}
+      </span>
+    );
+  }
+  return <ApprovalBadge status={p.status} />;
 }
 
 function RejectDialog({ proposal: p, onClose }: { proposal: ProposalRow; onClose: () => void }) {

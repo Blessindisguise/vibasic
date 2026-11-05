@@ -4,12 +4,13 @@ import { AlertBanner, ApprovalStepper, Button, ConfirmDialog, DataTable, EmptySt
 import { fmt, fmtDateTime } from '../../app/format';
 import { useToast } from '../../app/toast';
 import { ApiError } from '../../app/api';
-import { ApprovalBadge, LotStatusBadge, ReceiptStatusBadge } from '../../app/statusBadges';
-import { useReceipt, useReceiptAction, useReportAction, type LotRow, type ReportRow } from '../../app/receiving';
+import { LotStatusBadge, ReceiptStatusBadge } from '../../app/statusBadges';
+import { reportHref, useReceipt, useReceiptAction, type LotRow, type ReportRow } from '../../app/receiving';
 import { Code, ListError, Loading } from '../../app/ui';
+import { ReportDecision, ReportStatusCell } from '../abnormal/ReportDecision';
 
 type Role = 'manager' | 'staff';
-type Dialog = { kind: 'submit' | 'approve' | 'reject' } | { kind: 'report-approve' | 'report-reject'; report: ReportRow } | null;
+type Dialog = 'submit' | 'approve' | 'reject' | 'revoke' | null;
 
 /**
  * Receipt detail (UC_06 step 5, UC_10 step 2). Staff: print labels, edit, confirm and submit (UC_05).
@@ -18,7 +19,6 @@ type Dialog = { kind: 'submit' | 'approve' | 'reject' } | { kind: 'report-approv
 export function ReceiptDetail({ id, role, basePath }: { id: number; role: Role; basePath: string }) {
   const receipt = useReceipt(id);
   const action = useReceiptAction();
-  const reportAction = useReportAction();
   const toast = useToast();
   const nav = useNavigate();
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -41,22 +41,18 @@ export function ReceiptDetail({ id, role, basePath }: { id: number; role: Role; 
   const quarantined = lots.filter(l => l.status === 'quarantined');
   const recorded = h.status === 'approved';
 
-  const run = (kind: 'submit' | 'approve' | 'reject', reason?: string) => action.mutate({ id, action: kind, reason }, {
+  const done: Record<Exclude<Dialog, null>, string> = {
+    submit: `Đã gửi phiếu ${h.code} cho quản lý duyệt`, approve: `Đã duyệt phiếu ${h.code}`,
+    reject: `Đã từ chối phiếu ${h.code}`, revoke: `Đã hủy duyệt phiếu ${h.code}`,
+  };
+  const run = (kind: Exclude<Dialog, null>, reason?: string) => action.mutate({ id, action: kind, reason }, {
     onSuccess: () => {
       setDialog(null);
       toast({
-        tone: kind === 'reject' ? 'info' : 'success',
-        title: kind === 'submit' ? `Đã gửi phiếu ${h.code} cho quản lý duyệt` : kind === 'approve' ? `Đã duyệt phiếu ${h.code}` : `Đã từ chối phiếu ${h.code}`,
-        message: kind === 'approve' && quarantined.length > 0 ? 'Xử lý tiếp biên bản bất thường của lô tạm cách ly.' : undefined,
+        tone: kind === 'reject' || kind === 'revoke' ? 'info' : 'success', title: done[kind],
+        message: kind === 'approve' && quarantined.length > 0 ? 'Xử lý tiếp biên bản bất thường của lô tạm cách ly.'
+          : kind === 'revoke' ? 'Phiếu trở về Chờ duyệt: duyệt lại, hoặc từ chối để nhân viên kho sửa.' : undefined,
       });
-    },
-    onError: e => { setDialog(null); toast({ tone: 'danger', title: 'Không thực hiện được', message: e.message }); },
-  });
-
-  const runReport = (report: ReportRow, kind: 'approve' | 'reject', reason?: string) => reportAction.mutate({ id: report.id, action: kind, reason }, {
-    onSuccess: () => {
-      setDialog(null);
-      toast({ tone: kind === 'approve' ? 'success' : 'info', title: kind === 'approve' ? `Đã khóa lô ${report.lotCode}` : `Lô ${report.lotCode} trở về Bình thường` });
     },
     onError: e => { setDialog(null); toast({ tone: 'danger', title: 'Không thực hiện được', message: e.message }); },
   });
@@ -84,19 +80,12 @@ export function ReceiptDetail({ id, role, basePath }: { id: number; role: Role; 
     { key: 'description', header: 'Mô tả lỗi', render: r => <span style={{ whiteSpace: 'normal' }}>{r.description}</span> },
     { key: 'quantity', header: 'SL lỗi', numeric: true, width: 90, render: r => `${fmt(r.quantity)} ${r.unit}` },
     {
-      key: 'status', header: 'Trạng thái', width: 120,
-      render: r => <span title={r.rejectReason ? `Lý do: ${r.rejectReason}` : undefined}><ApprovalBadge status={r.status} /></span>,
+      key: 'status', header: 'Trạng thái', width: 170,
+      render: r => <ReportStatusCell report={r} />,
     },
     ...(role === 'manager' ? [{
-      key: 'actions', header: '', width: 200, align: 'right' as const,
-      render: (r: ReportRow) => r.status !== 'pending' ? <span className="vb-muted">{r.approverName} · {fmtDateTime(r.approvedAt)}</span>
-        : !recorded ? <span className="vb-muted">Duyệt phiếu trước</span>
-        : (
-          <div className="vb-row" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-            <Button size="sm" variant="danger-outline" onClick={() => setDialog({ kind: 'report-reject', report: r })}>Từ chối</Button>
-            <Button size="sm" variant="secondary" icon="lock" onClick={() => setDialog({ kind: 'report-approve', report: r })}>Duyệt, khóa lô</Button>
-          </div>
-        ),
+      key: 'actions', header: '', width: 230, align: 'right' as const,
+      render: (r: ReportRow) => r.status === 'pending' && !recorded ? <span className="vb-muted">Duyệt phiếu trước</span> : <ReportDecision report={r} />,
     }] : []),
   ];
 
@@ -116,19 +105,22 @@ export function ReceiptDetail({ id, role, basePath }: { id: number; role: Role; 
               <ReceiptStatusBadge status={h.status} size={size} />
             </div>
             <div className="vb-muted" style={{ marginTop: 2, fontSize: touch ? 14 : undefined }}>
-              {h.supplierName} · Lập {fmtDateTime(h.receiptDate)} bởi {h.creatorName}
+              {h.supplierName}{h.deliveryNoteNo && <> · chứng từ <b>{h.deliveryNoteNo}</b></>} · Lập {fmtDateTime(h.receiptDate)} bởi {h.creatorName}
             </div>
           </div>
           <div className="vb-row">
             {role === 'staff' && <>
               <Button variant="secondary" size={size} icon="printer" onClick={() => window.open(`/in/nhap-kho/${id}`, '_blank')}>In mã vạch</Button>
               {editable && <Button variant="secondary" size={size} icon="square-pen" onClick={() => nav(`${basePath}/${id}/sua`)}>Sửa phiếu</Button>}
-              {editable && <Button size={size} icon="send" onClick={() => setDialog({ kind: 'submit' })}>Xác nhận nhập kho và gửi duyệt</Button>}
+              {editable && <Button size={size} icon="send" onClick={() => setDialog('submit')}>Xác nhận nhập kho và gửi duyệt</Button>}
             </>}
             {role === 'manager' && h.status === 'pending' && <>
-              <Button variant="danger-outline" icon="circle-x" onClick={() => setDialog({ kind: 'reject' })}>Từ chối phiếu</Button>
-              <Button icon="check" onClick={() => setDialog({ kind: 'approve' })}>Duyệt phiếu</Button>
+              <Button variant="danger-outline" icon="circle-x" onClick={() => setDialog('reject')}>Từ chối phiếu</Button>
+              <Button icon="check" onClick={() => setDialog('approve')}>Duyệt phiếu</Button>
             </>}
+            {role === 'manager' && h.status === 'approved' && (
+              <Button variant="secondary" icon="undo-2" onClick={() => setDialog('revoke')}>Hủy duyệt</Button>
+            )}
           </div>
         </div>
         <div className="vb-panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -176,14 +168,14 @@ export function ReceiptDetail({ id, role, basePath }: { id: number; role: Role; 
         <section className="vb-panel">
           <div className="vb-panel__head"><h3 className="vb-panel__title">Biên bản bất thường</h3></div>
           {reports.length > 0
-            ? <DataTable columns={reportColumns} rows={reports} density={touch ? 'default' : 'compact'} caption="Biên bản bất thường của phiếu" />
+            ? <DataTable columns={reportColumns} rows={reports} density={touch ? 'default' : 'compact'} onRowClick={r => nav(reportHref(role, r.id))} caption="Biên bản bất thường của phiếu" />
             : <EmptyState icon="shield-alert" title="Chưa lập biên bản"
                 description={`Hệ thống lập ${quarantined.length} biên bản cho lô tạm cách ly khi bạn xác nhận nhập kho.`} />}
         </section>
       )}
 
       <ConfirmDialog
-        open={dialog?.kind === 'submit'} title={`Gửi phiếu ${h.code} cho quản lý duyệt?`}
+        open={dialog === 'submit'} title={`Gửi phiếu ${h.code} cho quản lý duyệt?`}
         description={<>
           Xác nhận đã dán mã vạch và xếp {fmt(normalQty)} sản phẩm đạt vào kho.
           {quarantined.length > 0 && <> Hệ thống lập {quarantined.length} biên bản bất thường cho {fmt(quarantined.reduce((s, l) => s + l.quantity, 0))} sản phẩm không đạt và giữ lô ở trạng thái Tạm cách ly.</>}
@@ -192,7 +184,7 @@ export function ReceiptDetail({ id, role, basePath }: { id: number; role: Role; 
         confirmLabel="Gửi duyệt" onConfirm={() => run('submit')} onCancel={() => setDialog(null)}
       />
       <ConfirmDialog
-        open={dialog?.kind === 'approve'} title={`Duyệt phiếu ${h.code}?`}
+        open={dialog === 'approve'} title={`Duyệt phiếu ${h.code}?`}
         description={<>
           Ghi nhận tồn kho {fmt(normalQty)} sản phẩm của {lots.filter(l => l.status === 'normal').length} lô Bình thường.
           {quarantined.length > 0 && <> Lô tạm cách ly vẫn chưa xuất được cho đến khi xử lý biên bản bất thường.</>}
@@ -200,24 +192,20 @@ export function ReceiptDetail({ id, role, basePath }: { id: number; role: Role; 
         confirmLabel="Duyệt phiếu" onConfirm={() => run('approve')} onCancel={() => setDialog(null)}
       />
       <ConfirmDialog
-        open={dialog?.kind === 'reject'} tone="danger" title={`Từ chối phiếu ${h.code}?`} requireReason
+        open={dialog === 'reject'} tone="danger" title={`Từ chối phiếu ${h.code}?`} requireReason
         description="Tồn kho giữ nguyên. Nhân viên kho nhận được lý do để sửa phiếu và gửi lại."
         confirmLabel="Từ chối phiếu" onConfirm={reason => run('reject', reason)} onCancel={() => setDialog(null)}
       />
-      {dialog?.kind === 'report-approve' && (
-        <ConfirmDialog
-          title={`Duyệt biên bản ${dialog.report.code} và khóa lô ${dialog.report.lotCode}?`}
-          description={`${fmt(dialog.report.quantity)} ${dialog.report.unit} ${dialog.report.productName} bị loại khỏi tồn kho khả dụng và không được xuất.`}
-          confirmLabel="Duyệt, khóa lô" onConfirm={() => runReport(dialog.report, 'approve')} onCancel={() => setDialog(null)}
-        />
-      )}
-      {dialog?.kind === 'report-reject' && (
-        <ConfirmDialog
-          tone="danger" requireReason title={`Từ chối biên bản ${dialog.report.code}?`}
-          description={`Lô ${dialog.report.lotCode} trở về Bình thường; ${fmt(dialog.report.quantity)} ${dialog.report.unit} được tính vào tồn kho khả dụng.`}
-          confirmLabel="Từ chối biên bản" onConfirm={reason => runReport(dialog.report, 'reject', reason)} onCancel={() => setDialog(null)}
-        />
-      )}
+      <ConfirmDialog
+        open={dialog === 'revoke'} requireReason reasonPlaceholder="Vì sao cần hủy duyệt phiếu này…" reasonHelp="Lý do được gửi kèm thông báo cho nhân viên lập phiếu."
+        title={`Hủy duyệt phiếu ${h.code}?`}
+        description={<>
+          Tồn kho {fmt(normalQty)} sản phẩm của phiếu bị gỡ ra cho đến khi duyệt lại
+          {reports.length > 0 && <>; {reports.length} biên bản bất thường trở về Chờ duyệt và lô liên quan trở về Tạm cách ly</>}.
+          {' '}Phiếu trở về Chờ duyệt: bạn duyệt lại, hoặc từ chối để nhân viên kho sửa. Chỉ hủy được khi hàng của phiếu chưa được giữ chỗ, xuất kho hay kiểm kê.
+        </>}
+        confirmLabel="Hủy duyệt" onConfirm={reason => run('revoke', reason)} onCancel={() => setDialog(null)}
+      />
     </div>
   );
 }

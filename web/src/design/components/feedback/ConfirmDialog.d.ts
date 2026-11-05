@@ -4,7 +4,7 @@
  */
 export interface ConfirmDialogProps {
   open?: boolean; tone?: 'primary' | 'danger'; title: string; description?: React.ReactNode; children?: React.ReactNode;
-  requireReason?: boolean; reasonLabel?: string; reasonPlaceholder?: string; minReason?: number;
+  requireReason?: boolean; reasonLabel?: string; reasonPlaceholder?: string; reasonHelp?: string; minReason?: number;
   confirmLabel?: string; cancelLabel?: string;
   onConfirm?: (reason: string) => void; onCancel?: () => void;
   /** Render without overlay (for docs / embedding) */ inline?: boolean;

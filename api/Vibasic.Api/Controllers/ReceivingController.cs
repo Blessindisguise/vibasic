@@ -33,7 +33,10 @@ public class ReceiptsController(VibasicDbContext db, ReceiptService receipts) : 
 {
     public record ReceiptRow(int Id, string Code, DateTime ReceiptDate, DateTime? SubmittedAt, int SupplierId, string SupplierName,
         int CreatedBy, string CreatorName, string? ApproverName, DateTime? ApprovedAt, ReceiptStatus Status,
-        int ProductCount, int TotalQuantity, int LotCount, int PendingReports, string? RejectReason);
+        int ProductCount, int TotalQuantity, int LotCount, int PendingReports, string? RejectReason, string? DeliveryNoteNo);
+
+    /// <summary>N1: goods ordered through an approved replenishment proposal that have not arrived yet.</summary>
+    public record ExpectedRow(int ProposalId, int ProductId, string Sku, string ProductName, string Unit, int SupplierId, int OrderedQuantity, DateTime? ApprovedAt);
 
     public record LotRow(int Id, string LotCode, int ProductId, string Sku, string ProductName, string Unit,
         int Quantity, int QuantityOnHand, LotStatus Status, int? DocumentQuantity, string? Note);
@@ -55,6 +58,16 @@ public class ReceiptsController(VibasicDbContext db, ReceiptService receipts) : 
         if (to is not null) { var t = VnTime.ToUtc(to.Value.AddDays(1).ToDateTime(TimeOnly.MinValue)); q = q.Where(r => r.ReceiptDate < t); }
         return await Rows(q.OrderByDescending(r => r.ReceiptDate).Take(500)).ToListAsync();
     }
+
+    /// <summary>N1: approved proposals still waiting for goods, optionally for one supplier (its products).</summary>
+    [HttpGet("expected")]
+    public async Task<List<ExpectedRow>> Expected(int? supplierId) =>
+        await db.ReplenishmentProposals
+            .Where(r => r.Status == ProposalStatus.Approved && (supplierId == null || r.Product.SupplierId == supplierId))
+            .OrderBy(r => r.Product.SKU)
+            .Select(r => new ExpectedRow(r.ProposalId, r.ProductId, r.Product.SKU, r.Product.ProductName, r.Product.Unit, r.Product.SupplierId,
+                r.ProposedQuantity, r.ApprovedAt))
+            .ToListAsync();
 
     [HttpGet("{id:int}")]
     public async Task<ActionResult<ReceiptView>> Get(int id)
@@ -101,6 +114,9 @@ public class ReceiptsController(VibasicDbContext db, ReceiptService receipts) : 
     [HttpPost("{id:int}/reject"), Authorize(Policy = Policies.Manager)]
     public async Task<ReceiptView> Reject(int id, ReasonInput input) => await View((await receipts.RejectAsync(id, input.Reason, User.UserId())).ReceiptId);
 
+    [HttpPost("{id:int}/revoke"), Authorize(Policy = Policies.Manager)]
+    public async Task<ReceiptView> Revoke(int id, ReasonInput input) => await View((await receipts.RevokeAsync(id, input.Reason, User.UserId())).ReceiptId);
+
     private async Task<ReceiptView> View(int id) => (await Get(id)).Value!;
 
     private IQueryable<ReceiptRow> Rows(IQueryable<GoodsReceipt> source) => source.Select(r => new ReceiptRow(
@@ -108,7 +124,7 @@ public class ReceiptsController(VibasicDbContext db, ReceiptService receipts) : 
         r.Approver != null ? r.Approver.FullName : null, r.ApprovedAt, r.Status,
         r.Details.Select(d => d.ProductId).Distinct().Count(), r.Details.Sum(d => d.Quantity), r.Details.Count(),
         db.AbnormalReports.Count(a => a.ReceiptDetail.ReceiptId == r.ReceiptId && a.Status == ApprovalStatus.Pending),
-        r.RejectReason));
+        r.RejectReason, r.DeliveryNoteNo));
 }
 
 /// <summary>UC_12 for reports raised at receiving. Listing and filing from issue/stocktake come with phases 4–5.</summary>
@@ -126,6 +142,33 @@ public class AbnormalReportsController(VibasicDbContext db, AbnormalReportServic
         return await q.OrderByDescending(a => a.CreatedAt).Take(500).Rows().ToListAsync();
     }
 
+    /// <param name="IssueCode">Goods issue during which the defect was found (source "Xuất kho").</param>
+    /// <param name="StocktakeId">Stocktake the report is attached to (source "Kiểm kê"), once the count was submitted.</param>
+    /// <param name="Others">Other reports of the same lot, newest first.</param>
+    public record ReportView(ReportRow Report, LotsController.LotRow Lot, string? IssueCode, int? StocktakeId, string? StocktakeCode,
+        List<ItemCount> Items, List<ReportRow> Others);
+    public record ItemCount(ItemStatus Status, int Count);
+
+    /// <summary>One report with its lot, where it was found and the lot's other reports.</summary>
+    [HttpGet("{id:int}")]
+    public async Task<ActionResult<ReportView>> Get(int id)
+    {
+        var report = await db.AbnormalReports.Where(a => a.ReportId == id).Rows().SingleOrDefaultAsync();
+        if (report is null) return Problem(statusCode: 404, title: "Không tìm thấy biên bản bất thường.");
+        var lot = await LotsController.Rows(db.GoodsReceiptDetails.Where(d => d.ReceiptDetailId == report.ReceiptDetailId)).SingleAsync();
+        var issueCode = report.IssueId is null ? null
+            : await db.GoodsIssues.Where(i => i.IssueId == report.IssueId).Select(i => i.Code).SingleOrDefaultAsync();
+        // Same rule as the stocktake view: a report filed while counting belongs to the first stocktake of that lot submitted after it.
+        var stocktake = report.SourceType != AbnormalSource.Stocktake ? null
+            : await db.Stocktakes.Where(s => s.StocktakeDate >= report.CreatedAt && s.Details.Any(d => d.ReceiptDetailId == report.ReceiptDetailId))
+                .OrderBy(s => s.StocktakeDate).Select(s => new { s.StocktakeId, s.Code }).FirstOrDefaultAsync();
+        var items = await db.StockItems.Where(i => i.ReceiptDetailId == report.ReceiptDetailId)
+            .GroupBy(i => i.Status).Select(g => new ItemCount(g.Key, g.Count())).ToListAsync();
+        var others = await db.AbnormalReports.Where(a => a.ReceiptDetailId == report.ReceiptDetailId && a.ReportId != id)
+            .OrderByDescending(a => a.CreatedAt).Rows().ToListAsync();
+        return new ReportView(report, lot, issueCode, stocktake?.StocktakeId, stocktake?.Code, items, others);
+    }
+
     [HttpPost("{id:int}/approve"), Authorize(Policy = Policies.Manager)]
     public async Task<ReportRow> Approve(int id)
     {
@@ -137,6 +180,13 @@ public class AbnormalReportsController(VibasicDbContext db, AbnormalReportServic
     public async Task<ReportRow> Reject(int id, ReasonInput input)
     {
         await reports.RejectAsync(id, input.Reason, User.UserId());
+        return await db.AbnormalReports.Where(a => a.ReportId == id).Rows().SingleAsync();
+    }
+
+    [HttpPost("{id:int}/revoke"), Authorize(Policy = Policies.Manager)]
+    public async Task<ReportRow> Revoke(int id, ReasonInput input)
+    {
+        await reports.RevokeAsync(id, input.Reason, User.UserId());
         return await db.AbnormalReports.Where(a => a.ReportId == id).Rows().SingleAsync();
     }
 }

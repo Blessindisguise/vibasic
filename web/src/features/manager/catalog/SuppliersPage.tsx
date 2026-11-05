@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Button, DataTable, EmptyState, FilterBar, TextField, type DataTableColumn } from '../../../design';
 import { fmt } from '../../../app/format';
 import { matches } from '../../../app/text';
+import { suggestFrom } from '../../../app/suggest';
 import { FormDialog } from '../../../app/Modal';
 import { useToast } from '../../../app/toast';
 import { fieldErrors, formError, useSaveSupplier, useSuppliers, type Supplier } from '../../../app/catalog';
@@ -28,6 +29,8 @@ export function SuppliersPage() {
     <div className="vb-stack">
       <FilterBar
         search={search} onSearchChange={setSearch} searchPlaceholder="Tìm theo tên, số điện thoại, địa chỉ…"
+        suggestions={suggestFrom(suppliers.data, search, s => [s.name, s.phone, s.address], s => ({ key: String(s.id), label: s.name, hint: [s.phone, s.address].filter(Boolean).join(' · ') }))}
+        onPickSuggestion={s => setSearch(s.label)}
         resultCount={suppliers.data ? rows.length : undefined}
         actions={<Button icon="plus" onClick={() => setEditing('new')}>Thêm nhà cung cấp</Button>}
       />

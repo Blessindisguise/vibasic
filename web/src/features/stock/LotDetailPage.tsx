@@ -8,7 +8,7 @@ import { Code, ListError, Loading } from '../../app/ui';
 import { ApprovalBadge, ItemStatusBadge, ITEM_STATUS_LABEL, LotStatusBadge, SOURCE_LABEL } from '../../app/statusBadges';
 import { useLot } from '../../app/stock';
 import type { ItemStatus } from '../../app/issuing';
-import type { ReportRow } from '../../app/receiving';
+import { reportHref, type ReportRow } from '../../app/receiving';
 import { ReportDecision } from '../abnormal/ReportDecision';
 
 /** UC_16 step 5: the items (identity codes) of a lot and their status, plus the lot's abnormal reports. */
@@ -113,7 +113,7 @@ export function LotDetailPage({ id, role, basePath }: { id: number; role: 'manag
       {reports.length > 0 && (
         <section className="vb-panel">
           <div className="vb-panel__head"><h3 className="vb-panel__title">Biên bản bất thường của lô</h3></div>
-          <DataTable columns={reportColumns} rows={reports} density={touch ? 'default' : 'compact'} caption="Biên bản bất thường của lô" />
+          <DataTable columns={reportColumns} rows={reports} density={touch ? 'default' : 'compact'} onRowClick={r => nav(reportHref(role, r.id))} caption="Biên bản bất thường của lô" />
         </section>
       )}
     </div>
