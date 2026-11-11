@@ -354,22 +354,58 @@ namespace Vibasic.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "StockLot",
+                name: "GoodsIssueDetail",
                 columns: table => new
                 {
-                    LotId = table.Column<int>(type: "int", nullable: false)
+                    IssueDetailId = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    LotCode = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    IssueId = table.Column<int>(type: "int", nullable: false),
                     ProductId = table.Column<int>(type: "int", nullable: false),
-                    ReceivedDate = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    QuantityOnHand = table.Column<int>(type: "int", nullable: false, defaultValue: 0),
-                    Status = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false)
+                    Quantity = table.Column<int>(type: "int", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_StockLot", x => x.LotId);
+                    table.PrimaryKey("PK_GoodsIssueDetail", x => x.IssueDetailId);
                     table.ForeignKey(
-                        name: "FK_StockLot_Product_ProductId",
+                        name: "FK_GoodsIssueDetail_GoodsIssue_IssueId",
+                        column: x => x.IssueId,
+                        principalTable: "GoodsIssue",
+                        principalColumn: "IssueId",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_GoodsIssueDetail_Product_ProductId",
+                        column: x => x.ProductId,
+                        principalTable: "Product",
+                        principalColumn: "ProductId",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "GoodsReceiptDetail",
+                columns: table => new
+                {
+                    ReceiptDetailId = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    ReceiptId = table.Column<int>(type: "int", nullable: false),
+                    ProductId = table.Column<int>(type: "int", nullable: false),
+                    LotCode = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Quantity = table.Column<int>(type: "int", nullable: false),
+                    QuantityOnHand = table.Column<int>(type: "int", nullable: false, defaultValue: 0),
+                    Status = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
+                    DocumentQuantity = table.Column<int>(type: "int", nullable: true),
+                    Note = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_GoodsReceiptDetail", x => x.ReceiptDetailId);
+                    table.ForeignKey(
+                        name: "FK_GoodsReceiptDetail_GoodsReceipt_ReceiptId",
+                        column: x => x.ReceiptId,
+                        principalTable: "GoodsReceipt",
+                        principalColumn: "ReceiptId",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_GoodsReceiptDetail_Product_ProductId",
                         column: x => x.ProductId,
                         principalTable: "Product",
                         principalColumn: "ProductId",
@@ -421,7 +457,7 @@ namespace Vibasic.Infrastructure.Migrations
                     ReportId = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
                     Code = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
-                    LotId = table.Column<int>(type: "int", nullable: false),
+                    ReceiptDetailId = table.Column<int>(type: "int", nullable: false),
                     SourceType = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
                     Description = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
                     Quantity = table.Column<int>(type: "int", nullable: false),
@@ -443,10 +479,10 @@ namespace Vibasic.Infrastructure.Migrations
                         principalColumn: "IssueId",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
-                        name: "FK_AbnormalReport_StockLot_LotId",
-                        column: x => x.LotId,
-                        principalTable: "StockLot",
-                        principalColumn: "LotId",
+                        name: "FK_AbnormalReport_GoodsReceiptDetail_ReceiptDetailId",
+                        column: x => x.ReceiptDetailId,
+                        principalTable: "GoodsReceiptDetail",
+                        principalColumn: "ReceiptDetailId",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_AbnormalReport_User_ApprovedBy",
@@ -463,59 +499,31 @@ namespace Vibasic.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "GoodsIssueDetail",
+                name: "StockItem",
                 columns: table => new
                 {
-                    IssueDetailId = table.Column<int>(type: "int", nullable: false)
+                    ItemId = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    IssueId = table.Column<int>(type: "int", nullable: false),
-                    LotId = table.Column<int>(type: "int", nullable: false),
-                    Quantity = table.Column<int>(type: "int", nullable: false)
+                    ReceiptDetailId = table.Column<int>(type: "int", nullable: false),
+                    SerialCode = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Status = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
+                    IssueDetailId = table.Column<int>(type: "int", nullable: true),
+                    PickedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_GoodsIssueDetail", x => x.IssueDetailId);
+                    table.PrimaryKey("PK_StockItem", x => x.ItemId);
                     table.ForeignKey(
-                        name: "FK_GoodsIssueDetail_GoodsIssue_IssueId",
-                        column: x => x.IssueId,
-                        principalTable: "GoodsIssue",
-                        principalColumn: "IssueId",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_GoodsIssueDetail_StockLot_LotId",
-                        column: x => x.LotId,
-                        principalTable: "StockLot",
-                        principalColumn: "LotId",
+                        name: "FK_StockItem_GoodsIssueDetail_IssueDetailId",
+                        column: x => x.IssueDetailId,
+                        principalTable: "GoodsIssueDetail",
+                        principalColumn: "IssueDetailId",
                         onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "GoodsReceiptDetail",
-                columns: table => new
-                {
-                    ReceiptDetailId = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    ReceiptId = table.Column<int>(type: "int", nullable: false),
-                    LotId = table.Column<int>(type: "int", nullable: false),
-                    Quantity = table.Column<int>(type: "int", nullable: false),
-                    QcResult = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
-                    DocumentQuantity = table.Column<int>(type: "int", nullable: true),
-                    Note = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_GoodsReceiptDetail", x => x.ReceiptDetailId);
                     table.ForeignKey(
-                        name: "FK_GoodsReceiptDetail_GoodsReceipt_ReceiptId",
-                        column: x => x.ReceiptId,
-                        principalTable: "GoodsReceipt",
-                        principalColumn: "ReceiptId",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_GoodsReceiptDetail_StockLot_LotId",
-                        column: x => x.LotId,
-                        principalTable: "StockLot",
-                        principalColumn: "LotId",
+                        name: "FK_StockItem_GoodsReceiptDetail_ReceiptDetailId",
+                        column: x => x.ReceiptDetailId,
+                        principalTable: "GoodsReceiptDetail",
+                        principalColumn: "ReceiptDetailId",
                         onDelete: ReferentialAction.Restrict);
                 });
 
@@ -526,16 +534,16 @@ namespace Vibasic.Infrastructure.Migrations
                     PlanDetailId = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
                     PlanId = table.Column<int>(type: "int", nullable: false),
-                    LotId = table.Column<int>(type: "int", nullable: false)
+                    ReceiptDetailId = table.Column<int>(type: "int", nullable: false)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_StocktakePlanDetail", x => x.PlanDetailId);
                     table.ForeignKey(
-                        name: "FK_StocktakePlanDetail_StockLot_LotId",
-                        column: x => x.LotId,
-                        principalTable: "StockLot",
-                        principalColumn: "LotId",
+                        name: "FK_StocktakePlanDetail_GoodsReceiptDetail_ReceiptDetailId",
+                        column: x => x.ReceiptDetailId,
+                        principalTable: "GoodsReceiptDetail",
+                        principalColumn: "ReceiptDetailId",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_StocktakePlanDetail_StocktakePlan_PlanId",
@@ -552,7 +560,7 @@ namespace Vibasic.Infrastructure.Migrations
                     DetailId = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
                     StocktakeId = table.Column<int>(type: "int", nullable: false),
-                    LotId = table.Column<int>(type: "int", nullable: false),
+                    ReceiptDetailId = table.Column<int>(type: "int", nullable: false),
                     SystemQuantity = table.Column<int>(type: "int", nullable: false),
                     ActualQuantity = table.Column<int>(type: "int", nullable: false),
                     Reason = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true)
@@ -561,10 +569,10 @@ namespace Vibasic.Infrastructure.Migrations
                 {
                     table.PrimaryKey("PK_StocktakeDetail", x => x.DetailId);
                     table.ForeignKey(
-                        name: "FK_StocktakeDetail_StockLot_LotId",
-                        column: x => x.LotId,
-                        principalTable: "StockLot",
-                        principalColumn: "LotId",
+                        name: "FK_StocktakeDetail_GoodsReceiptDetail_ReceiptDetailId",
+                        column: x => x.ReceiptDetailId,
+                        principalTable: "GoodsReceiptDetail",
+                        principalColumn: "ReceiptDetailId",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_StocktakeDetail_Stocktake_StocktakeId",
@@ -572,35 +580,6 @@ namespace Vibasic.Infrastructure.Migrations
                         principalTable: "Stocktake",
                         principalColumn: "StocktakeId",
                         onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "StockItem",
-                columns: table => new
-                {
-                    ItemId = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    LotId = table.Column<int>(type: "int", nullable: false),
-                    SerialCode = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
-                    Status = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
-                    IssueDetailId = table.Column<int>(type: "int", nullable: true),
-                    PickedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_StockItem", x => x.ItemId);
-                    table.ForeignKey(
-                        name: "FK_StockItem_GoodsIssueDetail_IssueDetailId",
-                        column: x => x.IssueDetailId,
-                        principalTable: "GoodsIssueDetail",
-                        principalColumn: "IssueDetailId",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_StockItem_StockLot_LotId",
-                        column: x => x.LotId,
-                        principalTable: "StockLot",
-                        principalColumn: "LotId",
-                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateIndex(
@@ -625,9 +604,9 @@ namespace Vibasic.Infrastructure.Migrations
                 column: "IssueId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_AbnormalReport_LotId",
+                name: "IX_AbnormalReport_ReceiptDetailId",
                 table: "AbnormalReport",
-                column: "LotId");
+                column: "ReceiptDetailId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_GoodsIssue_ApprovedBy",
@@ -656,14 +635,15 @@ namespace Vibasic.Infrastructure.Migrations
                 column: "OrderId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_GoodsIssueDetail_IssueId",
+                name: "IX_GoodsIssueDetail_IssueId_ProductId",
                 table: "GoodsIssueDetail",
-                column: "IssueId");
+                columns: new[] { "IssueId", "ProductId" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_GoodsIssueDetail_LotId",
+                name: "IX_GoodsIssueDetail_ProductId",
                 table: "GoodsIssueDetail",
-                column: "LotId");
+                column: "ProductId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_GoodsReceipt_ApprovedBy",
@@ -687,9 +667,15 @@ namespace Vibasic.Infrastructure.Migrations
                 column: "SupplierId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_GoodsReceiptDetail_LotId",
+                name: "IX_GoodsReceiptDetail_LotCode",
                 table: "GoodsReceiptDetail",
-                column: "LotId");
+                column: "LotCode",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_GoodsReceiptDetail_ProductId_Status",
+                table: "GoodsReceiptDetail",
+                columns: new[] { "ProductId", "Status" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_GoodsReceiptDetail_ReceiptId",
@@ -766,26 +752,15 @@ namespace Vibasic.Infrastructure.Migrations
                 column: "IssueDetailId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_StockItem_LotId",
+                name: "IX_StockItem_ReceiptDetailId",
                 table: "StockItem",
-                column: "LotId");
+                column: "ReceiptDetailId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_StockItem_SerialCode",
                 table: "StockItem",
                 column: "SerialCode",
                 unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_StockLot_LotCode",
-                table: "StockLot",
-                column: "LotCode",
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_StockLot_ProductId_ReceivedDate",
-                table: "StockLot",
-                columns: new[] { "ProductId", "ReceivedDate" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_Stocktake_ApprovedBy",
@@ -809,9 +784,9 @@ namespace Vibasic.Infrastructure.Migrations
                 column: "PlanId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_StocktakeDetail_LotId",
+                name: "IX_StocktakeDetail_ReceiptDetailId",
                 table: "StocktakeDetail",
-                column: "LotId");
+                column: "ReceiptDetailId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_StocktakeDetail_StocktakeId",
@@ -830,14 +805,14 @@ namespace Vibasic.Infrastructure.Migrations
                 column: "CreatedBy");
 
             migrationBuilder.CreateIndex(
-                name: "IX_StocktakePlanDetail_LotId",
-                table: "StocktakePlanDetail",
-                column: "LotId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_StocktakePlanDetail_PlanId",
                 table: "StocktakePlanDetail",
                 column: "PlanId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_StocktakePlanDetail_ReceiptDetailId",
+                table: "StocktakePlanDetail",
+                column: "ReceiptDetailId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_User_Username",
@@ -851,9 +826,6 @@ namespace Vibasic.Infrastructure.Migrations
         {
             migrationBuilder.DropTable(
                 name: "AbnormalReport");
-
-            migrationBuilder.DropTable(
-                name: "GoodsReceiptDetail");
 
             migrationBuilder.DropTable(
                 name: "InventoryPolicy");
@@ -880,28 +852,28 @@ namespace Vibasic.Infrastructure.Migrations
                 name: "StocktakePlanDetail");
 
             migrationBuilder.DropTable(
-                name: "GoodsReceipt");
-
-            migrationBuilder.DropTable(
                 name: "GoodsIssueDetail");
 
             migrationBuilder.DropTable(
                 name: "Stocktake");
 
             migrationBuilder.DropTable(
-                name: "GoodsIssue");
+                name: "GoodsReceiptDetail");
 
             migrationBuilder.DropTable(
-                name: "StockLot");
+                name: "GoodsIssue");
 
             migrationBuilder.DropTable(
                 name: "StocktakePlan");
 
             migrationBuilder.DropTable(
-                name: "Order");
+                name: "GoodsReceipt");
 
             migrationBuilder.DropTable(
                 name: "Product");
+
+            migrationBuilder.DropTable(
+                name: "Order");
 
             migrationBuilder.DropTable(
                 name: "User");

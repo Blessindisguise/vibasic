@@ -6,6 +6,108 @@ html, body, #root { height: 100%; }
 .vb-btn--ghost.vb-on-brand:hover { background: var(--green-600); color: #fff; }
 .vb-btn--ghost.vb-on-brand:active { background: var(--green-700); }
 
+/* Phone header: the page title needs the room, so the user's name is hidden (notifications and logout stay). */
+@media (max-width: 480px) { .vb-shell-user { display: none !important; } }
+
+/* Staff sidebar on tablets: 48 px rows, 16 px labels (touch targets ≥ 44 px). */
+.vb-nav-item.vb-nav-item--touch { height: 48px; font-size: 16px; line-height: 24px; gap: 12px; padding: 0 12px; }
+
+.vb-notification:hover { background: var(--grey-50) !important; }
+.vb-notification:focus-visible { outline: none; box-shadow: inset var(--focus-ring); }
+
+/* Segmented control (tabs between approval types, status filters). */
+.vb-seg { display: inline-flex; gap: 2px; padding: 3px; background: var(--grey-100); border-radius: var(--radius-md); max-width: 100%; overflow-x: auto; }
+.vb-seg__item { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--grey-700); font: 500 13px/18px var(--font-sans); white-space: nowrap; cursor: pointer; }
+.vb-seg--lg .vb-seg__item { height: 44px; padding: 0 16px; font-size: 15px; }
+.vb-seg__item:hover { color: var(--grey-900); background: var(--grey-200); }
+.vb-seg__item[aria-selected="true"] { background: #fff; color: var(--grey-900); font-weight: 600; box-shadow: var(--elevation-card); }
+.vb-seg__item:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.vb-seg__count { min-width: 20px; height: 20px; padding: 0 6px; display: inline-grid; place-items: center; border-radius: var(--radius-sm); background: var(--grey-200); color: var(--grey-800); font: 600 11px/1 var(--font-sans); font-variant-numeric: tabular-nums; }
+.vb-seg__item[aria-selected="true"] .vb-seg__count { background: var(--green-50); color: var(--green-800); }
+
+/* Barcode label sheet (UC_04 step 8). Screen: centred preview; print: A4, toolbar hidden, lots start on a new page. */
+.vb-print { min-height: 100%; padding: 0 16px 24px; background: var(--surface-page); }
+.vb-print__toolbar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; max-width: 900px; margin: 0 auto 16px; padding: 12px 0; background: var(--surface-page); }
+.vb-print__lot { max-width: 900px; margin: 0 auto 24px; }
+.vb-print__items { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+.vb-label { background: #fff; border: 1px dashed var(--grey-400); border-radius: var(--radius-sm); padding: 6px 8px; display: flex; flex-direction: column; align-items: center; gap: 2px; break-inside: avoid; min-width: 0; color: #000; }
+.vb-label--lot { align-items: stretch; gap: 8px; padding: 12px 16px; border-style: solid; border-color: #000; }
+.vb-label--lot svg { align-self: center; }
+/* Printed document (abnormal report): an A4 sheet on screen, plain black on white like a paper form. */
+.vb-doc { box-sizing: border-box; width: 210mm; max-width: 100%; min-height: 297mm; margin: 0 auto; padding: 16mm 16mm 12mm; background: #fff; color: #000; box-shadow: var(--elevation-card); border: 1px solid var(--border-default); font: 13pt/1.4 "Times New Roman", Times, serif; display: flex; flex-direction: column; }
+.vb-doc__top { display: flex; justify-content: space-between; gap: 16px; font-size: 12pt; }
+.vb-doc__strong { font-weight: 700; }
+.vb-doc__motto { font-weight: 700; display: inline-block; padding-bottom: 2px; border-bottom: 1px solid #000; }
+.vb-doc__title { margin: 22px 0 2px; text-align: center; font: 700 17pt/1.3 "Times New Roman", Times, serif; letter-spacing: 0.02em; }
+.vb-doc__sub { text-align: center; margin-bottom: 12px; }
+.vb-doc__lead, .vb-doc__text { margin: 0 0 8px; text-align: justify; white-space: pre-wrap; }
+.vb-doc__h { margin: 12px 0 5px; font: 700 13pt/1.4 "Times New Roman", Times, serif; break-after: avoid; }
+.vb-doc__table { width: 100%; border-collapse: collapse; margin-bottom: 4px; font-size: 12pt; table-layout: fixed; }
+.vb-doc__table th, .vb-doc__table td { border: 1px solid #000; padding: 3px 7px; vertical-align: top; text-align: left; }
+.vb-doc__table tbody th { font-weight: 400; font-style: italic; }
+.vb-doc__table--grid thead th { font-weight: 700; text-align: center; font-style: normal; }
+.vb-doc__table tr { break-inside: avoid; }
+.vb-doc__code { font-family: Consolas, "Courier New", monospace; font-size: 11pt; letter-spacing: 0.02em; }
+.vb-doc__total td { font-weight: 700; }
+.vb-doc__note { margin: 4px 0 0; font-size: 12pt; font-style: italic; }
+.vb-doc__blank { margin: 8px 0 10px; overflow: hidden; white-space: nowrap; }
+.vb-doc--wide { width: 297mm; min-height: 210mm; padding: 12mm 14mm 10mm; page: wide; }
+.vb-doc__meta { text-align: center; margin-bottom: 2px; }
+.vb-doc__table--data { font-size: 10.5pt; }
+.vb-doc__table--data th, .vb-doc__table--data td { padding: 2px 5px; }
+.vb-doc__table--data td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vb-doc__table--data thead th { vertical-align: middle; }
+.vb-doc__table--data thead { display: table-header-group; }
+.vb-doc__group td { font-weight: 700; font-style: italic; }
+/* A category (heading, items, subtotal) stays on one page when it fits. */
+.vb-doc__grp { break-inside: avoid; }
+.vb-doc__subtotal td { font-style: italic; }
+.vb-doc__signs-wrap { break-inside: avoid; margin-top: 10px; }
+.vb-doc__place { text-align: right; font-style: italic; padding-right: 4%; }
+.vb-doc__signs { display: grid; gap: 12px; margin-top: 12px; font-size: 12pt; text-align: center; break-inside: avoid; }
+.vb-doc__hint { font-style: italic; font-size: 12pt; }
+.vb-doc__name { margin-top: 64px; font-weight: 700; }
+.vb-doc__foot { margin-top: auto; padding-top: 12px; font-size: 10pt; color: #444; text-align: right; }
+/* Total row: the last row of a report table. */
+.vb-report tbody tr:last-child td { font-weight: 600; background: var(--grey-25); border-top: 1px solid var(--border-default); }
+@media print {
+  @page { size: A4; margin: 10mm; }
+  @page wide { size: A4 landscape; margin: 10mm; }
+  html, body, #root { height: auto; background: #fff; }
+  .vb-no-print { display: none !important; }
+  .vb-print { padding: 0; background: #fff; }
+  .vb-print__lot { max-width: none; margin: 0; break-before: page; }
+  .vb-print__lot:first-of-type { break-before: auto; }
+  .vb-doc { width: auto; margin: 0; padding: 2mm 4mm 0; border: 0; box-shadow: none; }
+  /* No flex and no fixed height on paper: Chrome then splits the sheet cleanly and keeps the signatures with the text. */
+  .vb-doc, .vb-doc--wide { display: block; min-height: 0; }
+  .vb-doc__foot { margin-top: 0; }
+}
+
+/* Whole-card tap target on warehouse screens (orders, pick queue). */
+.vb-card-button { all: unset; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; padding: 16px; cursor: pointer; background: var(--surface-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); min-width: 0; }
+.vb-card-button:hover { border-color: var(--grey-400); }
+.vb-card-button:active { border-color: var(--grey-500); }
+.vb-card-button:focus-visible { box-shadow: var(--focus-ring); }
+
+/* Item codes in a pick list. */
+.vb-serials { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.vb-serial { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: #fff; font: 500 13px/18px var(--font-sans); letter-spacing: var(--tracking-code); font-variant-numeric: tabular-nums; color: var(--grey-800); }
+.vb-serial--picked { background: var(--green-50); border-color: var(--green-200); color: var(--green-800); }
+/* A run of consecutive codes: "SP-THT01-2610-0001 → 0040 · 40 cái". */
+.vb-serial__sep { margin: 0 2px; color: var(--grey-500); letter-spacing: 0; }
+.vb-serial__count { margin-left: 6px; padding-left: 8px; border-left: 1px solid var(--border-default); color: var(--grey-600); font-weight: 500; letter-spacing: 0; }
+.vb-serial--picked .vb-serial__count { border-left-color: var(--green-200); color: var(--green-700); }
+button.vb-serial { cursor: pointer; height: 36px; }
+button.vb-serial[aria-pressed="true"] { background: var(--red-50); border-color: var(--red-600); color: var(--red-700); }
+button.vb-serial:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* Clickable row in a panel list (dashboard). */
+.vb-list-row { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 8px 16px; border-bottom: 1px solid var(--border-subtle); font: var(--type-body); color: var(--text-primary); cursor: pointer; }
+li:last-child > .vb-list-row { border-bottom: 0; }
+.vb-list-row:hover { background: var(--grey-25); }
+.vb-list-row:focus-visible { box-shadow: inset var(--focus-ring); }
+
 /* Page panel used by list/detail screens (white card, 1px border, 6px radius). */
 .vb-panel { background: var(--surface-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); min-width: 0; }
 .vb-panel__head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border-subtle); }

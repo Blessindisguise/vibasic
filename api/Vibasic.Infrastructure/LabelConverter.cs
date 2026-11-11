@@ -8,6 +8,9 @@ namespace Vibasic.Infrastructure;
 public class LabelConverter<TEnum>() : ValueConverter<TEnum, string>(v => Labels<TEnum>.ToLabel(v), s => Labels<TEnum>.FromLabel(s))
     where TEnum : struct, Enum;
 
+/// <summary>Values are written as they are (UTC) and read back with <see cref="DateTimeKind.Utc"/>.</summary>
+public class UtcDateTimeConverter() : ValueConverter<DateTime, DateTime>(v => v, v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
+
 public static class Labels<TEnum> where TEnum : struct, Enum
 {
     private static readonly Dictionary<TEnum, string> To = Enum.GetValues<TEnum>().ToDictionary(

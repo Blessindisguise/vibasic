@@ -1,14 +1,20 @@
 import React from 'react';
 import { Icon } from '../core/Icon.jsx';
+import { useSuggest } from '../forms/Suggestions.jsx';
 
 // filters: [{ key, label, value, options: [{value,label}] }] · chips: [{ key, label }]
-export function FilterBar({ search = '', onSearchChange, searchPlaceholder = 'Tìm theo mã, tên sản phẩm…', filters = [], onFilterChange, chips = [], onRemoveChip, onClearAll, actions, resultCount }) {
+export function FilterBar({ search = '', onSearchChange, searchPlaceholder = 'Tìm theo mã, tên sản phẩm…', filters = [], onFilterChange, chips = [], onRemoveChip, onClearAll, actions, resultCount, suggestions = [], onPickSuggestion }) {
+  const s = useSuggest({ items: suggestions, query: search, onPick: onPickSuggestion });
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <div className="vb-input vb-input--md" style={{ width: 280, maxWidth: '100%' }}>
-          <Icon name="search" size={16} style={{ color: 'var(--text-muted)' }} />
-          <input value={search} onChange={e => onSearchChange && onSearchChange(e.target.value)} placeholder={searchPlaceholder} aria-label="Tìm kiếm" />
+        <div className="vb-suggest-anchor" style={{ width: 280, maxWidth: '100%' }}>
+          <div className="vb-input vb-input--md">
+            <Icon name="search" size={16} style={{ color: 'var(--text-muted)' }} />
+            <input value={search} onChange={e => onSearchChange && onSearchChange(e.target.value)} placeholder={searchPlaceholder} aria-label="Tìm kiếm"
+              autoComplete="off" {...s.inputProps} />
+          </div>
+          {s.list}
         </div>
         {filters.map(f => (
           <div key={f.key} className="vb-input vb-input--md" style={{ position: 'relative', paddingRight: 28, background: f.value ? 'var(--green-50)' : '#fff', borderColor: f.value ? 'var(--green-300)' : undefined }}>

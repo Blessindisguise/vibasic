@@ -2,12 +2,12 @@ import React from 'react';
 import { Icon } from '../core/Icon.jsx';
 
 // Draft → Pending → Approved | Rejected. `history` carries who/when per step.
-export function ApprovalStepper({ status = 'draft', history = {}, size = 'md', orientation = 'horizontal' }) {
+export function ApprovalStepper({ status = 'draft', history = {}, size = 'md', orientation = 'horizontal', draftLabel = 'Nháp' }) {
   const order = ['draft', 'pending', 'final'];
   const idx = status === 'draft' ? 0 : status === 'pending' ? 1 : 2;
   const rejected = status === 'rejected';
   const steps = [
-    { key: 'draft', label: 'Nháp', icon: 'square-pen' },
+    { key: 'draft', label: draftLabel, icon: 'square-pen' },
     { key: 'pending', label: 'Chờ duyệt', icon: 'hourglass' },
     rejected ? { key: 'rejected', label: 'Từ chối', icon: 'x' } : { key: 'approved', label: 'Đã duyệt', icon: 'check' },
   ];

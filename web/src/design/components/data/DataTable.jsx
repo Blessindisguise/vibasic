@@ -3,8 +3,10 @@ import { Icon } from '../core/Icon.jsx';
 
 // columns: [{ key, header, align: 'left'|'right'|'center', numeric, width, render(row), sortable }]
 // groupBy: optional key; renders a full-width group header row (e.g. supplier) with groupHeader(groupValue, rows).
-export function DataTable({ columns = [], rows = [], rowKey = 'id', density = 'compact', selectable = false, selected = [], onSelectedChange, bulkActions, maxHeight, groupBy, groupHeader, onRowClick, sort, onSortChange, empty, caption }) {
-  const allIds = rows.map(r => r[rowKey]);
+// isRowSelectable: optional; rows it rejects get no checkbox and are left out of "select all".
+export function DataTable({ columns = [], rows = [], rowKey = 'id', density = 'compact', selectable = false, isRowSelectable, selected = [], onSelectedChange, bulkActions, maxHeight, groupBy, groupHeader, onRowClick, sort, onSortChange, empty, caption }) {
+  const canSelect = r => !isRowSelectable || isRowSelectable(r);
+  const allIds = rows.filter(canSelect).map(r => r[rowKey]);
   const allOn = selectable && allIds.length > 0 && allIds.every(id => selected.includes(id));
   const someOn = selectable && selected.length > 0 && !allOn;
   const headRef = React.useRef(null);
@@ -21,7 +23,7 @@ export function DataTable({ columns = [], rows = [], rowKey = 'id', density = 'c
     const id = r[rowKey]; const on = selected.includes(id);
     return (
       <tr key={id} aria-selected={selectable ? on : undefined} onClick={onRowClick ? () => onRowClick(r) : undefined} style={{ cursor: onRowClick ? 'pointer' : undefined }}>
-        {selectable && <td className="sel" onClick={e => e.stopPropagation()}><label className="vb-check"><input type="checkbox" checked={on} onChange={() => toggle(id)} aria-label="Chọn dòng" /></label></td>}
+        {selectable && <td className="sel" onClick={e => e.stopPropagation()}>{canSelect(r) && <label className="vb-check"><input type="checkbox" checked={on} onChange={() => toggle(id)} aria-label="Chọn dòng" /></label>}</td>}
         {columns.map(c => <td key={c.key} className={c.numeric || c.align === 'right' ? 'num' : ''} style={{ textAlign: c.align === 'center' ? 'center' : undefined, width: c.width }}>{c.render ? c.render(r) : r[c.key]}</td>)}
       </tr>
     );

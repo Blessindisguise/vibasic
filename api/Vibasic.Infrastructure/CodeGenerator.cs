@@ -4,12 +4,12 @@ using Vibasic.Domain;
 namespace Vibasic.Infrastructure;
 
 /// <summary>
-/// Business codes: PN-/PX-/KK-/BC-/KH- yymm-nnnn, LOT-yymm-nnn, SP-{SKU}-yymm-nnnn.
+/// Business codes: PN-/PX-/KK-/BC-/KH-/DX- yymm-nnnn, LOT-yymm-nnn, SP-{SKU}-yymm-nnnn.
 /// Call inside the same transaction that inserts the row; the UNIQUE index is the final guard.
 /// </summary>
 public class CodeGenerator(VibasicDbContext db)
 {
-    public const string Receipt = "PN", Issue = "PX", Stocktake = "KK", Abnormal = "BC", Plan = "KH";
+    public const string Receipt = "PN", Issue = "PX", Stocktake = "KK", Abnormal = "BC", Plan = "KH", Replenishment = "DX";
 
     private readonly Dictionary<string, int> _issued = [];
 
@@ -23,6 +23,7 @@ public class CodeGenerator(VibasicDbContext db)
             Stocktake => db.Stocktakes.Select(x => x.Code),
             Abnormal => db.AbnormalReports.Select(x => x.Code),
             Plan => db.StocktakePlans.Select(x => x.Code),
+            Replenishment => db.ReplenishmentReports.Select(x => x.Code),
             _ => throw new ArgumentOutOfRangeException(nameof(prefix)),
         };
         return head + (await NextAsync(head, codes)).ToString("D4");
@@ -31,7 +32,7 @@ public class CodeGenerator(VibasicDbContext db)
     public async Task<string> NextLotAsync(DateTime utc)
     {
         var head = $"LOT-{VnTime.Yymm(utc)}-";
-        return head + (await NextAsync(head, db.StockLots.Select(x => x.LotCode))).ToString("D3");
+        return head + (await NextAsync(head, db.GoodsReceiptDetails.Select(x => x.LotCode))).ToString("D3");
     }
 
     /// <summary>First serial number for <paramref name="count"/> new items of a SKU received in the month of <paramref name="utc"/>.</summary>

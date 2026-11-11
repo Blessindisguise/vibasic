@@ -6,7 +6,8 @@ export interface DataTableColumn<R = any> { key: string; header: React.ReactNode
 export interface DataTableProps<R = any> {
   columns: DataTableColumn<R>[]; rows: R[]; rowKey?: string;
   density?: 'compact' | 'default';
-  selectable?: boolean; selected?: Array<string | number>; onSelectedChange?: (ids: Array<string | number>) => void;
+  selectable?: boolean; /** Rows it rejects get no checkbox and are left out of "select all" */ isRowSelectable?: (row: R) => boolean;
+  selected?: Array<string | number>; onSelectedChange?: (ids: Array<string | number>) => void;
   /** Buttons shown in the bulk bar when rows are selected */ bulkActions?: React.ReactNode;
   /** Enables scrolling with sticky header */ maxHeight?: number | string;
   groupBy?: string; groupHeader?: (group: any, rows: R[]) => React.ReactNode;

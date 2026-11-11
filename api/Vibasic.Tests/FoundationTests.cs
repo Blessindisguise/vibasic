@@ -13,7 +13,7 @@ public class FoundationTests
     [Theory]
     [InlineData(LotStatus.Quarantined, "Tạm cách ly")]
     [InlineData(LotStatus.Locked, "Đã khóa")]
-    [InlineData(IssueStatus.OnHold, "Chờ xử lý")]
+    [InlineData(IssueStatus.Cancelled, "Đã hủy")]
     public void Status_is_persisted_as_vietnamese_label(object value, string label)
     {
         var conv = (Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter)
@@ -53,12 +53,18 @@ public class FoundationTests
         // Two codes in one unit of work never collide.
         Assert.NotEqual(next, await gen.NextDocumentAsync(CodeGenerator.Issue, now));
 
-        Assert.Equal("PN-2611-0001", await gen.NextDocumentAsync(CodeGenerator.Receipt, now));
-        var (head, first) = await gen.ReserveSerialsAsync("THT-01", now, 5);
-        Assert.Equal("SP-THT01-2611-", head);
+        // A month with no documents yet starts at 0001; serials do the same per product.
+        var nextMonth = now.AddMonths(1);
+        Assert.Equal("PN-2612-0001", await gen.NextDocumentAsync(CodeGenerator.Receipt, nextMonth));
+        var (head, first) = await gen.ReserveSerialsAsync("THT-01", nextMonth, 5);
+        Assert.Equal("SP-THT01-2612-", head);
         Assert.Equal(1, first);
-        var (_, after) = await gen.ReserveSerialsAsync("THT-01", now, 1);
+        var (_, after) = await gen.ReserveSerialsAsync("THT-01", nextMonth, 1);
         Assert.Equal(6, after);
+        // In the current month they continue after the seeded ones.
+        var seeded = await db.StockItems.Where(i => i.SerialCode.StartsWith("SP-THT01-2611-")).Select(i => i.SerialCode).ToListAsync();
+        var (_, current) = await gen.ReserveSerialsAsync("THT-01", now, 1);
+        Assert.Equal(seeded.Count == 0 ? 1 : seeded.Max(s => int.Parse(s[^4..])) + 1, current);
     }
 
     [Fact]
@@ -66,8 +72,39 @@ public class FoundationTests
     {
         await using var db = NewDb();
         await DbSeeder.SeedAsync(db, new DateTime(2026, 11, 4, 3, 0, 0, DateTimeKind.Utc));
-        var lots = await db.StockLots.Include(l => l.Items).ToListAsync();
+        var lots = await db.GoodsReceiptDetails.Include(d => d.Items).Include(d => d.Receipt).ToListAsync();
+        Assert.All(lots, l => Assert.Equal(ReceiptStatus.Approved, l.Receipt.Status));
         Assert.All(lots, l => Assert.Equal(l.QuantityOnHand, l.Items.Count(i => i.Status == ItemStatus.InStock)));
-        Assert.Equal(3, await db.Orders.CountAsync(o => o.Status == OrderStatus.Open));
+        Assert.All(lots, l => Assert.Equal(l.Quantity, l.Items.Count));
+        // Three orders from the sales system and up to two wholesale orders, all waiting to be issued.
+        Assert.InRange(await db.Orders.CountAsync(o => o.Status == OrderStatus.Open), 3, 5);
+    }
+
+    [Fact]
+    public async Task Seed_has_one_issue_line_per_product_with_items_from_that_product()
+    {
+        await using var db = NewDb();
+        await DbSeeder.SeedAsync(db, new DateTime(2026, 11, 4, 3, 0, 0, DateTimeKind.Utc));
+        var lines = await db.GoodsIssueDetails.Include(d => d.Items).ThenInclude(i => i.ReceiptDetail).ToListAsync();
+        Assert.NotEmpty(lines);
+        Assert.All(lines, d =>
+        {
+            Assert.Equal(d.Quantity, d.Items.Count);
+            Assert.All(d.Items, i => Assert.Equal(d.ProductId, i.ReceiptDetail.ProductId));
+        });
+        Assert.Equal(lines.Count, lines.Select(d => (d.IssueId, d.ProductId)).Distinct().Count());
+        // Lines spanning two lots exist (FIFO continues into the next lot, UC_07 4.1).
+        Assert.Contains(lines, d => d.Items.Select(i => i.ReceiptDetailId).Distinct().Count() > 1);
+    }
+
+    [Fact]
+    public async Task Seed_locked_lot_sits_on_the_same_receipt_as_the_passed_lot()
+    {
+        await using var db = NewDb();
+        await DbSeeder.SeedAsync(db, new DateTime(2026, 11, 4, 3, 0, 0, DateTimeKind.Utc));
+        var report = await db.AbnormalReports.Include(r => r.ReceiptDetail).ThenInclude(d => d.Receipt).ThenInclude(r => r.Details).SingleAsync();
+        Assert.Equal(LotStatus.Locked, report.ReceiptDetail.Status);
+        Assert.Contains(report.ReceiptDetail.Receipt.Details,
+            d => d.ProductId == report.ReceiptDetail.ProductId && d.Status == LotStatus.Normal);
     }
 }

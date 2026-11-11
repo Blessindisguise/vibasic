@@ -12,8 +12,8 @@ using Vibasic.Infrastructure;
 namespace Vibasic.Infrastructure.Migrations
 {
     [DbContext(typeof(VibasicDbContext))]
-    [Migration("20261104015504_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20261109142809_PickingAndOrderContact")]
+    partial class PickingAndOrderContact
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -58,15 +58,20 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<int?>("IssueId")
                         .HasColumnType("int");
 
-                    b.Property<int>("LotId")
+                    b.Property<int>("Quantity")
                         .HasColumnType("int");
 
-                    b.Property<int>("Quantity")
+                    b.Property<int>("ReceiptDetailId")
                         .HasColumnType("int");
 
                     b.Property<string>("RejectReason")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<string>("SourceType")
                         .IsRequired()
@@ -89,9 +94,33 @@ namespace Vibasic.Infrastructure.Migrations
 
                     b.HasIndex("IssueId");
 
-                    b.HasIndex("LotId");
+                    b.HasIndex("ReceiptDetailId");
 
                     b.ToTable("AbnormalReport", (string)null);
+                });
+
+            modelBuilder.Entity("Vibasic.Domain.AbnormalReportItem", b =>
+                {
+                    b.Property<int>("ReportItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ReportItemId"));
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReportId")
+                        .HasColumnType("int");
+
+                    b.HasKey("ReportItemId");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("ReportId", "ItemId")
+                        .IsUnique();
+
+                    b.ToTable("AbnormalReportItem", (string)null);
                 });
 
             modelBuilder.Entity("Vibasic.Domain.GoodsIssue", b =>
@@ -132,6 +161,16 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<int>("OrderId")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("PickActiveAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("PickStartedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("PickerId")
+                        .IsConcurrencyToken()
+                        .HasColumnType("int");
+
                     b.Property<string>("ReceiverName")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
@@ -158,6 +197,8 @@ namespace Vibasic.Infrastructure.Migrations
 
                     b.HasIndex("OrderId");
 
+                    b.HasIndex("PickerId");
+
                     b.ToTable("GoodsIssue", (string)null);
                 });
 
@@ -172,7 +213,7 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<int>("IssueId")
                         .HasColumnType("int");
 
-                    b.Property<int>("LotId")
+                    b.Property<int>("ProductId")
                         .HasColumnType("int");
 
                     b.Property<int>("Quantity")
@@ -180,9 +221,10 @@ namespace Vibasic.Infrastructure.Migrations
 
                     b.HasKey("IssueDetailId");
 
-                    b.HasIndex("IssueId");
+                    b.HasIndex("ProductId");
 
-                    b.HasIndex("LotId");
+                    b.HasIndex("IssueId", "ProductId")
+                        .IsUnique();
 
                     b.ToTable("GoodsIssueDetail", (string)null);
                 });
@@ -208,6 +250,10 @@ namespace Vibasic.Infrastructure.Migrations
 
                     b.Property<int>("CreatedBy")
                         .HasColumnType("int");
+
+                    b.Property<string>("DeliveryNoteNo")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("Note")
                         .HasMaxLength(255)
@@ -256,29 +302,42 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<int?>("DocumentQuantity")
                         .HasColumnType("int");
 
-                    b.Property<int>("LotId")
-                        .HasColumnType("int");
+                    b.Property<string>("LotCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("Note")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
 
-                    b.Property<string>("QcResult")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
 
                     b.Property<int>("Quantity")
                         .HasColumnType("int");
 
+                    b.Property<int>("QuantityOnHand")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<int>("ReceiptId")
                         .HasColumnType("int");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.HasKey("ReceiptDetailId");
 
-                    b.HasIndex("LotId");
+                    b.HasIndex("LotCode")
+                        .IsUnique();
 
                     b.HasIndex("ReceiptId");
+
+                    b.HasIndex("ProductId", "Status");
 
                     b.ToTable("GoodsReceiptDetail", (string)null);
                 });
@@ -388,15 +447,28 @@ namespace Vibasic.Infrastructure.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
+                    b.Property<string>("CustomerPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<string>("ExternalCode")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<DateTime>("OrderDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("ShippingAddress")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<string>("Status")
+                        .IsConcurrencyToken()
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
@@ -535,6 +607,9 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<int>("ProposedQuantity")
                         .HasColumnType("int");
 
+                    b.Property<int?>("ReceiptId")
+                        .HasColumnType("int");
+
                     b.Property<string>("RejectReason")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
@@ -547,6 +622,8 @@ namespace Vibasic.Infrastructure.Migrations
                     b.HasKey("ProposalId");
 
                     b.HasIndex("ApprovedBy");
+
+                    b.HasIndex("ReceiptId");
 
                     b.HasIndex("ProductId", "Status");
 
@@ -597,14 +674,18 @@ namespace Vibasic.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ItemId"));
 
-                    b.Property<int?>("IssueDetailId")
-                        .HasColumnType("int");
+                    b.Property<DateTime?>("DefectiveAt")
+                        .HasColumnType("datetime2");
 
-                    b.Property<int>("LotId")
+                    b.Property<int?>("IssueDetailId")
+                        .IsConcurrencyToken()
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("PickedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<int>("ReceiptDetailId")
+                        .HasColumnType("int");
 
                     b.Property<string>("SerialCode")
                         .IsRequired()
@@ -620,51 +701,12 @@ namespace Vibasic.Infrastructure.Migrations
 
                     b.HasIndex("IssueDetailId");
 
-                    b.HasIndex("LotId");
+                    b.HasIndex("ReceiptDetailId");
 
                     b.HasIndex("SerialCode")
                         .IsUnique();
 
                     b.ToTable("StockItem", (string)null);
-                });
-
-            modelBuilder.Entity("Vibasic.Domain.StockLot", b =>
-                {
-                    b.Property<int>("LotId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("LotId"));
-
-                    b.Property<string>("LotCode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<int>("ProductId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("QuantityOnHand")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasDefaultValue(0);
-
-                    b.Property<DateTime>("ReceivedDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.HasKey("LotId");
-
-                    b.HasIndex("LotCode")
-                        .IsUnique();
-
-                    b.HasIndex("ProductId", "ReceivedDate");
-
-                    b.ToTable("StockLot", (string)null);
                 });
 
             modelBuilder.Entity("Vibasic.Domain.Stocktake", b =>
@@ -729,12 +771,22 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<int>("ActualQuantity")
                         .HasColumnType("int");
 
-                    b.Property<int>("LotId")
-                        .HasColumnType("int");
+                    b.Property<DateTime?>("CountedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Nhập số");
 
                     b.Property<string>("Reason")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
+
+                    b.Property<int>("ReceiptDetailId")
+                        .HasColumnType("int");
 
                     b.Property<int>("StocktakeId")
                         .HasColumnType("int");
@@ -742,13 +794,40 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<int>("SystemQuantity")
                         .HasColumnType("int");
 
+                    b.Property<int>("UnlabeledQuantity")
+                        .HasColumnType("int");
+
                     b.HasKey("DetailId");
 
-                    b.HasIndex("LotId");
+                    b.HasIndex("ReceiptDetailId");
 
                     b.HasIndex("StocktakeId");
 
                     b.ToTable("StocktakeDetail", (string)null);
+                });
+
+            modelBuilder.Entity("Vibasic.Domain.StocktakeItem", b =>
+                {
+                    b.Property<int>("StocktakeItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("StocktakeItemId"));
+
+                    b.Property<int>("DetailId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("int");
+
+                    b.HasKey("StocktakeItemId");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("DetailId", "ItemId")
+                        .IsUnique();
+
+                    b.ToTable("StocktakeItem", (string)null);
                 });
 
             modelBuilder.Entity("Vibasic.Domain.StocktakePlan", b =>
@@ -807,17 +886,17 @@ namespace Vibasic.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("PlanDetailId"));
 
-                    b.Property<int>("LotId")
+                    b.Property<int>("PlanId")
                         .HasColumnType("int");
 
-                    b.Property<int>("PlanId")
+                    b.Property<int>("ReceiptDetailId")
                         .HasColumnType("int");
 
                     b.HasKey("PlanDetailId");
 
-                    b.HasIndex("LotId");
-
                     b.HasIndex("PlanId");
+
+                    b.HasIndex("ReceiptDetailId");
 
                     b.ToTable("StocktakePlanDetail", (string)null);
                 });
@@ -907,9 +986,9 @@ namespace Vibasic.Infrastructure.Migrations
                         .HasForeignKey("IssueId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("Vibasic.Domain.StockLot", "Lot")
+                    b.HasOne("Vibasic.Domain.GoodsReceiptDetail", "ReceiptDetail")
                         .WithMany()
-                        .HasForeignKey("LotId")
+                        .HasForeignKey("ReceiptDetailId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -917,7 +996,26 @@ namespace Vibasic.Infrastructure.Migrations
 
                     b.Navigation("Creator");
 
-                    b.Navigation("Lot");
+                    b.Navigation("ReceiptDetail");
+                });
+
+            modelBuilder.Entity("Vibasic.Domain.AbnormalReportItem", b =>
+                {
+                    b.HasOne("Vibasic.Domain.StockItem", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Vibasic.Domain.AbnormalReport", "Report")
+                        .WithMany("Items")
+                        .HasForeignKey("ReportId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Item");
+
+                    b.Navigation("Report");
                 });
 
             modelBuilder.Entity("Vibasic.Domain.GoodsIssue", b =>
@@ -944,11 +1042,18 @@ namespace Vibasic.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Vibasic.Domain.User", "Picker")
+                        .WithMany()
+                        .HasForeignKey("PickerId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Approver");
 
                     b.Navigation("Creator");
 
                     b.Navigation("Order");
+
+                    b.Navigation("Picker");
                 });
 
             modelBuilder.Entity("Vibasic.Domain.GoodsIssueDetail", b =>
@@ -959,15 +1064,15 @@ namespace Vibasic.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Vibasic.Domain.StockLot", "Lot")
+                    b.HasOne("Vibasic.Domain.Product", "Product")
                         .WithMany()
-                        .HasForeignKey("LotId")
+                        .HasForeignKey("ProductId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Issue");
 
-                    b.Navigation("Lot");
+                    b.Navigation("Product");
                 });
 
             modelBuilder.Entity("Vibasic.Domain.GoodsReceipt", b =>
@@ -998,9 +1103,9 @@ namespace Vibasic.Infrastructure.Migrations
 
             modelBuilder.Entity("Vibasic.Domain.GoodsReceiptDetail", b =>
                 {
-                    b.HasOne("Vibasic.Domain.StockLot", "Lot")
+                    b.HasOne("Vibasic.Domain.Product", "Product")
                         .WithMany()
-                        .HasForeignKey("LotId")
+                        .HasForeignKey("ProductId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -1010,7 +1115,7 @@ namespace Vibasic.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Lot");
+                    b.Navigation("Product");
 
                     b.Navigation("Receipt");
                 });
@@ -1086,9 +1191,16 @@ namespace Vibasic.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Vibasic.Domain.GoodsReceipt", "Receipt")
+                        .WithMany()
+                        .HasForeignKey("ReceiptId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Approver");
 
                     b.Navigation("Product");
+
+                    b.Navigation("Receipt");
                 });
 
             modelBuilder.Entity("Vibasic.Domain.StockAlert", b =>
@@ -1109,26 +1221,15 @@ namespace Vibasic.Infrastructure.Migrations
                         .HasForeignKey("IssueDetailId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("Vibasic.Domain.StockLot", "Lot")
+                    b.HasOne("Vibasic.Domain.GoodsReceiptDetail", "ReceiptDetail")
                         .WithMany("Items")
-                        .HasForeignKey("LotId")
+                        .HasForeignKey("ReceiptDetailId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("IssueDetail");
 
-                    b.Navigation("Lot");
-                });
-
-            modelBuilder.Entity("Vibasic.Domain.StockLot", b =>
-                {
-                    b.HasOne("Vibasic.Domain.Product", "Product")
-                        .WithMany()
-                        .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Product");
+                    b.Navigation("ReceiptDetail");
                 });
 
             modelBuilder.Entity("Vibasic.Domain.Stocktake", b =>
@@ -1159,9 +1260,9 @@ namespace Vibasic.Infrastructure.Migrations
 
             modelBuilder.Entity("Vibasic.Domain.StocktakeDetail", b =>
                 {
-                    b.HasOne("Vibasic.Domain.StockLot", "Lot")
+                    b.HasOne("Vibasic.Domain.GoodsReceiptDetail", "ReceiptDetail")
                         .WithMany()
-                        .HasForeignKey("LotId")
+                        .HasForeignKey("ReceiptDetailId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -1171,9 +1272,28 @@ namespace Vibasic.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Lot");
+                    b.Navigation("ReceiptDetail");
 
                     b.Navigation("Stocktake");
+                });
+
+            modelBuilder.Entity("Vibasic.Domain.StocktakeItem", b =>
+                {
+                    b.HasOne("Vibasic.Domain.StocktakeDetail", "Detail")
+                        .WithMany("Items")
+                        .HasForeignKey("DetailId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Vibasic.Domain.StockItem", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Detail");
+
+                    b.Navigation("Item");
                 });
 
             modelBuilder.Entity("Vibasic.Domain.StocktakePlan", b =>
@@ -1189,21 +1309,26 @@ namespace Vibasic.Infrastructure.Migrations
 
             modelBuilder.Entity("Vibasic.Domain.StocktakePlanDetail", b =>
                 {
-                    b.HasOne("Vibasic.Domain.StockLot", "Lot")
-                        .WithMany()
-                        .HasForeignKey("LotId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("Vibasic.Domain.StocktakePlan", "Plan")
                         .WithMany("Details")
                         .HasForeignKey("PlanId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Lot");
+                    b.HasOne("Vibasic.Domain.GoodsReceiptDetail", "ReceiptDetail")
+                        .WithMany()
+                        .HasForeignKey("ReceiptDetailId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("Plan");
+
+                    b.Navigation("ReceiptDetail");
+                });
+
+            modelBuilder.Entity("Vibasic.Domain.AbnormalReport", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("Vibasic.Domain.GoodsIssue", b =>
@@ -1221,6 +1346,11 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Navigation("Details");
                 });
 
+            modelBuilder.Entity("Vibasic.Domain.GoodsReceiptDetail", b =>
+                {
+                    b.Navigation("Items");
+                });
+
             modelBuilder.Entity("Vibasic.Domain.Order", b =>
                 {
                     b.Navigation("Details");
@@ -1231,14 +1361,14 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Navigation("Policy");
                 });
 
-            modelBuilder.Entity("Vibasic.Domain.StockLot", b =>
-                {
-                    b.Navigation("Items");
-                });
-
             modelBuilder.Entity("Vibasic.Domain.Stocktake", b =>
                 {
                     b.Navigation("Details");
+                });
+
+            modelBuilder.Entity("Vibasic.Domain.StocktakeDetail", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("Vibasic.Domain.StocktakePlan", b =>
