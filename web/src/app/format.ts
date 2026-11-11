@@ -34,6 +34,31 @@ export const fmtShort = (iso?: string | null) => {
   return `${p.day}/${p.month} ${p.hour}:${p.minute}`;
 };
 
+/** "ngày 04 tháng 11 năm 2026", as written on paper documents. Today when no date is given. */
+export const fmtDocDate = (iso: string = new Date().toISOString()) => {
+  const [d, m, y] = fmtDate(iso).split('/');
+  return `ngày ${d} tháng ${m} năm ${y}`;
+};
+
+/** A filter on Vietnamese days, "2026-11-04"; empty means open-ended. */
+export interface DateRange { from: string; to: string }
+export const ANY_DATE: DateRange = { from: '', to: '' };
+
+const VN_OFFSET = 7 * 3_600_000;
+/** The Vietnamese calendar day of an instant, as "2026-11-04" (plain dates pass through). */
+export const vnDay = (iso: string) => (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : new Date(new Date(iso).getTime() + VN_OFFSET).toISOString().slice(0, 10));
+/** Today in Vietnam, "2026-11-04". */
+export const vnToday = () => new Date(Date.now() + VN_OFFSET).toISOString().slice(0, 10);
+/** The day n days before today in Vietnam. */
+export const vnDaysAgo = (n: number) => new Date(Date.now() + VN_OFFSET - n * 86_400_000).toISOString().slice(0, 10);
+/** Whether an instant falls in [from, to] (Vietnamese days, both inclusive, either may be empty). No date never matches a set range. */
+export const inVnDateRange = (iso: string | null | undefined, from: string, to: string) => {
+  if (!from && !to) return true;
+  if (!iso) return false;
+  const d = vnDay(iso);
+  return (!from || d >= from) && (!to || d <= to);
+};
+
 /** "Thứ Tư, 04/11/2026" */
 export const fmtLongDate = (d = new Date()) => {
   const wd = new Intl.DateTimeFormat('vi-VN', { timeZone: TZ, weekday: 'long' }).format(d);

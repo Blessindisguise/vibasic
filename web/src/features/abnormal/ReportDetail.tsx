@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertBanner, ApprovalStepper, Button, DataTable, EmptyState, type DataTableColumn } from '../../design';
+import { ApprovalStepper, Button, DataTable, EmptyState, type DataTableColumn } from '../../design';
 import { ApiError } from '../../app/api';
 import { fmt, fmtDate, fmtDateTime, fmtShort } from '../../app/format';
-import { ApprovalBadge, ItemStatusBadge, LotStatusBadge, SOURCE_LABEL } from '../../app/statusBadges';
+import { ApprovalBadge, ItemStatusBadge, LotStatusBadge, SCOPE_LABEL, SOURCE_LABEL } from '../../app/statusBadges';
+import { SerialRanges } from '../../app/SerialRanges';
+import type { ItemStatus } from '../../app/issuing';
 import { useReport, type ReportRow } from '../../app/receiving';
-import { Code, ListError, Loading } from '../../app/ui';
+import { Code, Fact, ListError, Loading } from '../../app/ui';
 import { ReportDecision } from './ReportDecision';
 
 /** UC_11 / UC_12: one abnormal report — what was found, on which lot, where, and the manager's decision. */
@@ -27,7 +29,8 @@ export function ReportDetail({ id, role, basePath }: { id: number; role: 'manage
     );
   }
   if (view.isError) return <ListError onRetry={() => view.refetch()} />;
-  const { report: r, lot, items, others } = view.data;
+  const { report: r, lot, items, others, defective } = view.data;
+  const byStatus = defective.reduce<Partial<Record<ItemStatus, string[]>>>((m, i) => ({ ...m, [i.status]: [...(m[i.status] ?? []), i.serial] }), {});
 
   const source: ReactNode = r.sourceType === 'issue' && r.issueId
     ? <Link to={`${root}/xuat-kho/${r.issueId}`}>Phiếu xuất {view.data.issueCode}</Link>
@@ -37,14 +40,6 @@ export function ReportDetail({ id, role, basePath }: { id: number; role: 'manage
         : <span className="vb-muted">Phiếu kiểm kê chưa gửi</span>
       : <Link to={`${root}/nhap-kho/${r.receiptId}`}>Phiếu nhập {r.receiptCode}</Link>;
 
-  const waitingReceipt = r.status === 'pending' && r.sourceType === 'receipt' && r.receiptStatus !== 'approved';
-  const effect = r.status === 'approved'
-    ? { tone: 'danger' as const, text: `Biên bản đã duyệt: lô ${r.lotCode} bị khóa, không được xuất và không tính vào tồn kho khả dụng.` }
-    : r.status === 'rejected'
-      ? { tone: 'info' as const, text: `Biên bản bị từ chối: lô ${r.lotCode} trở về Bình thường và được xuất như hàng đạt.` }
-      : { tone: 'warning' as const, text: waitingReceipt
-        ? `Biên bản được xét sau khi phiếu nhập ${r.receiptCode} được duyệt. Đến lúc đó lô ${r.lotCode} chưa vào kho.`
-        : `Lô ${r.lotCode} đang tạm cách ly: ${fmt(lot.quantityOnHand)} ${lot.unit} không được xuất cho đến khi quản lý quyết định.` };
 
   const otherColumns: DataTableColumn<ReportRow>[] = [
     { key: 'code', header: 'Biên bản', width: 130, render: o => <Code>{o.code}</Code> },
@@ -70,13 +65,17 @@ export function ReportDetail({ id, role, basePath }: { id: number; role: 'manage
               Phát hiện khi {SOURCE_LABEL[r.sourceType].toLowerCase()} · lập {fmtDateTime(r.createdAt)} bởi {r.creatorName}
             </div>
           </div>
-          {role === 'manager' && <ReportDecision report={r} />}
+          <div className="vb-row" style={{ gap: 8 }}>
+            <Button variant="secondary" size={touch ? 'lg' : 'sm'} icon="printer" onClick={() => window.open(`/in/bien-ban/${id}`, '_blank')}>In biên bản</Button>
+            {role === 'manager' && <ReportDecision report={r} />}
+          </div>
         </div>
         <div className="vb-panel__body vb-stack" style={{ gap: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
             <Fact label="Lô hàng" value={<span className="vb-row" style={{ gap: 8 }}><Link to={`${lotBase}/${lot.id}`}><Code>{lot.lotCode}</Code></Link><LotStatusBadge status={lot.status} /></span>} />
             <Fact label="Mặt hàng" value={<span><Code>{lot.sku}</Code> {lot.productName}</span>} />
             <Fact label="Số lượng lỗi" value={<span><b>{fmt(r.quantity)}</b> / {fmt(lot.quantity)} {lot.unit} của lô</span>} />
+            <Fact label="Phạm vi xử lý" value={<b>{SCOPE_LABEL[r.scope]}</b>} />
             <Fact label="Chứng từ liên quan" value={source} />
             <Fact label="Nhà cung cấp" value={lot.supplierName} />
             <Fact label="Ngày nhập lô" value={`${fmtDate(lot.receivedDate)} · ${lot.receiptCode}`} />
@@ -84,6 +83,21 @@ export function ReportDetail({ id, role, basePath }: { id: number; role: 'manage
           <div>
             <div className="vb-muted">Mô tả lỗi</div>
             <p style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap', fontSize: touch ? 16 : undefined }}>{r.description}</p>
+          </div>
+          <div>
+            <div className="vb-muted">{r.sourceType === 'receipt' ? 'Sản phẩm không đạt' : 'Sản phẩm lỗi'}</div>
+            {defective.length === 0
+              ? <p className="vb-muted" style={{ margin: '4px 0 0' }}>—</p>
+              : (
+                <div className="vb-stack" style={{ gap: 8, marginTop: 6 }}>
+                  {(Object.keys(byStatus) as ItemStatus[]).map(st => (
+                    <div key={st} className="vb-row" style={{ gap: 10, alignItems: 'flex-start', flexWrap: 'nowrap' }}>
+                      <span style={{ flex: 'none', marginTop: 4 }}><ItemStatusBadge status={st} /></span>
+                      <SerialRanges serials={byStatus[st]!} unit={lot.unit} />
+                    </div>
+                  ))}
+                </div>
+              )}
           </div>
           {items.length > 0 && (
             <div>
@@ -106,7 +120,6 @@ export function ReportDetail({ id, role, basePath }: { id: number; role: 'manage
               [r.status === 'rejected' ? 'rejected' : 'approved']: r.approvedAt ? { by: r.approverName, at: fmtDateTime(r.approvedAt), note: r.rejectReason } : undefined,
             }}
           />
-          <AlertBanner tone={effect.tone}>{effect.text}</AlertBanner>
         </div>
       </section>
 
@@ -117,15 +130,6 @@ export function ReportDetail({ id, role, basePath }: { id: number; role: 'manage
             caption={`Biên bản khác của lô ${lot.lotCode}`} />
         </section>
       )}
-    </div>
-  );
-}
-
-function Fact({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div style={{ minWidth: 0 }}>
-      <div className="vb-muted">{label}</div>
-      <div style={{ marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>
   );
 }

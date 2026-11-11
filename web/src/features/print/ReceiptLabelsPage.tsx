@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import JsBarcode from 'jsbarcode';
-import { AlertBanner, Button } from '../../design';
+import { Button } from '../../design';
 import { fmt, fmtDate } from '../../app/format';
 import { ListError, Loading } from '../../app/ui';
 import { LotStatusBadge } from '../../app/statusBadges';
@@ -46,9 +46,6 @@ export function ReceiptLabelsPage() {
         </div>
         <Button variant="secondary" onClick={() => window.close()}>Đóng</Button>
         <Button icon="printer" onClick={() => window.print()}>In nhãn</Button>
-      </div>
-      <div className="vb-no-print" style={{ maxWidth: 900, margin: '0 auto 16px' }}>
-        <AlertBanner tone="info">Dán nhãn lô lên kiện hàng và nhãn sản phẩm lên từng sản phẩm. Lô tạm cách ly để riêng khu hàng không đạt.</AlertBanner>
       </div>
 
       {s.lots.map(lot => (

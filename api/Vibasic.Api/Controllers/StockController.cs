@@ -17,9 +17,12 @@ public class LotsController(VibasicDbContext db) : ControllerBase
 {
     public record LotRow(int Id, string LotCode, int ProductId, string Sku, string ProductName, string Unit, string CategoryName,
         DateTime ReceivedDate, int ReceiptId, string ReceiptCode, string SupplierName,
-        int Quantity, int QuantityOnHand, int Reserved, LotStatus Status);
+        int Quantity, int QuantityOnHand, int Reserved, LotStatus Status, int Defective);
     /// <param name="Picked">Already scanned for an issue: in the staging area, not on the shelf.</param>
-    public record ItemRow(int Id, string Serial, ItemStatus Status, int? IssueId, string? IssueCode, bool Picked);
+    /// <param name="OrderCode">Sales order of the issue the item is reserved on or was issued with.</param>
+    /// <param name="ReportId">Latest abnormal report listing the item (set for items "Lỗi").</param>
+    public record ItemRow(int Id, string Serial, ItemStatus Status, int? IssueId, string? IssueCode, bool Picked,
+        string? OrderCode, string? CustomerName, DateTime? DefectiveAt, int? ReportId, string? ReportCode);
     public record LotView(LotRow Lot, List<ItemRow> Items, List<ReportRow> Reports);
     public record Found(int LotId, string? Serial);
 
@@ -50,10 +53,21 @@ public class LotsController(VibasicDbContext db) : ControllerBase
     {
         var lot = await Rows(db.GoodsReceiptDetails.Where(d => d.ReceiptDetailId == id)).SingleOrDefaultAsync();
         if (lot is null) return Problem(statusCode: 404, title: "Không tìm thấy lô.");
-        var items = await db.StockItems.Where(i => i.ReceiptDetailId == id).OrderBy(i => i.SerialCode)
-            .Select(i => new ItemRow(i.ItemId, i.SerialCode, i.Status, i.IssueDetail != null ? i.IssueDetail.IssueId : null,
-                i.IssueDetail != null ? i.IssueDetail.Issue.Code : null, i.PickedAt != null))
-            .ToListAsync();
+        var reportOf = (await db.AbnormalReportItems.Where(x => x.Item.ReceiptDetailId == id)
+                .Select(x => new { x.ItemId, x.ReportId, x.Report.Code, x.Report.CreatedAt }).ToListAsync())
+            .GroupBy(x => x.ItemId).ToDictionary(g => g.Key, g => g.MaxBy(x => x.CreatedAt)!);
+        var items = (await db.StockItems.Where(i => i.ReceiptDetailId == id).OrderBy(i => i.SerialCode)
+            .Select(i => new
+            {
+                i.ItemId, i.SerialCode, i.Status, IssueId = i.IssueDetail != null ? (int?)i.IssueDetail.IssueId : null,
+                IssueCode = i.IssueDetail != null ? i.IssueDetail.Issue.Code : null, Picked = i.PickedAt != null,
+                OrderCode = i.IssueDetail != null ? i.IssueDetail.Issue.Order.ExternalCode : null,
+                CustomerName = i.IssueDetail != null ? i.IssueDetail.Issue.Order.CustomerName : null, i.DefectiveAt,
+            })
+            .ToListAsync())
+            .Select(i => new ItemRow(i.ItemId, i.SerialCode, i.Status, i.IssueId, i.IssueCode, i.Picked, i.OrderCode, i.CustomerName, i.DefectiveAt,
+                reportOf.GetValueOrDefault(i.ItemId)?.ReportId, reportOf.GetValueOrDefault(i.ItemId)?.Code))
+            .ToList();
         var reports = await db.AbnormalReports.Where(a => a.ReceiptDetailId == id).OrderByDescending(a => a.CreatedAt).Rows().ToListAsync();
         return new LotView(lot, items, reports);
     }
@@ -97,7 +111,7 @@ public class LotsController(VibasicDbContext db) : ControllerBase
     internal static IQueryable<LotRow> Rows(IQueryable<GoodsReceiptDetail> source) => source.Select(d => new LotRow(
         d.ReceiptDetailId, d.LotCode, d.ProductId, d.Product.SKU, d.Product.ProductName, d.Product.Unit, d.Product.Category.CategoryName,
         d.Receipt.ReceiptDate, d.ReceiptId, d.Receipt.Code, d.Receipt.Supplier.SupplierName,
-        d.Quantity, d.QuantityOnHand, d.Items.Count(i => i.Status == ItemStatus.Reserved), d.Status));
+        d.Quantity, d.QuantityOnHand, d.Items.Count(i => i.Status == ItemStatus.Reserved), d.Status, d.Items.Count(i => i.Status == ItemStatus.Defective)));
 }
 
 /// <summary>UC_13 (manager plans), UC_14 (staff count, file defects).</summary>
@@ -109,6 +123,11 @@ public class StocktakePlansController(VibasicDbContext db, StocktakeService stoc
     public record PlanRow(int Id, string Code, StocktakePlanType PlanType, StocktakeScope ScopeType, DateOnly PlannedDate,
         string CreatorName, StocktakePlanStatus Status, string? Note, int SelectedLots,
         int? LastStocktakeId, string? LastStocktakeCode, ApprovalStatus? LastStocktakeStatus, string? LastRejectReason);
+    /// <summary>
+    /// The manager's view of a plan: the lots in scope (for "Toàn bộ kho", the lots holding stock right now), every count
+    /// submitted for it, and whether it can still be edited (only while waiting to be counted).
+    /// </summary>
+    public record PlanView(PlanRow Plan, List<LotsController.LotRow> Lots, List<StocktakesController.StocktakeRow> Stocktakes, bool Editable);
 
     [HttpGet]
     public async Task<List<PlanRow>> List(StocktakePlanStatus? status) =>
@@ -118,6 +137,27 @@ public class StocktakePlansController(VibasicDbContext db, StocktakeService stoc
     public async Task<ActionResult<PlanRow>> Get(int id) =>
         await Rows(db.StocktakePlans.Where(p => p.PlanId == id)).SingleOrDefaultAsync() is { } row ? row
             : Problem(statusCode: 404, title: "Không tìm thấy kế hoạch kiểm kê.");
+
+    [HttpGet("{id:int}/detail"), Authorize(Policy = Policies.Manager)]
+    public async Task<ActionResult<PlanView>> Detail(int id)
+    {
+        var plan = await Rows(db.StocktakePlans.Where(p => p.PlanId == id)).SingleOrDefaultAsync();
+        if (plan is null) return Problem(statusCode: 404, title: "Không tìm thấy kế hoạch kiểm kê.");
+        var source = plan.ScopeType == StocktakeScope.Warehouse
+            ? stocktakes.CountableLots()
+            : db.GoodsReceiptDetails.Where(d => db.StocktakePlanDetails.Any(x => x.PlanId == id && x.ReceiptDetailId == d.ReceiptDetailId));
+        var lots = await LotsController.Rows(source.OrderBy(d => d.Product.SKU).ThenBy(d => d.Receipt.ReceiptDate).ThenBy(d => d.ReceiptDetailId))
+            .ToListAsync();
+        var counts = await StocktakesController.Rows(db, db.Stocktakes.Where(s => s.PlanId == id).OrderByDescending(s => s.StocktakeId)).ToListAsync();
+        return new PlanView(plan, lots, counts, plan.Status == StocktakePlanStatus.Waiting);
+    }
+
+    [HttpPut("{id:int}"), Authorize(Policy = Policies.Manager)]
+    public async Task<PlanView> Update(int id, PlanInput input)
+    {
+        await stocktakes.UpdatePlanAsync(id, input, User.UserId());
+        return (await Detail(id)).Value!;
+    }
 
     [HttpGet("{id:int}/sheet")]
     public Task<List<SheetLot>> Sheet(int id) => stocktakes.SheetAsync(id);

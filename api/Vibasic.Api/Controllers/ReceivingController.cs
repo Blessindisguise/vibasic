@@ -14,7 +14,7 @@ public record ReasonInput(string? Reason);
 public record ReportRow(int Id, string Code, int ReceiptDetailId, string LotCode, string Sku, string ProductName, string Unit,
     AbnormalSource SourceType, string Description, int Quantity, ApprovalStatus Status, string CreatorName, DateTime CreatedAt,
     string? ApproverName, DateTime? ApprovedAt, string? RejectReason, int ReceiptId, string ReceiptCode, ReceiptStatus ReceiptStatus,
-    int? IssueId);
+    int? IssueId, ReportScope Scope);
 
 public static class ReportQueries
 {
@@ -22,7 +22,7 @@ public static class ReportQueries
         a.ReportId, a.Code, a.ReceiptDetailId, a.ReceiptDetail.LotCode, a.ReceiptDetail.Product.SKU, a.ReceiptDetail.Product.ProductName,
         a.ReceiptDetail.Product.Unit, a.SourceType, a.Description, a.Quantity, a.Status, a.Creator.FullName, a.CreatedAt,
         a.Approver != null ? a.Approver.FullName : null, a.ApprovedAt, a.RejectReason,
-        a.ReceiptDetail.ReceiptId, a.ReceiptDetail.Receipt.Code, a.ReceiptDetail.Receipt.Status, a.IssueId));
+        a.ReceiptDetail.ReceiptId, a.ReceiptDetail.Receipt.Code, a.ReceiptDetail.Receipt.Status, a.IssueId, a.Scope));
 }
 
 /// <summary>UC_04–06 (staff) and UC_10 for receipts (manager).</summary>
@@ -35,13 +35,11 @@ public class ReceiptsController(VibasicDbContext db, ReceiptService receipts) : 
         int CreatedBy, string CreatorName, string? ApproverName, DateTime? ApprovedAt, ReceiptStatus Status,
         int ProductCount, int TotalQuantity, int LotCount, int PendingReports, string? RejectReason, string? DeliveryNoteNo);
 
-    /// <summary>N1: goods ordered through an approved replenishment proposal that have not arrived yet.</summary>
-    public record ExpectedRow(int ProposalId, int ProductId, string Sku, string ProductName, string Unit, int SupplierId, int OrderedQuantity, DateTime? ApprovedAt);
-
     public record LotRow(int Id, string LotCode, int ProductId, string Sku, string ProductName, string Unit,
         int Quantity, int QuantityOnHand, LotStatus Status, int? DocumentQuantity, string? Note);
 
-    public record ReceiptView(ReceiptRow Header, string? Note, List<LotRow> Lots, List<ReportRow> Reports);
+    /// <param name="RevokeBlock">Approved receipt whose stock is already in use: why "Hủy duyệt" is no longer possible.</param>
+    public record ReceiptView(ReceiptRow Header, string? Note, List<LotRow> Lots, List<ReportRow> Reports, string? RevokeBlock);
 
     public record LabelLot(string LotCode, string Sku, string ProductName, string Unit, LotStatus Status, int Quantity, List<string> Serials);
     public record LabelSheet(string Code, string SupplierName, DateTime ReceiptDate, List<LabelLot> Lots);
@@ -59,16 +57,6 @@ public class ReceiptsController(VibasicDbContext db, ReceiptService receipts) : 
         return await Rows(q.OrderByDescending(r => r.ReceiptDate).Take(500)).ToListAsync();
     }
 
-    /// <summary>N1: approved proposals still waiting for goods, optionally for one supplier (its products).</summary>
-    [HttpGet("expected")]
-    public async Task<List<ExpectedRow>> Expected(int? supplierId) =>
-        await db.ReplenishmentProposals
-            .Where(r => r.Status == ProposalStatus.Approved && (supplierId == null || r.Product.SupplierId == supplierId))
-            .OrderBy(r => r.Product.SKU)
-            .Select(r => new ExpectedRow(r.ProposalId, r.ProductId, r.Product.SKU, r.Product.ProductName, r.Product.Unit, r.Product.SupplierId,
-                r.ProposedQuantity, r.ApprovedAt))
-            .ToListAsync();
-
     [HttpGet("{id:int}")]
     public async Task<ActionResult<ReceiptView>> Get(int id)
     {
@@ -81,7 +69,8 @@ public class ReceiptsController(VibasicDbContext db, ReceiptService receipts) : 
                 d.Quantity, d.QuantityOnHand, d.Status, d.DocumentQuantity, d.Note))
             .ToListAsync();
         var reports = await db.AbnormalReports.Where(a => a.ReceiptDetail.ReceiptId == id).OrderBy(a => a.Code).Rows().ToListAsync();
-        return new ReceiptView(header, note, lots, reports);
+        var block = header.Status == ReceiptStatus.Approved ? await receipts.RevokeBlockAsync(id) : null;
+        return new ReceiptView(header, note, lots, reports, block);
     }
 
     /// <summary>UC_04 step 8: lot and item barcodes for printing.</summary>
@@ -145,9 +134,13 @@ public class AbnormalReportsController(VibasicDbContext db, AbnormalReportServic
     /// <param name="IssueCode">Goods issue during which the defect was found (source "Xuất kho").</param>
     /// <param name="StocktakeId">Stocktake the report is attached to (source "Kiểm kê"), once the count was submitted.</param>
     /// <param name="Others">Other reports of the same lot, newest first.</param>
+    /// <param name="Defective">The items listed on the report and how they stand now. Empty for reports filed before items were recorded.</param>
     public record ReportView(ReportRow Report, LotsController.LotRow Lot, string? IssueCode, int? StocktakeId, string? StocktakeCode,
-        List<ItemCount> Items, List<ReportRow> Others);
+        List<ItemCount> Items, List<ReportRow> Others, List<DefectItem> Defective);
     public record ItemCount(ItemStatus Status, int Count);
+    public record DefectItem(int Id, string Serial, ItemStatus Status, string? IssueCode);
+    /// <param name="WholeLot">Lock the whole lot (true) or only take the listed items out of stock (false). Null keeps the filed scope.</param>
+    public record ApproveInput(bool? WholeLot);
 
     /// <summary>One report with its lot, where it was found and the lot's other reports.</summary>
     [HttpGet("{id:int}")]
@@ -166,13 +159,16 @@ public class AbnormalReportsController(VibasicDbContext db, AbnormalReportServic
             .GroupBy(i => i.Status).Select(g => new ItemCount(g.Key, g.Count())).ToListAsync();
         var others = await db.AbnormalReports.Where(a => a.ReceiptDetailId == report.ReceiptDetailId && a.ReportId != id)
             .OrderByDescending(a => a.CreatedAt).Rows().ToListAsync();
-        return new ReportView(report, lot, issueCode, stocktake?.StocktakeId, stocktake?.Code, items, others);
+        var defective = await db.AbnormalReportItems.Where(x => x.ReportId == id).OrderBy(x => x.Item.SerialCode)
+            .Select(x => new DefectItem(x.ItemId, x.Item.SerialCode, x.Item.Status, x.Item.IssueDetail != null ? x.Item.IssueDetail.Issue.Code : null))
+            .ToListAsync();
+        return new ReportView(report, lot, issueCode, stocktake?.StocktakeId, stocktake?.Code, items, others, defective);
     }
 
     [HttpPost("{id:int}/approve"), Authorize(Policy = Policies.Manager)]
-    public async Task<ReportRow> Approve(int id)
+    public async Task<ReportRow> Approve(int id, ApproveInput? input)
     {
-        await reports.ApproveAsync(id, User.UserId());
+        await reports.ApproveAsync(id, User.UserId(), input?.WholeLot);
         return await db.AbnormalReports.Where(a => a.ReportId == id).Rows().SingleAsync();
     }
 

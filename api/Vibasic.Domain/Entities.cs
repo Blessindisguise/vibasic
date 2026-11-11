@@ -59,6 +59,8 @@ public class StockItem
     public GoodsIssueDetail? IssueDetail { get; set; }
     /// <summary>Scanned during picking (UC_08 step 2). // + ext</summary>
     public DateTime? PickedAt { get; set; }
+    /// <summary>When the item was set aside as defective (status "Lỗi"). // + ext</summary>
+    public DateTime? DefectiveAt { get; set; }
 }
 
 #endregion
@@ -119,9 +121,19 @@ public class Order
     public int OrderId { get; set; }
     public string ExternalCode { get; set; } = "";
     public string? CustomerName { get; set; }              // + ext
+    public string? CustomerPhone { get; set; }             // + ext (giao hàng)
+    public string? ShippingAddress { get; set; }           // + ext
+    public string? Note { get; set; }                      // + ext
     public DateTime OrderDate { get; set; }
     public OrderStatus Status { get; set; }
     public List<OrderDetail> Details { get; set; } = [];
+    /// <summary>"Đã hủy": why, when and by whom. // + ext</summary>
+    public string? CancelReason { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public int? CancelledBy { get; set; }
+    public User? Canceller { get; set; }
+    /// <summary>A "Chờ xử lý" order whose stock came back: staff were told once; cleared whenever it goes "Chờ xử lý" again. // + ext</summary>
+    public DateTime? ReadyNotifiedAt { get; set; }
 }
 
 public class OrderDetail
@@ -152,6 +164,12 @@ public class GoodsIssue
     public string? ReceiverName { get; set; }              // + ext (biên bản giao hàng)
     public DateTime? DeliveredAt { get; set; }             // + ext
     public int? DeliveredBy { get; set; }                  // + ext
+    /// <summary>Staff member who claimed the issue for picking; only they may scan, report defects and deliver.</summary>
+    public int? PickerId { get; set; }                     // + ext
+    public User? Picker { get; set; }
+    public DateTime? PickStartedAt { get; set; }           // + ext
+    /// <summary>Last claim/scan by the picker; after the timeout another staff member may take the issue over.</summary>
+    public DateTime? PickActiveAt { get; set; }            // + ext
     public List<GoodsIssueDetail> Details { get; set; } = [];
 }
 
@@ -263,6 +281,20 @@ public class AbnormalReport
     public string? RejectReason { get; set; }              // + ext
     /// <summary>Goods issue during which the defect was found, if any. // + ext</summary>
     public int? IssueId { get; set; }
+    /// <summary>Only the listed items, or the whole lot. The manager may change it when approving. // + ext</summary>
+    public ReportScope Scope { get; set; } = ReportScope.Lot;
+    /// <summary>The defective items (for a report raised at receiving: every item of the failed lot). // + ext</summary>
+    public List<AbnormalReportItem> Items { get; set; } = [];
+}
+
+/// <summary>An item listed on an abnormal report. // + ext table</summary>
+public class AbnormalReportItem
+{
+    public int ReportItemId { get; set; }
+    public int ReportId { get; set; }
+    public AbnormalReport Report { get; set; } = null!;
+    public int ItemId { get; set; }
+    public StockItem Item { get; set; } = null!;
 }
 
 #endregion
@@ -275,14 +307,19 @@ public class InventoryPolicy
     public int ProductId { get; set; }
     public Product Product { get; set; } = null!;
     public int LeadTimeDays { get; set; }
-    public int SafetyStock { get; set; }
+    /// <summary>Q4: SS = z × σ × √L, calculated weekly (no longer entered). Null while ROP cannot be calculated. // changed</summary>
+    public decimal? SafetyStock { get; set; }
     public decimal OrderingCost { get; set; }
     /// <summary>Per unit per year.</summary>
     public decimal HoldingCost { get; set; }
     public decimal? CurrentROP { get; set; }
     public decimal? CurrentEOQ { get; set; }
-    /// <summary>d used for the current ROP (4 weeks ÷ 28). // + ext</summary>
+    /// <summary>d used for the current ROP: ordered quantity of the last 4 weeks ÷ 28 (Q2). // + ext</summary>
     public decimal? AvgDailyDemand { get; set; }
+    /// <summary>σ of daily demand over the last 4 weeks (Q2). // + ext</summary>
+    public decimal? DemandStdDev { get; set; }
+    /// <summary>Q3: Chưa đủ dữ liệu / Hàng chậm luân chuyển get no ROP, EOQ or proposal. // + ext</summary>
+    public DemandState DemandState { get; set; }
     public DateTime? LastROPCalculatedAt { get; set; }
     public DateTime? LastEOQCalculatedAt { get; set; }
 }
@@ -292,6 +329,7 @@ public class StockAlert
     public int AlertId { get; set; }
     public int ProductId { get; set; }
     public Product Product { get; set; } = null!;
+    /// <summary>Net stock (tồn ròng, Q8) at the last check.</summary>
     public int CurrentQuantity { get; set; }
     public decimal ROPValue { get; set; }
     public DateTime AlertDate { get; set; }
@@ -306,18 +344,49 @@ public class ReplenishmentProposal
     public Product Product { get; set; } = null!;
     public int ProposedQuantity { get; set; }
     public decimal EOQValue { get; set; }
+    /// <summary>Available stock and ROP the proposal was based on: refreshed while pending, frozen once decided or closed. // + ext</summary>
+    public int AvailableQuantity { get; set; }
+    public decimal ROPValue { get; set; }                  // + ext
+    /// <summary>Net stock (Q8) and d of the basis, the Q13 quantity and why it was cut to the 12-week cap (Q15–Q16). // + ext</summary>
+    public int NetQuantity { get; set; }
+    public decimal? AvgDailyDemand { get; set; }
+    public int BaseQuantity { get; set; }
+    public string? AdjustBasis { get; set; }
+    /// <summary>Q12 priority (Urgent or Order) at the last update. // + ext</summary>
+    public Priority Priority { get; set; } = Priority.Order;
     public DateTime ProposalDate { get; set; }
+    /// <summary>Who decided and when: put in a report ("Đã lập báo cáo") or left out ("Không đề xuất").</summary>
     public int? ApprovedBy { get; set; }
     public User? Approver { get; set; }
     public DateTime? ApprovedAt { get; set; }              // + ext
     public ProposalStatus Status { get; set; }
-    /// <summary>System quantity (EOQ) before the manager edited it. // + ext</summary>
+    /// <summary>System quantity (Q13, Q15) before the manager edited it. // + ext</summary>
     public int OriginalQuantity { get; set; }
     public string? AdjustReason { get; set; }              // + ext
     public string? RejectReason { get; set; }              // + ext
-    /// <summary>The receipt that brought the goods in (status "Đã nhập hàng"). // + ext</summary>
-    public int? ReceiptId { get; set; }
-    public GoodsReceipt? Receipt { get; set; }
+    /// <summary>The report this proposal went into. // + ext</summary>
+    public int? ReportId { get; set; }
+    public ReplenishmentReport? Report { get; set; }
+}
+
+/// <summary>
+/// Báo cáo đề xuất bổ sung hàng (Q17–Q19), made by the manager from the proposals ticked on the Đề xuất screen. The system stops
+/// here: what to buy, how much and when is decided outside it. The content is kept as made so it prints the same again. // + ext
+/// </summary>
+public class ReplenishmentReport
+{
+    public int ReportId { get; set; }
+    /// <summary>DX-yymm-nnnn.</summary>
+    public string Code { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    public int CreatedBy { get; set; }
+    public User Creator { get; set; } = null!;
+    public int ProposalCount { get; set; }
+    public int SupplierCount { get; set; }
+    public int TotalQuantity { get; set; }
+    /// <summary>The report as made (JSON): supplier groups, proposal lines and "Theo dõi" lines with their figures.</summary>
+    public string Snapshot { get; set; } = "";
+    public List<ReplenishmentProposal> Proposals { get; set; } = [];
 }
 
 #endregion

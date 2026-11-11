@@ -1,16 +1,23 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AlertBanner, ApprovalStepper, Button, ConfirmDialog, DataTable, EmptyState, LotCard, ScanInput, TextField, type DataTableColumn,
+  AlertBanner, ApprovalStepper, Button, Checkbox, ConfirmDialog, DataTable, EmptyState, LotCard, ScanInput, TextField, type DataTableColumn,
 } from '../../design';
 import { ApiError } from '../../app/api';
 import { fmt, fmtDate, fmtDateTime } from '../../app/format';
 import { FormDialog } from '../../app/Modal';
 import { useToast } from '../../app/toast';
-import { Code, ListError, Loading } from '../../app/ui';
+import { Code, Fact, Facts, ListError, Loading } from '../../app/ui';
+import { useAuth } from '../../app/auth';
+import { matches } from '../../app/text';
+import { suggestFrom } from '../../app/suggest';
 import { ApprovalBadge, IssueStatusBadge } from '../../app/statusBadges';
 import { fieldErrors, formError } from '../../app/catalog';
-import { useDeliver, useIssue, useIssueAction, useReportDefect, useScan, type IssueLine, type IssueView } from '../../app/issuing';
+import {
+  pickHoldExpired, pickHoldUntil, useDeliver, useIssue, useIssueAction, usePicker, useReportDefect, useScan, type IssueLine, type IssueRow, type IssueView,
+} from '../../app/issuing';
+import { OrderContact } from './OrderContact';
+import { CancelOrderDialog } from './CancelOrderDialog';
 import { reportHref, type ReportRow } from '../../app/receiving';
 import { ageDays } from '../staff/issuing/OrderAllocationPage';
 import { SerialRanges } from '../../app/SerialRanges';
@@ -23,7 +30,9 @@ export function IssueDetail({ id, role, basePath }: { id: number; role: Role; ba
   const action = useIssueAction();
   const toast = useToast();
   const nav = useNavigate();
-  const [dialog, setDialog] = useState<'approve' | 'reject' | 'revoke' | null>(null);
+  const [dialog, setDialog] = useState<'approve' | 'reject' | 'revoke' | 'unassign' | 'cancelOrder' | null>(null);
+  const picker = usePicker();
+  const { user } = useAuth();
   const touch = role === 'staff';
   const size = touch ? 'lg' : 'md';
 
@@ -39,6 +48,7 @@ export function IssueDetail({ id, role, basePath }: { id: number; role: Role; ba
   if (issue.isError) return <ListError onRetry={() => issue.refetch()} />;
   const { header: h, lines, reports } = issue.data;
   const picking = role === 'staff' && h.status === 'approved';
+  const mine = picking && h.pickerId === user?.id;
 
   const run = (kind: 'approve' | 'reject' | 'revoke', reason?: string) => action.mutate({ id, action: kind, reason }, {
     onSuccess: () => {
@@ -52,7 +62,7 @@ export function IssueDetail({ id, role, basePath }: { id: number; role: Role; ba
     onError: e => { setDialog(null); toast({ tone: 'danger', title: 'Không thực hiện được', message: e.message }); },
   });
 
-  const stepStatus = h.status === 'pending' ? 'pending' : h.status === 'rejected' ? 'rejected' : h.status === 'onHold' ? 'pending' : 'approved';
+  const stepStatus = h.status === 'pending' ? 'pending' : h.status === 'rejected' || h.status === 'cancelled' ? 'rejected' : 'approved';
 
   return (
     <div className="vb-stack">
@@ -68,17 +78,22 @@ export function IssueDetail({ id, role, basePath }: { id: number; role: Role; ba
               <IssueStatusBadge status={h.status} size={size} />
             </div>
             <div className="vb-muted" style={{ marginTop: 2, fontSize: touch ? 14 : undefined }}>
-              Đơn <b>{h.orderCode}</b>{h.customerName && ` · ${h.customerName}`} · Lập {fmtDateTime(h.issueDate)} bởi {h.creatorName}
+              Đơn <b>{h.orderCode}</b> · Lập {fmtDateTime(h.issueDate)} bởi {h.creatorName}
             </div>
           </div>
           {role === 'manager' && h.status === 'pending' && (
             <div className="vb-row">
+              <Button variant="ghost" icon="ban" onClick={() => setDialog('cancelOrder')}>Hủy đơn</Button>
               <Button variant="danger-outline" icon="circle-x" onClick={() => setDialog('reject')}>Từ chối phiếu</Button>
               <Button icon="check" onClick={() => setDialog('approve')}>Duyệt phiếu</Button>
             </div>
           )}
           {role === 'manager' && h.status === 'approved' && (
-            <Button variant="secondary" icon="undo-2" onClick={() => setDialog('revoke')}>Hủy duyệt</Button>
+            <div className="vb-row">
+              <Button variant="ghost" icon="ban" onClick={() => setDialog('cancelOrder')}>Hủy đơn</Button>
+              {h.pickerId && <Button variant="ghost" icon="x" onClick={() => setDialog('unassign')}>Gỡ người lấy hàng</Button>}
+              <Button variant="secondary" icon="undo-2" onClick={() => setDialog('revoke')}>Hủy duyệt</Button>
+            </div>
           )}
         </div>
         <div className="vb-panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -90,37 +105,124 @@ export function IssueDetail({ id, role, basePath }: { id: number; role: Role; ba
               [h.status === 'rejected' ? 'rejected' : 'approved']: h.approvedAt ? { by: h.approverName, at: fmtDateTime(h.approvedAt) } : undefined,
             }}
           />
-          {h.status === 'rejected' && <AlertBanner tone="danger" title={`Bị từ chối bởi ${h.approverName}`}>Lý do: {h.rejectReason}. Sản phẩm đã được gỡ khỏi phiếu, tồn kho giữ nguyên.</AlertBanner>}
-          {h.status === 'onHold' && <AlertBanner tone="warning" title="Phiếu chờ xử lý">{h.holdReason} Sản phẩm đã được gỡ khỏi phiếu. Lập phiếu mới cho đơn {h.orderCode} khi có hàng.</AlertBanner>}
-          {h.status === 'pending' && role === 'staff' && <AlertBanner tone="info">Chờ quản lý duyệt. Sản phẩm trong danh sách đã được giữ chỗ cho phiếu này.</AlertBanner>}
+          <OrderContact name={h.customerName} phone={h.customerPhone} address={h.shippingAddress} note={h.orderNote} />
+          {role === 'manager' && h.status === 'approved' && (
+            <Facts min={200}>
+              <Fact label="Người lấy hàng" value={h.pickerName ?? <span className="vb-muted">Chưa ai nhận phiếu</span>} />
+              {h.pickerId && <Fact label="Bắt đầu lúc" value={fmtDateTime(h.pickStartedAt)} />}
+              {h.pickerId && <Fact label="Thao tác lần cuối" value={fmtDateTime(h.pickActiveAt)} />}
+              {h.pickerId && <Fact label="Giữ phiếu tới" value={<>{fmtDateTime(pickHoldUntil(h))}{pickHoldExpired(h) && <span className="vb-muted"> · đã hết hạn</span>}</>} />}
+              <Fact label="Đã quét" value={`${fmt(h.picked)}/${fmt(h.totalQuantity)}`} />
+            </Facts>
+          )}
+          {h.status === 'rejected' && <AlertBanner tone="danger" title={`Bị từ chối bởi ${h.approverName}`}>Lý do: {h.rejectReason}</AlertBanner>}
+          {h.status === 'cancelled' && <AlertBanner tone="warning" title="Phiếu đã hủy">{h.holdReason}</AlertBanner>}
+          {h.status === 'pending' && role === 'staff' && <AlertBanner tone="info" title="Chờ quản lý duyệt" />}
           {h.status === 'issued' && (
             <AlertBanner tone="success" title="Đã giao hàng">
-              Giao cho {h.receiverName} lúc {fmtDateTime(h.deliveredAt)}{h.delivererName && `, nhân viên ${h.delivererName}`}. Tồn kho đã trừ theo từng lô.
+              Giao cho {h.receiverName} lúc {fmtDateTime(h.deliveredAt)}{h.delivererName && `, nhân viên ${h.delivererName}`}{h.shippingAddress && `, tới ${h.shippingAddress}`}.
             </AlertBanner>
           )}
         </div>
       </section>
 
-      {picking ? <PickingPanel view={issue.data} /> : <LinesPanel lines={lines} touch={touch} />}
+      {mine ? <PickingPanel view={issue.data} />
+        : picking ? <><ClaimPanel header={h} /><LinesPanel lines={lines} touch={touch} /></>
+        : <LinesPanel lines={lines} touch={touch} />}
 
       {reports.length > 0 && <ReportsPanel reports={reports} touch={touch} />}
 
       <ConfirmDialog
         open={dialog === 'approve'} title={`Duyệt phiếu ${h.code}?`}
-        description={`Nhân viên kho được lấy ${fmt(h.totalQuantity)} sản phẩm theo danh sách lô FIFO và giao cho đơn ${h.orderCode}.`}
+        description={`${fmt(h.totalQuantity)} sản phẩm · đơn ${h.orderCode}.`}
         confirmLabel="Duyệt phiếu" onConfirm={() => run('approve')} onCancel={() => setDialog(null)}
       />
       <ConfirmDialog
         open={dialog === 'reject'} tone="danger" requireReason title={`Từ chối phiếu ${h.code}?`}
-        description={`Sản phẩm đã giữ chỗ được trả về tồn kho; đơn ${h.orderCode} trở về Chưa xuất.`}
+        description={`${fmt(h.totalQuantity)} sản phẩm · đơn ${h.orderCode}.`}
         confirmLabel="Từ chối phiếu" onConfirm={reason => run('reject', reason)} onCancel={() => setDialog(null)}
       />
       <ConfirmDialog
-        open={dialog === 'revoke'} requireReason reasonPlaceholder="Vì sao cần hủy duyệt phiếu này…" reasonHelp="Lý do được gửi kèm thông báo cho nhân viên lập phiếu." title={`Hủy duyệt phiếu ${h.code}?`}
-        description={`Nhân viên kho dừng lấy hàng; sản phẩm vẫn được giữ chỗ và những mã đã quét được giữ nguyên. Phiếu trở về Chờ duyệt: bạn duyệt lại, hoặc từ chối để trả hàng về tồn kho.`}
+        open={dialog === 'revoke'} requireReason title={`Hủy duyệt phiếu ${h.code}?`}
+        description={`Đã quét ${fmt(h.picked)}/${fmt(h.totalQuantity)} sản phẩm.`}
         confirmLabel="Hủy duyệt" onConfirm={reason => run('revoke', reason)} onCancel={() => setDialog(null)}
       />
+      {dialog === 'cancelOrder' && (
+        <CancelOrderDialog
+          order={{ id: h.orderId, code: h.orderCode, customerName: h.customerName, quantity: h.totalQuantity, issueCode: h.code, picked: h.picked }}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      <ConfirmDialog
+        open={dialog === 'unassign'} title={`Gỡ ${h.pickerName} khỏi phiếu ${h.code}?`}
+        description={`Đã quét ${fmt(h.picked)}/${fmt(h.totalQuantity)} sản phẩm.`}
+        confirmLabel="Gỡ người lấy hàng"
+        onConfirm={() => picker.mutate({ id, action: 'release' }, {
+          onSuccess: () => { setDialog(null); toast({ tone: 'info', title: `Đã gỡ người lấy hàng phiếu ${h.code}` }); },
+          onError: e => { setDialog(null); toast({ tone: 'danger', title: 'Không thực hiện được', message: e.message }); },
+        })}
+        onCancel={() => setDialog(null)}
+      />
     </div>
+  );
+}
+
+/** First lot (FIFO order, as the server sends them) that still has unscanned items, and those items. */
+function nextPick(line: IssueLine) {
+  const index = line.lots.findIndex(l => l.items.some(i => !i.pickedAt));
+  if (index < 0) return null;
+  const lot = line.lots[index];
+  return { lot, fifo: index + 1, open: lot.items.filter(i => !i.pickedAt).map(i => i.serial), remaining: line.quantity - line.picked };
+}
+
+/**
+ * Staff on an approved issue they do not hold: start picking when nobody holds it, otherwise see who does.
+ * A holder past the 3-day hold can be taken over.
+ */
+function ClaimPanel({ header: h }: { header: IssueRow }) {
+  const picker = usePicker();
+  const toast = useToast();
+  const [confirm, setConfirm] = useState(false);
+  const [, tick] = useState(0);
+  // Re-evaluate "idle" as time passes even without a refetch.
+  useEffect(() => { const t = setInterval(() => tick(n => n + 1), 30_000); return () => clearInterval(t); }, []);
+  const claim = () => picker.mutate({ id: h.id, action: 'claim' }, {
+    onSuccess: () => { setConfirm(false); toast({ tone: 'success', title: `Bạn đang lấy hàng phiếu ${h.code}` }); },
+    onError: e => { setConfirm(false); toast({ tone: 'danger', title: 'Không nhận được phiếu', message: e.message }); },
+  });
+  const expired = pickHoldExpired(h);
+  const until = fmtDateTime(pickHoldUntil(h));
+
+  return (
+    <section className="vb-panel">
+      <div className="vb-panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {!h.pickerId ? (
+          <AlertBanner tone="info" title="Chưa ai nhận lấy hàng phiếu này">
+            {h.picked > 0 && `Đã quét trước đó ${fmt(h.picked)}/${fmt(h.totalQuantity)} sản phẩm.`}
+          </AlertBanner>
+        ) : expired ? (
+          <AlertBanner tone="warning" title={`${h.pickerName} đã giữ phiếu quá 3 ngày`}>
+            Phiếu do {h.pickerName} nhận lúc {fmtDateTime(h.pickStartedAt)}, thao tác lần cuối {fmtDateTime(h.pickActiveAt)}, đã quét {fmt(h.picked)}/{fmt(h.totalQuantity)} sản phẩm.
+          </AlertBanner>
+        ) : (
+          <AlertBanner tone="warning" title={`Đang do ${h.pickerName} lấy hàng`}>
+            Nhận phiếu lúc {fmtDateTime(h.pickStartedAt)} · thao tác lần cuối {fmtDateTime(h.pickActiveAt)} · đã quét {fmt(h.picked)}/{fmt(h.totalQuantity)} · giữ phiếu tới {until}.
+          </AlertBanner>
+        )}
+        {(!h.pickerId || expired) && (
+          <div className="vb-row">
+            {!h.pickerId
+              ? <Button size="xl" icon="scan-barcode" loading={picker.isPending} onClick={claim}>Bắt đầu lấy hàng</Button>
+              : <Button size="xl" variant="secondary" icon="refresh-cw" onClick={() => setConfirm(true)}>Nhận lại phiếu</Button>}
+          </div>
+        )}
+      </div>
+      <ConfirmDialog
+        open={confirm} title={`Nhận lại phiếu ${h.code}?`}
+        description={`${h.pickerName} đã quét ${fmt(h.picked)}/${fmt(h.totalQuantity)} sản phẩm.`}
+        confirmLabel="Nhận lại phiếu" onConfirm={claim} onCancel={() => setConfirm(false)}
+      />
+    </section>
   );
 }
 
@@ -187,9 +289,12 @@ function ReportsPanel({ reports, touch }: { reports: ReportRow[]; touch: boolean
 function PickingPanel({ view }: { view: IssueView }) {
   const { header: h, lines } = view;
   const scan = useScan(h.id);
+  const picker = usePicker();
   const toast = useToast();
   const [code, setCode] = useState('');
-  const [feedback, setFeedback] = useState<{ state: 'success' | 'error'; message: string; key: number } | null>(null);
+  const [feedback, setFeedback] = useState<{ state: 'success' | 'error' | 'idle'; message: string; key: number } | null>(null);
+  const [focused, setFocused] = useState<number | null>(null);
+  const [releaseOpen, setReleaseOpen] = useState(false);
   const [defectOpen, setDefectOpen] = useState(false);
   const [deliverOpen, setDeliverOpen] = useState(false);
   const [lastSerial, setLastSerial] = useState<string | null>(null);
@@ -197,20 +302,62 @@ function PickingPanel({ view }: { view: IssueView }) {
   const picked = lines.reduce((s, l) => s + l.picked, 0);
   const done = total > 0 && picked === total;
 
+  /** Bring a line into view and say which lot and codes to take next (FIFO). */
+  const focusLine = (line: IssueLine) => {
+    setFocused(line.detailId);
+    document.getElementById(`line-${line.detailId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const next = nextPick(line);
+    let message: string;
+    if (!next) message = `Đã lấy đủ ${fmt(line.quantity)} ${line.unit} ${line.sku}.`;
+    else {
+      const sample = next.open.slice(0, 3).join(', ') + (next.open.length > 3 ? ', …' : '');
+      message = `${line.sku}: lấy tiếp từ lô ${next.lot.lotCode} (FIFO ${next.fifo}, nhập ${fmtDate(next.lot.receivedDate)}, ${ageDays(next.lot.receivedDate)} ngày), còn ${fmt(next.open.length)} ${line.unit} ở lô này: ${sample}`;
+    }
+    setFeedback({ state: 'idle', message, key: Date.now() });
+    setCode('');
+  };
+  const lineFields = (l: IssueLine) => [l.sku, l.productName, ...l.lots.map(x => x.lotCode)];
+  const isSerial = (v: string) => /^SP-/i.test(v.trim());
+  const suggestions = isSerial(code) ? [] : suggestFrom(lines, code, lineFields, l => {
+    const next = nextPick(l);
+    return {
+      key: String(l.detailId), label: l.sku, hint: l.productName,
+      meta: <span style={{ fontVariantNumeric: 'tabular-nums' }}>{next ? `còn ${fmt(l.quantity - l.picked)} · lô ${next.lot.lotCode}` : 'Đã đủ'}</span>,
+    };
+  });
+
   const submitScan = (value: string) => {
-    if (!value.trim()) return;
-    scan.mutate(value.trim(), {
+    const v = value.trim();
+    if (!v) return;
+    const upper = v.toUpperCase();
+    // A lot label of this issue goes to the server: the whole lot is picked when the issue takes all of it.
+    const lotLine = lines.find(l => l.lots.some(x => x.lotCode.toUpperCase() === upper));
+    // Otherwise, not an item code: a SKU or product name of a line on this issue shows where to pick it.
+    if (!isSerial(v) && !lotLine) {
+      const exact = lines.find(l => l.sku.toUpperCase() === upper);
+      const found = exact ? [exact] : lines.filter(l => matches(v, ...lineFields(l)));
+      if (found.length === 1) { focusLine(found[0]); return; }
+      if (found.length > 1) { setFeedback({ state: 'idle', message: `Có ${found.length} mặt hàng khớp “${v}”. Chọn một mặt hàng trong danh sách gợi ý.`, key: Date.now() }); return; }
+    }
+    scan.mutate(v, {
       onSuccess: r => {
-        setLastSerial(r.serial);
+        if (!lotLine) setLastSerial(r.serial);
+        const line = lines.find(l => l.sku === r.sku);
+        if (line) setFocused(line.detailId);
         setFeedback({
           state: 'success', key: Date.now(),
-          message: r.alreadyPicked ? `${r.serial} đã quét trước đó.`
+          message: r.alreadyPicked ? (lotLine ? `Lô ${r.lotCode} đã lấy đủ.` : `${r.serial} đã quét trước đó.`)
+            : r.lotPicked > 0 ? `Đã lấy cả lô ${r.lotCode} · ${fmt(r.lotPicked)} ${line?.unit ?? ''} · ${r.picked}/${r.total}`
             : r.replacedSerial ? `Nhận ${r.serial} thay cho ${r.replacedSerial} (cùng lô ${r.lotCode}) · ${r.picked}/${r.total}`
             : `Đúng: ${r.serial} · lô ${r.lotCode} · ${r.picked}/${r.total}`,
         });
         setCode('');
       },
-      onError: e => { setFeedback({ state: 'error', message: e.message, key: Date.now() }); setCode(''); },
+      onError: e => {
+        if (lotLine) { setFocused(lotLine.detailId); document.getElementById(`line-${lotLine.detailId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        setFeedback({ state: 'error', message: e.message, key: Date.now() });
+        setCode('');
+      },
     });
   };
 
@@ -220,8 +367,9 @@ function PickingPanel({ view }: { view: IssueView }) {
         <div className="vb-panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <ScanInput
             value={code} onChange={setCode} onSubmit={submitScan} autoFocus size="lg" scanKey={feedback?.key ?? 0}
-            label="Quét mã từng sản phẩm" placeholder="Quét tem sản phẩm (SP-…)" state={feedback?.state ?? 'idle'}
-            message={feedback?.message ?? 'Lấy hàng theo thứ tự lô FIFO bên dưới. Trong cùng một lô, lấy sản phẩm nào cũng được: hệ thống tự đổi mã.'}
+            label="Quét tem hoặc tìm hàng trong phiếu" placeholder="SP-…, SKU, tên hàng, mã lô" state={feedback?.state ?? 'idle'}
+            message={feedback?.message ?? 'Quét tem sản phẩm hoặc tem lô'}
+            suggestions={suggestions} onPickSuggestion={s => { const l = lines.find(x => String(x.detailId) === s.key); if (l) focusLine(l); }}
           />
           <div className="vb-row" style={{ gap: 12 }}>
             <div style={{ flex: 1, minWidth: 200 }}>
@@ -230,6 +378,7 @@ function PickingPanel({ view }: { view: IssueView }) {
               </div>
               <div style={{ marginTop: 4, font: 'var(--type-touch-body)', fontVariantNumeric: 'tabular-nums' }}>Đã quét <b>{fmt(picked)}</b>/{fmt(total)} sản phẩm</div>
             </div>
+            <Button size="xl" variant="ghost" icon="log-out" onClick={() => setReleaseOpen(true)}>Nhường phiếu</Button>
             <Button size="xl" variant="danger-outline" icon="shield-alert" onClick={() => setDefectOpen(true)}>Báo hàng lỗi</Button>
             <Button size="xl" icon="truck" disabled={!done} onClick={() => setDeliverOpen(true)}>Xác nhận giao hàng</Button>
           </div>
@@ -239,7 +388,8 @@ function PickingPanel({ view }: { view: IssueView }) {
       {lines.map(line => {
         const firstOpen = line.lots.findIndex(l => l.items.some(i => !i.pickedAt));
         return (
-          <section key={line.detailId} className="vb-panel">
+          <section key={line.detailId} id={`line-${line.detailId}`} className="vb-panel"
+            style={focused === line.detailId ? { outline: '3px solid var(--feedback-info)', outlineOffset: 2, scrollMarginTop: 200 } : { scrollMarginTop: 200 }}>
             <div className="vb-panel__head">
               <span style={{ font: 'var(--type-touch-heading)', fontSize: 17 }}><Code>{line.sku}</Code> {line.productName}</span>
               <span style={{ marginLeft: 'auto', font: 'var(--type-touch-body)', fontVariantNumeric: 'tabular-nums' }}>{fmt(line.picked)}/{fmt(line.quantity)} {line.unit}</span>
@@ -263,11 +413,23 @@ function PickingPanel({ view }: { view: IssueView }) {
 
       {defectOpen && <DefectDialog view={view} preselect={lastSerial} onClose={() => setDefectOpen(false)} onDone={msg => toast(msg)} />}
       {deliverOpen && <DeliverDialog view={view} onClose={() => setDeliverOpen(false)} />}
+      <ConfirmDialog
+        open={releaseOpen} title={`Nhường phiếu ${h.code}?`}
+        description={picked > 0 ? `Đã quét ${fmt(picked)} sản phẩm.` : undefined}
+        confirmLabel="Nhường phiếu" onCancel={() => setReleaseOpen(false)}
+        onConfirm={() => picker.mutate({ id: h.id, action: 'release' }, {
+          onSuccess: () => { setReleaseOpen(false); toast({ tone: 'info', title: `Đã nhường phiếu ${h.code}` }); },
+          onError: e => { setReleaseOpen(false); toast({ tone: 'danger', title: 'Không thực hiện được', message: e.message }); },
+        })}
+      />
     </>
   );
 }
 
-/** UC_08 3.1 / UC_11: pick the defective items, describe the defect; the lot is quarantined and the items replaced by FIFO. */
+/**
+ * UC_08 3.1 / UC_11: pick the defective items, describe the defect. The items are set aside and replaced by FIFO; when the defect
+ * looks like it affects the whole lot, staff tick "Nghi lỗi cả lô" and the lot is quarantined as well.
+ */
 function DefectDialog({ view, preselect, onClose, onDone }: {
   view: IssueView; preselect: string | null; onClose: () => void;
   onDone: (t: { tone: 'success' | 'warning' | 'danger'; title: string; message?: string }) => void;
@@ -275,17 +437,23 @@ function DefectDialog({ view, preselect, onClose, onDone }: {
   const report = useReportDefect(view.header.id);
   const [selected, setSelected] = useState<string[]>(preselect ? [preselect] : []);
   const [description, setDescription] = useState('');
+  const [wholeLot, setWholeLot] = useState(false);
   const errors = fieldErrors(report.error);
   const toggle = (s: string) => setSelected(sel => (sel.includes(s) ? sel.filter(x => x !== s) : [...sel, s]));
 
-  const submit = () => report.mutate({ serials: selected, description }, {
+  const submit = () => report.mutate({ serials: selected, description, wholeLot }, {
     onSuccess: ({ result }) => {
       onDone(result.onHold
-        ? { tone: 'danger', title: `Không đủ hàng thay thế, phiếu ${view.header.code} chuyển Chờ xử lý`, message: `Đã lập ${result.reportCodes.join(', ')}. Trả toàn bộ hàng đã lấy về kệ.` }
-        : {
-          tone: 'warning', title: `Đã lập ${result.reportCodes.join(', ')}; lô đã tạm cách ly`,
-          message: `Đổi ${result.replaced} sản phẩm sang lô kế tiếp theo FIFO.${result.returnPicked.length ? ` Trả lại kệ: ${result.returnPicked.join(', ')}.` : ''} Quét lại theo danh sách mới.`,
-        });
+        ? { tone: 'danger', title: `Không đủ hàng thay thế, phiếu ${view.header.code} đã hủy`, message: `Đã lập ${result.reportCodes.join(', ')}. Đơn chờ lập phiếu mới khi có hàng.` }
+        : wholeLot
+          ? {
+            tone: 'warning', title: `Đã lập ${result.reportCodes.join(', ')}; lô đã tạm cách ly`,
+            message: `Đổi ${result.replaced} sản phẩm sang lô kế tiếp.${result.returnPicked.length ? ` Trả lại kệ: ${result.returnPicked.join(', ')}.` : ''}`,
+          }
+          : {
+            tone: 'warning', title: `Đã lập ${result.reportCodes.join(', ')}`,
+            message: `Đã thay ${result.replaced} sản phẩm.`,
+          });
       onClose();
     },
   });
@@ -293,7 +461,6 @@ function DefectDialog({ view, preselect, onClose, onDone }: {
   return (
     <FormDialog
       title="Báo hàng lỗi" width={680}
-      description="Hệ thống lập biên bản bất thường, tạm cách ly cả lô chứa sản phẩm lỗi và thay bằng sản phẩm kế tiếp theo FIFO."
       submitLabel="Lập biên bản" busy={report.isPending} error={formError(report.error)} onSubmit={submit} onClose={onClose}
     >
       <div className="vb-field">
@@ -314,6 +481,8 @@ function DefectDialog({ view, preselect, onClose, onDone }: {
       </div>
       <TextField size="lg" multiline required label="Mô tả lỗi" value={description} onChange={e => setDescription(e.target.value)}
         error={errors.description} placeholder="Ví dụ: nứt cán, mốc đáy, cong vênh" />
+      <Checkbox size="lg" checked={wholeLot} onChange={e => setWholeLot(e.target.checked)}
+        label={<b>Nghi lỗi cả lô</b>} />
     </FormDialog>
   );
 }
@@ -325,7 +494,7 @@ function DeliverDialog({ view, onClose }: { view: IssueView; onClose: () => void
   const [receiver, setReceiver] = useState('');
   const errors = fieldErrors(deliver.error);
   const submit = () => deliver.mutate(receiver, {
-    onSuccess: () => { toast({ tone: 'success', title: `Đã xuất kho phiếu ${view.header.code}`, message: 'Tồn kho đã trừ theo từng lô.' }); onClose(); },
+    onSuccess: () => { toast({ tone: 'success', title: `Đã xuất kho phiếu ${view.header.code}` }); onClose(); },
   });
   return (
     <FormDialog
@@ -336,8 +505,14 @@ function DeliverDialog({ view, onClose }: { view: IssueView; onClose: () => void
       <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
         {view.lines.map(l => <li key={l.detailId}><Code>{l.sku}</Code> {l.productName}: <b>{fmt(l.picked)}</b> {l.unit}</li>)}
       </ul>
+      {(view.header.shippingAddress || view.header.customerPhone) && (
+        <div className="vb-muted">Giao tới {view.header.shippingAddress ?? '—'}{view.header.customerPhone && ` · ĐT ${view.header.customerPhone}`}</div>
+      )}
       <TextField size="lg" required autoFocus label="Người nhận hàng" value={receiver} onChange={e => setReceiver(e.target.value)}
         error={errors.receiverName} placeholder="Họ tên tài xế hoặc người nhận" />
+      {view.header.customerName && !receiver && (
+        <div><Button variant="ghost" icon="user" onClick={() => setReceiver(view.header.customerName!)}>Điền tên khách: {view.header.customerName}</Button></div>
+      )}
     </FormDialog>
   );
 }

@@ -11,14 +11,18 @@ public record PlanInput(StocktakePlanType? PlanType, StocktakeScope? ScopeType, 
 /// <param name="Unlabeled">Counted by scanning: items found without a readable label.</param>
 public record CountInput(int? ReceiptDetailId, int? ActualQuantity, string? Reason, DateTime? CountedAt = null, List<string>? Serials = null, int? Unlabeled = null);
 public record StocktakeInput(List<CountInput>? Counts);
-public record StockDefectInput(int? ReceiptDetailId, int? Quantity, string? Description);
+/// <param name="Serials">The defective items, scanned from their labels.</param>
+/// <param name="WholeLot">Defect suspected in the whole lot (mould, damp…): quarantine it, not only the listed items.</param>
+public record StockDefectInput(int? ReceiptDetailId, List<string>? Serials, string? Description, bool WholeLot = false);
 
 /// <summary>
 /// One lot to count (UC_14 step 2). <paramref name="SystemQuantity"/> is the stock on hand; <paramref name="Picking"/> of it was
 /// already scanned for an issue and sits in the staging area, so the shelf should hold <paramref name="ShelfQuantity"/>.
+/// <paramref name="DefectsAt"/>: when items of the lot were set aside as defective lately. Those set aside after the lot was
+/// counted were still on the shelf at that moment.
 /// </summary>
 public record SheetLot(int ReceiptDetailId, string LotCode, int ProductId, string Sku, string ProductName, string Unit,
-    DateTime ReceivedDate, LotStatus Status, int SystemQuantity, int Picking, int ShelfQuantity);
+    DateTime ReceivedDate, LotStatus Status, int SystemQuantity, int Picking, int ShelfQuantity, List<DateTime> DefectsAt);
 
 /// <summary>
 /// Stocktake workflow: UC_13 (kế hoạch), UC_14 (kiểm đếm, biên bản khi phát hiện lỗi), UC_15 (duyệt và điều chỉnh tồn).
@@ -40,23 +44,7 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
 
     public async Task<StocktakePlan> CreatePlanAsync(PlanInput input, int managerId)
     {
-        var today = VnTime.Today(clock.UtcNow);
-        var note = CatalogService.Clean(input.Note);
-        var lotIds = (input.LotIds ?? []).Distinct().ToList();
-        var v = new Validator()
-            .Check(input.PlanType is not null, "planType", "Chọn loại kế hoạch.")
-            .Check(input.ScopeType is not null, "scopeType", "Chọn phạm vi kiểm kê.")
-            .Check(input.PlannedDate is not null, "plannedDate", "Chọn ngày dự kiến thực hiện.")
-            .Check(input.PlannedDate is null || input.PlannedDate >= today, "plannedDate", "Ngày dự kiến không được trước hôm nay.")
-            .Check(input.ScopeType != StocktakeScope.SelectedLots || lotIds.Count > 0, "lotIds", "Chọn ít nhất một lô cần kiểm kê.")
-            .Check(note is null || note.Length <= 255, "note", "Ghi chú tối đa 255 ký tự.");
-        if (input.ScopeType == StocktakeScope.SelectedLots && lotIds.Count > 0)
-        {
-            var found = await CountableLots().CountAsync(d => lotIds.Contains(d.ReceiptDetailId));
-            v.Check(found == lotIds.Count, "lotIds", "Có lô không còn tồn hoặc không thuộc phiếu nhập đã duyệt. Chọn lại.");
-        }
-        v.ThrowIfAny();
-
+        var (note, lotIds) = await ValidatePlanAsync(input, null);
         var now = clock.UtcNow;
         var plan = new StocktakePlan
         {
@@ -73,26 +61,102 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
         return plan;
     }
 
+    /// <summary>
+    /// UC_13, sửa kế hoạch: type, date, scope, lots and note can change while the plan waits to be counted. Once a count is
+    /// submitted (Đang kiểm kê) or approved (Hoàn thành) the plan is what was counted and stays as it is. Staff are told what changed.
+    /// </summary>
+    public async Task<StocktakePlan> UpdatePlanAsync(int id, PlanInput input, int managerId)
+    {
+        var plan = await db.StocktakePlans.Include(p => p.Details).SingleOrDefaultAsync(p => p.PlanId == id)
+            ?? throw new NotFoundException("Không tìm thấy kế hoạch kiểm kê.");
+        if (plan.Status != StocktakePlanStatus.Waiting)
+            throw new RuleException(plan.Status == StocktakePlanStatus.InProgress
+                ? $"Kế hoạch {plan.Code} đã có phiếu kiểm kê chờ duyệt, không sửa được. Duyệt hoặc từ chối phiếu đó trước."
+                : $"Kế hoạch {plan.Code} đã hoàn thành, không sửa được. Lập kế hoạch mới nếu cần kiểm lại.");
+        var (note, lotIds) = await ValidatePlanAsync(input, plan);
+
+        var changes = new List<string>();
+        if (plan.PlannedDate != input.PlannedDate) changes.Add($"ngày {plan.PlannedDate:dd/MM} → {input.PlannedDate:dd/MM/yyyy}");
+        var oldLots = plan.ScopeType == StocktakeScope.Warehouse ? null : plan.Details.Select(d => d.ReceiptDetailId).Order().ToList();
+        var newLots = input.ScopeType == StocktakeScope.Warehouse ? null : lotIds.Order().ToList();
+        if (oldLots is null != newLots is null || oldLots is not null && !oldLots.SequenceEqual(newLots!))
+            changes.Add(newLots is null ? "phạm vi: toàn bộ kho" : $"phạm vi: {newLots.Count} lô");
+        if (plan.PlanType != input.PlanType) changes.Add($"loại: {Labels<StocktakePlanType>.ToLabel(input.PlanType!.Value).ToLowerInvariant()}");
+        if (plan.Note != note) changes.Add("ghi chú");
+
+        plan.PlanType = input.PlanType!.Value;
+        plan.ScopeType = input.ScopeType!.Value;
+        plan.PlannedDate = input.PlannedDate!.Value;
+        plan.Note = note;
+        var keep = plan.ScopeType == StocktakeScope.SelectedLots ? lotIds.ToHashSet() : [];
+        plan.Details.RemoveAll(d => !keep.Contains(d.ReceiptDetailId));
+        foreach (var lotId in keep.Where(l => plan.Details.All(d => d.ReceiptDetailId != l)))
+            plan.Details.Add(new StocktakePlanDetail { ReceiptDetailId = lotId });
+        if (changes.Count > 0)
+            await notify.ToRoleAsync(UserRole.Staff, $"Kế hoạch kiểm kê {plan.Code} đã thay đổi",
+                $"Đổi {string.Join(", ", changes)}. Mở lại kế hoạch để xem danh sách lô.", $"/kho/kiem-ke/{plan.PlanId}", Notifier.Warning);
+        await db.SaveChangesAsync();
+        return plan;
+    }
+
+    /// <summary>
+    /// Shared rules of a new or edited plan. The date cannot be before today (an edited plan may keep its date). Picked lots must
+    /// still hold stock of an approved receipt; lots already in the edited plan may stay even if they ran out since.
+    /// </summary>
+    private async Task<(string? note, List<int> lotIds)> ValidatePlanAsync(PlanInput input, StocktakePlan? existing)
+    {
+        var today = VnTime.Today(clock.UtcNow);
+        var note = CatalogService.Clean(input.Note);
+        var lotIds = (input.LotIds ?? []).Distinct().ToList();
+        var v = new Validator()
+            .Check(input.PlanType is not null, "planType", "Chọn loại kế hoạch.")
+            .Check(input.ScopeType is not null, "scopeType", "Chọn phạm vi kiểm kê.")
+            .Check(input.PlannedDate is not null, "plannedDate", "Chọn ngày dự kiến thực hiện.")
+            .Check(input.PlannedDate is null || input.PlannedDate >= today || input.PlannedDate == existing?.PlannedDate,
+                "plannedDate", "Ngày dự kiến không được trước hôm nay.")
+            .Check(input.ScopeType != StocktakeScope.SelectedLots || lotIds.Count > 0, "lotIds", "Chọn ít nhất một lô cần kiểm kê.")
+            .Check(note is null || note.Length <= 255, "note", "Ghi chú tối đa 255 ký tự.");
+        if (input.ScopeType == StocktakeScope.SelectedLots && lotIds.Count > 0)
+        {
+            var kept = existing?.Details.Select(d => d.ReceiptDetailId).ToHashSet() ?? [];
+            var added = lotIds.Where(l => !kept.Contains(l)).ToList();
+            var found = await CountableLots().CountAsync(d => added.Contains(d.ReceiptDetailId));
+            v.Check(found == added.Count, "lotIds", "Có lô không còn tồn hoặc không thuộc phiếu nhập đã duyệt. Chọn lại.");
+        }
+        v.ThrowIfAny();
+        return (note, lotIds);
+    }
+
     // ---------------- UC_14: kiểm đếm ----------------
 
     /// <summary>UC_14 step 2: the lots in scope and their current system quantity.</summary>
     public async Task<List<SheetLot>> SheetAsync(int planId)
     {
         var plan = await LoadPlanAsync(planId);
+        var since = clock.UtcNow.AddDays(-MaxCountAgeDays);
         return await ScopeLots(plan)
             .OrderBy(d => d.Product.SKU).ThenBy(d => d.Receipt.ReceiptDate).ThenBy(d => d.ReceiptDetailId)
-            .Select(d => new { d, Picking = d.Items.Count(i => i.Status == ItemStatus.Reserved && i.PickedAt != null) })
+            .Select(d => new
+            {
+                d, Picking = d.Items.Count(i => i.Status == ItemStatus.Reserved && i.PickedAt != null),
+                Defects = d.Items.Where(i => i.Status == ItemStatus.Defective && i.DefectiveAt > since).Select(i => i.DefectiveAt!.Value).ToList(),
+            })
             .Select(x => new SheetLot(x.d.ReceiptDetailId, x.d.LotCode, x.d.ProductId, x.d.Product.SKU, x.d.Product.ProductName, x.d.Product.Unit,
-                x.d.Receipt.ReceiptDate, x.d.Status, x.d.QuantityOnHand, x.Picking, x.d.QuantityOnHand - x.Picking))
+                x.d.Receipt.ReceiptDate, x.d.Status, x.d.QuantityOnHand, x.Picking, x.d.QuantityOnHand - x.Picking, x.Defects))
             .ToListAsync();
     }
 
+    /// <summary>A count kept on the device is trusted back this far.</summary>
+    private const int MaxCountAgeDays = 30;
+
     /// <summary>
     /// K1/K2: was the item on the shelf at <paramref name="at"/>? Items in stock (free or reserved) and items issued later count,
-    /// unless they had already been scanned for an issue by then (staging area or delivered). Lost and incoming items never count.
+    /// unless they had already been scanned for an issue by then (staging area or delivered). Items set aside as defective count
+    /// only if that happened after <paramref name="at"/>. Lost and incoming items never count.
     /// </summary>
     public static bool OnShelfAt(StockItem i, DateTime at) =>
-        i.Status is ItemStatus.InStock or ItemStatus.Reserved or ItemStatus.Issued && (i.PickedAt is null || i.PickedAt > at);
+        (i.Status is ItemStatus.InStock or ItemStatus.Reserved or ItemStatus.Issued || i.Status == ItemStatus.Defective && i.DefectiveAt > at)
+        && (i.PickedAt is null || i.PickedAt > at);
 
     /// <summary>On the shelf now, so it can still be written off: free, or reserved but not yet scanned.</summary>
     private static bool OnShelfNow(StockItem i) => i.Status == ItemStatus.InStock || i.Status == ItemStatus.Reserved && i.PickedAt is null;
@@ -123,7 +187,7 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
             var key = $"counts[{lot.ReceiptDetailId}]";
             counts.TryGetValue(lot.ReceiptDetailId, out var c);
             // A count from the device is trusted back to 30 days; never in the future.
-            var at = c?.CountedAt is { } t && t <= now && t >= now.AddDays(-30) ? t : now;
+            var at = c?.CountedAt is { } t && t <= now && t >= now.AddDays(-MaxCountAgeDays) ? t : now;
             var system = lot.Items.Count(i => OnShelfAt(i, at));
             var found = new List<StockItem>();
             int? actual = c?.ActualQuantity;
@@ -133,9 +197,12 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
                 var bySerial = lot.Items.ToDictionary(i => i.SerialCode);
                 var foreign = wanted.Where(s => !bySerial.ContainsKey(s)).ToList();
                 found = wanted.Where(bySerial.ContainsKey).Select(s => bySerial[s]).ToList();
-                var gone = found.Where(i => !OnShelfAt(i, at) && i.Status != ItemStatus.Lost).Select(i => i.SerialCode).ToList();
+                var off = found.Where(i => !OnShelfAt(i, at) && i.Status != ItemStatus.Lost).ToList();
+                var defect = off.Where(i => i.Status == ItemStatus.Defective).Select(i => i.SerialCode).ToList();
+                var gone = off.Where(i => i.Status != ItemStatus.Defective).Select(i => i.SerialCode).ToList();
                 v.Check(foreign.Count == 0, key + ".serials", $"Không thuộc lô {lot.LotCode}: {string.Join(", ", foreign.Take(5))}{(foreign.Count > 5 ? "…" : "")}. Bỏ các mã này ra khỏi số đếm.")
                  .Check(gone.Count == 0, key + ".serials", $"Đã lấy cho phiếu xuất hoặc đã xuất trước lúc đếm: {string.Join(", ", gone.Take(5))}. Bỏ các mã này ra khỏi số đếm.")
+                 .Check(defect.Count == 0, key + ".serials", $"Đã tách ra do lỗi trước lúc đếm: {string.Join(", ", defect.Take(5))}. Bỏ các mã này ra khỏi số đếm.")
                  .Check(c.Unlabeled is null or >= 0 and <= 100_000, key + ".unlabeled", "Số sản phẩm không có tem không hợp lệ.");
                 actual = found.Count + (c.Unlabeled ?? 0);
             }
@@ -173,8 +240,9 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
     }
 
     /// <summary>
-    /// UC_14 3.1 / UC_11 (nguồn: kiểm kê): file an abnormal report for a lot in scope; the lot is quarantined and any of its
-    /// items reserved on open issues are replaced by FIFO. Counting continues.
+    /// UC_14 3.1 / UC_11 (nguồn: kiểm kê): file an abnormal report listing the defective items (scanned) of a lot in scope.
+    /// They are set aside ("Lỗi") and, if reserved, replaced on their issue by FIFO. With WholeLot the lot is quarantined and
+    /// every reserved item of it is replaced. Counting continues.
     /// </summary>
     public async Task<AbnormalReport> FileDefectAsync(int planId, StockDefectInput input, int staffId)
     {
@@ -182,30 +250,45 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
         EnsureWaiting(plan);
         var text = CatalogService.Clean(input.Description);
         var lot = input.ReceiptDetailId is null ? null
-            : await ScopeLots(plan).Include(d => d.Product).SingleOrDefaultAsync(d => d.ReceiptDetailId == input.ReceiptDetailId);
+            : await ScopeLots(plan).Include(d => d.Product).Include(d => d.Items).SingleOrDefaultAsync(d => d.ReceiptDetailId == input.ReceiptDetailId);
+        var wanted = (input.Serials ?? []).Select(s => CatalogService.Clean(s)?.ToUpperInvariant()).OfType<string>().Distinct().ToList();
+        var bySerial = lot?.Items.ToDictionary(i => i.SerialCode) ?? new Dictionary<string, StockItem>();
+        var foreign = wanted.Where(s => !bySerial.ContainsKey(s)).ToList();
+        var defective = wanted.Where(bySerial.ContainsKey).Select(s => bySerial[s]).ToList();
+        var refused = defective.Select(Abnormal.Defects.WhyNot).OfType<string>().ToList();
         new Validator()
             .Check(lot is not null, "receiptDetailId", "Chọn lô thuộc kế hoạch kiểm kê.")
-            .Check(lot is null || input.Quantity is >= 1 && input.Quantity <= lot.QuantityOnHand, "quantity",
-                $"Số lượng lỗi từ 1 đến {lot?.QuantityOnHand ?? 0}.")
+            .Check(lot is null || wanted.Count > 0, "serials", "Quét tem các sản phẩm lỗi.")
+            .Check(lot is null || foreign.Count == 0, "serials", $"Không thuộc lô {lot?.LotCode}: {string.Join(", ", foreign.Take(5))}.")
+            .Check(refused.Count == 0, "serials", string.Join("; ", refused.Take(5)) + ".")
             .Check(text is { Length: >= MinReason }, "description", $"Mô tả lỗi (tối thiểu {MinReason} ký tự).")
             .Check(text is null || text.Length <= 500, "description", "Mô tả lỗi tối đa 500 ký tự.")
             .ThrowIfAny();
-        if (await db.AbnormalReports.AnyAsync(a => a.ReceiptDetailId == lot!.ReceiptDetailId && a.Status == ApprovalStatus.Pending))
-            throw new RuleException($"Lô {lot!.LotCode} đã có biên bản bất thường chờ duyệt.");
         if (lot!.Status == LotStatus.Locked)
             throw new RuleException($"Lô {lot.LotCode} đã bị khóa; không cần lập thêm biên bản.");
+        var pendingLot = await db.AbnormalReports.Where(a => a.ReceiptDetailId == lot.ReceiptDetailId && a.Status == ApprovalStatus.Pending && a.Scope == ReportScope.Lot)
+            .Select(a => a.Code).FirstOrDefaultAsync();
+        if (pendingLot is not null)
+            throw new RuleException($"Lô {lot.LotCode} đang tạm cách ly theo biên bản {pendingLot} chờ duyệt. Ghi thêm sản phẩm lỗi vào mô tả khi quản lý xử lý biên bản đó.");
 
         var now = clock.UtcNow;
         var report = new AbnormalReport
         {
             Code = await codes.NextDocumentAsync(CodeGenerator.Abnormal, now), ReceiptDetail = lot, SourceType = AbnormalSource.Stocktake,
-            Description = text!, Quantity = input.Quantity!.Value, CreatedBy = staffId, CreatedAt = now, Status = ApprovalStatus.Pending,
+            Description = text!, Quantity = defective.Count, CreatedBy = staffId, CreatedAt = now, Status = ApprovalStatus.Pending,
+            Scope = input.WholeLot ? ReportScope.Lot : ReportScope.Items,
         };
+        report.Items.AddRange(defective.Select(i => new AbnormalReportItem { Item = i }));
         db.AbnormalReports.Add(report);
-        lot.Status = LotStatus.Quarantined;
-        await issues.ReplaceFromLotsAsync([lot.ReceiptDetailId]);
+        var replace = (input.WholeLot ? lot.Items : defective).Where(i => i.Status == ItemStatus.Reserved).Select(i => i.ItemId).ToList();
+        if (replace.Count > 0)
+            await issues.ReplaceReservedAsync(replace, input.WholeLot ? [lot.ReceiptDetailId] : [], null,
+                input.WholeLot ? "Không đủ hàng thay thế cho sản phẩm thuộc lô bị cách ly." : "Không đủ hàng thay thế cho sản phẩm lỗi phát hiện khi kiểm kê.");
+        foreach (var item in defective) Abnormal.Defects.Mark(item, now);
+        if (input.WholeLot) lot.Status = LotStatus.Quarantined;
         await notify.ToRoleAsync(UserRole.Manager, $"Biên bản {report.Code} chờ duyệt",
-            $"Phát hiện khi kiểm kê {plan.Code}: {report.Quantity} {lot.Product.Unit} lô {lot.LotCode}. Lô đã tạm cách ly.",
+            $"Phát hiện khi kiểm kê {plan.Code}: {report.Quantity} {lot.Product.Unit} lô {lot.LotCode} lỗi. "
+            + (input.WholeLot ? "Nghi lỗi cả lô, lô đã tạm cách ly." : "Đã tách riêng sản phẩm lỗi; phần còn lại của lô vẫn xuất được."),
             "/ql/cho-duyet?loai=bat-thuong", Notifier.Warning);
         await db.SaveChangesAsync();
         await replenish.CheckLotsAsync([lot.ReceiptDetailId]);

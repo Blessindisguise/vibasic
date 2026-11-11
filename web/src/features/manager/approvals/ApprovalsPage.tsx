@@ -1,42 +1,77 @@
+import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { DataTable, EmptyState, type DataTableColumn } from '../../../design';
+import { DataTable, EmptyState, SearchField, type DataTableColumn, type Suggestion } from '../../../design';
 import { fmt, fmtShort } from '../../../app/format';
 import { Segmented } from '../../../app/Segmented';
 import { Code, ListError, Loading } from '../../../app/ui';
-import { ReceiptStatusBadge } from '../../../app/statusBadges';
+import { matches } from '../../../app/text';
+import { suggestFrom } from '../../../app/suggest';
+import { ReceiptStatusBadge, SCOPE_LABEL } from '../../../app/statusBadges';
 import { reportHref, useApprovalSummary, useReceipts, useReports, type ReceiptRow, type ReportRow } from '../../../app/receiving';
 import { useIssues, type IssueRow } from '../../../app/issuing';
 import { useStocktakes, type StocktakeRow } from '../../../app/stock';
+import { stocktakeFields } from '../../stocktake/columns';
 import { ReportDecision } from '../../abnormal/ReportDecision';
 
 type Tab = 'nhap-kho' | 'xuat-kho' | 'kiem-ke' | 'bat-thuong';
+
+// What the search box matches, per document type.
+const receiptFields = (r: ReceiptRow) => [r.code, r.supplierName, r.creatorName, r.deliveryNoteNo];
+const issueFields = (i: IssueRow) => [i.code, i.orderCode, i.customerName, i.creatorName];
+const reportFields = (r: ReportRow) => [r.code, r.lotCode, r.sku, r.productName, r.description, r.receiptCode, r.creatorName];
+const NOT_FOUND = <EmptyState icon="search" title="Không tìm thấy chứng từ phù hợp" description="Thử từ khóa khác." />;
+const PLACEHOLDER: Record<Tab, string> = {
+  'nhap-kho': 'Mã phiếu, NCC, số chứng từ, người lập…',
+  'xuat-kho': 'Mã phiếu, đơn hàng, khách, người lập…',
+  'kiem-ke': 'Mã phiếu, kế hoạch, người kiểm…',
+  'bat-thuong': 'Mã biên bản, lô, mặt hàng, mô tả…',
+};
 
 /** UC_10 / UC_12 step 1: everything waiting for the manager, grouped by document type. */
 export function ApprovalsPage() {
   const [params, setParams] = useSearchParams();
   const tab = (params.get('loai') as Tab) || 'nhap-kho';
   const summary = useApprovalSummary();
+  const nav = useNavigate();
+  const [search, setSearch] = useState('');
+  // The same (cached) queries as the tabs below, for the type-ahead of the open tab. A suggestion's key is the page it opens.
+  const receipts = useReceipts({ status: 'pending' });
+  const issues = useIssues({ status: 'pending' });
+  const stocktakes = useStocktakes('pending');
+  const reports = useReports('pending');
+  const suggestions: Suggestion<unknown>[] = {
+    'nhap-kho': () => suggestFrom(receipts.data, search, receiptFields, r => ({ key: `/ql/nhap-kho/${r.id}`, label: r.code, hint: `${r.supplierName} · ${r.creatorName}` })),
+    'xuat-kho': () => suggestFrom(issues.data, search, issueFields, i => ({ key: `/ql/xuat-kho/${i.id}`, label: i.code, hint: `Đơn ${i.orderCode}${i.customerName ? ` · ${i.customerName}` : ''}` })),
+    'kiem-ke': () => suggestFrom(stocktakes.data, search, stocktakeFields, t => ({ key: `/ql/kiem-ke/phieu/${t.id}`, label: t.code, hint: `Kế hoạch ${t.planCode} · ${t.creatorName}` })),
+    'bat-thuong': () => suggestFrom(reports.data, search, reportFields, r => ({ key: reportHref('manager', r.id), label: r.code, hint: `${r.lotCode} · ${r.sku} ${r.productName}` })),
+  }[tab]();
 
   return (
     <div className="vb-stack">
-      <Segmented<Tab>
-        label="Loại chứng từ" value={tab} onChange={t => setParams({ loai: t }, { replace: true })}
-        options={[
-          { value: 'nhap-kho', label: 'Phiếu nhập kho', count: summary.data?.receipts },
-          { value: 'xuat-kho', label: 'Phiếu xuất kho', count: summary.data?.issues },
-          { value: 'kiem-ke', label: 'Phiếu kiểm kê', count: summary.data?.stocktakes },
-          { value: 'bat-thuong', label: 'Biên bản bất thường', count: summary.data?.abnormalReports },
-        ]}
-      />
-      {tab === 'nhap-kho' && <PendingReceipts />}
-      {tab === 'xuat-kho' && <PendingIssues />}
-      {tab === 'kiem-ke' && <PendingStocktakes />}
-      {tab === 'bat-thuong' && <PendingReports />}
+      <div className="vb-row" style={{ gap: 12 }}>
+        <Segmented<Tab>
+          label="Loại chứng từ" value={tab} onChange={t => { setParams({ loai: t }, { replace: true }); setSearch(''); }}
+          options={[
+            { value: 'nhap-kho', label: 'Phiếu nhập kho', count: summary.data?.receipts },
+            { value: 'xuat-kho', label: 'Phiếu xuất kho', count: summary.data?.issues },
+            { value: 'kiem-ke', label: 'Phiếu kiểm kê', count: summary.data?.stocktakes },
+            { value: 'bat-thuong', label: 'Biên bản bất thường', count: summary.data?.abnormalReports },
+          ]}
+        />
+        <SearchField
+          placeholder={PLACEHOLDER[tab]} value={search} onChange={setSearch} style={{ width: 300 }} aria-label="Tìm chứng từ chờ duyệt" align="end"
+          suggestions={suggestions} onPickSuggestion={s => nav(s.key)}
+        />
+      </div>
+      {tab === 'nhap-kho' && <PendingReceipts search={search} />}
+      {tab === 'xuat-kho' && <PendingIssues search={search} />}
+      {tab === 'kiem-ke' && <PendingStocktakes search={search} />}
+      {tab === 'bat-thuong' && <PendingReports search={search} />}
     </div>
   );
 }
 
-function PendingReceipts() {
+function PendingReceipts({ search }: { search: string }) {
   const receipts = useReceipts({ status: 'pending' });
   const nav = useNavigate();
   const columns: DataTableColumn<ReceiptRow>[] = [
@@ -55,13 +90,13 @@ function PendingReceipts() {
   if (receipts.isError) return <ListError onRetry={() => receipts.refetch()} />;
   return (
     <DataTable
-      columns={columns} rows={receipts.data} onRowClick={r => nav(`/ql/nhap-kho/${r.id}`)} caption="Phiếu nhập chờ duyệt"
-      empty={<EmptyState icon="clipboard-check" title="Không có phiếu nhập chờ duyệt" description="Phiếu do nhân viên kho gửi sẽ hiện ở đây." />}
+      columns={columns} rows={receipts.data.filter(r => matches(search, ...receiptFields(r)))} onRowClick={r => nav(`/ql/nhap-kho/${r.id}`)} caption="Phiếu nhập chờ duyệt"
+      empty={search ? NOT_FOUND : <EmptyState icon="clipboard-check" title="Không có phiếu nhập chờ duyệt" />}
     />
   );
 }
 
-function PendingIssues() {
+function PendingIssues({ search }: { search: string }) {
   const issues = useIssues({ status: 'pending' });
   const nav = useNavigate();
   const columns: DataTableColumn<IssueRow>[] = [
@@ -75,13 +110,13 @@ function PendingIssues() {
   if (issues.isError) return <ListError onRetry={() => issues.refetch()} />;
   return (
     <DataTable
-      columns={columns} rows={issues.data} onRowClick={i => nav(`/ql/xuat-kho/${i.id}`)} caption="Phiếu xuất chờ duyệt"
-      empty={<EmptyState icon="clipboard-check" title="Không có phiếu xuất chờ duyệt" description="Phiếu lập từ đơn hàng sẽ hiện ở đây." />}
+      columns={columns} rows={issues.data.filter(i => matches(search, ...issueFields(i)))} onRowClick={i => nav(`/ql/xuat-kho/${i.id}`)} caption="Phiếu xuất chờ duyệt"
+      empty={search ? NOT_FOUND : <EmptyState icon="clipboard-check" title="Không có phiếu xuất chờ duyệt" />}
     />
   );
 }
 
-function PendingStocktakes() {
+function PendingStocktakes({ search }: { search: string }) {
   const stocktakes = useStocktakes('pending');
   const nav = useNavigate();
   const columns: DataTableColumn<StocktakeRow>[] = [
@@ -100,13 +135,13 @@ function PendingStocktakes() {
   if (stocktakes.isError) return <ListError onRetry={() => stocktakes.refetch()} />;
   return (
     <DataTable
-      columns={columns} rows={stocktakes.data} onRowClick={s => nav(`/ql/kiem-ke/phieu/${s.id}`)} caption="Phiếu kiểm kê chờ duyệt"
-      empty={<EmptyState icon="list-checks" title="Không có phiếu kiểm kê chờ duyệt" description="Phiếu kiểm kê do nhân viên gửi sẽ hiện ở đây." />}
+      columns={columns} rows={stocktakes.data.filter(s => matches(search, ...stocktakeFields(s)))} onRowClick={s => nav(`/ql/kiem-ke/phieu/${s.id}`)} caption="Phiếu kiểm kê chờ duyệt"
+      empty={search ? NOT_FOUND : <EmptyState icon="list-checks" title="Không có phiếu kiểm kê chờ duyệt" />}
     />
   );
 }
 
-function PendingReports() {
+function PendingReports({ search }: { search: string }) {
   const reports = useReports('pending');
   const nav = useNavigate();
 
@@ -116,6 +151,7 @@ function PendingReports() {
     { key: 'lot', header: 'Lô · mặt hàng', render: r => <span><Code>{r.lotCode}</Code> <span className="vb-muted">{r.sku}</span> {r.productName}</span> },
     { key: 'description', header: 'Mô tả lỗi', render: r => <span style={{ whiteSpace: 'normal' }}>{r.description}</span> },
     { key: 'quantity', header: 'SL lỗi', numeric: true, width: 80, render: r => fmt(r.quantity) },
+    { key: 'scope', header: 'Phạm vi', width: 130, render: r => SCOPE_LABEL[r.scope] },
     {
       key: 'receipt', header: 'Phát hiện khi', width: 210,
       render: r => r.sourceType === 'issue' && r.issueId
@@ -139,8 +175,8 @@ function PendingReports() {
   if (reports.isError) return <ListError onRetry={() => reports.refetch()} />;
   return (
     <DataTable
-      columns={columns} rows={reports.data} onRowClick={r => nav(reportHref('manager', r.id))} caption="Biên bản bất thường chờ duyệt"
-      empty={<EmptyState icon="shield-alert" title="Không có biên bản chờ duyệt" description="Biên bản lập khi nhập kho, xuất kho hoặc kiểm kê sẽ hiện ở đây." />}
+      columns={columns} rows={reports.data.filter(r => matches(search, ...reportFields(r)))} onRowClick={r => nav(reportHref('manager', r.id))} caption="Biên bản bất thường chờ duyệt"
+      empty={search ? NOT_FOUND : <EmptyState icon="shield-alert" title="Không có biên bản chờ duyệt" />}
     />
   );
 }

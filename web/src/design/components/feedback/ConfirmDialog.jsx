@@ -2,7 +2,7 @@ import React from 'react';
 import { Icon } from '../core/Icon.jsx';
 
 // Approve/reject confirmation. When requireReason is true, confirm is blocked until a reason (≥ minReason chars) is entered.
-export function ConfirmDialog({ open = true, tone = 'primary', title, description, children, requireReason = false, reasonLabel = 'Lý do', reasonPlaceholder = 'Nhập lý do để người lập phiếu biết cần sửa gì…', reasonHelp = 'Lý do sẽ được lưu vào lịch sử phiếu.', minReason = 5, confirmLabel = 'Xác nhận', cancelLabel = 'Huỷ', onConfirm, onCancel, inline = false }) {
+export function ConfirmDialog({ open = true, tone = 'primary', title, description, children, requireReason = false, reasonLabel = 'Lý do', reasonPlaceholder = 'Nhập lý do…', reasonHelp, minReason = 5, confirmLabel = 'Xác nhận', cancelLabel = 'Huỷ', onConfirm, onCancel, inline = false }) {
   const [reason, setReason] = React.useState('');
   const [tried, setTried] = React.useState(false);
   if (!open) return null;
@@ -28,9 +28,11 @@ export function ConfirmDialog({ open = true, tone = 'primary', title, descriptio
             <div className={`vb-input vb-input--textarea${tried && invalid ? ' vb-input--error' : ''}`}>
               <textarea id="vb-dlg-r" value={reason} onChange={e => setReason(e.target.value)} placeholder={reasonPlaceholder} aria-invalid={tried && invalid || undefined} />
             </div>
-            <div className={`vb-field__help${tried && invalid ? ' vb-field__help--error' : ''}`}>
-              {tried && invalid ? <><Icon name="circle-x" size={14} style={{ marginTop: 1 }} />Bắt buộc nhập lý do (tối thiểu {minReason} ký tự).</> : reasonHelp}
-            </div>
+            {(tried && invalid || reasonHelp) && (
+              <div className={`vb-field__help${tried && invalid ? ' vb-field__help--error' : ''}`}>
+                {tried && invalid ? <><Icon name="circle-x" size={14} style={{ marginTop: 1 }} />Bắt buộc nhập lý do (tối thiểu {minReason} ký tự).</> : reasonHelp}
+              </div>
+            )}
           </div>
         )}
       </div>

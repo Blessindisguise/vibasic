@@ -44,6 +44,7 @@ public class StocktakeTests
         var codes = new CodeGenerator(db);
         var replenish = new ReplenishmentService(db, notifier, clock);
         var issues = new IssueService(db, codes, notifier, clock, replenish);
+        await TestStock.AddLotsAsync(db, clock, TestStock.MultiLot);
         return new Ctx
         {
             Db = db, Issues = issues, Stocktakes = new StocktakeService(db, codes, notifier, clock, issues, replenish),
@@ -71,6 +72,41 @@ public class StocktakeTests
         Assert.Equal(await c.Stocktakes.CountableLots().CountAsync(), sheet.Count);
         Assert.Contains(sheet, s => s.Status == LotStatus.Locked); // locked lots are physically there and are counted too
         Assert.Contains(c.Db.Notifications, n => n.Title.Contains(whole.Code));
+    }
+
+    [Fact]
+    public async Task Plan_can_be_edited_only_while_waiting_to_be_counted()
+    {
+        await using var c = await Setup();
+        var a = c.Lot("THT-02");
+        var b = c.Lot("MUO-01");
+        var plan = await c.Plan(a);
+        var input = (DateOnly date, params GoodsReceiptDetail[] lots) =>
+            new PlanInput(StocktakePlanType.AdHoc, StocktakeScope.SelectedLots, date, lots.Select(l => l.ReceiptDetailId).ToList(), "Kiểm kệ A");
+
+        var e = await Assert.ThrowsAsync<ValidationException>(() => c.Stocktakes.UpdatePlanAsync(plan.PlanId, input(Today.AddDays(-1), a, b), c.Manager));
+        Assert.True(e.Errors.ContainsKey("plannedDate"));
+        await c.Stocktakes.UpdatePlanAsync(plan.PlanId, input(Today.AddDays(2), a, b), c.Manager);
+        Assert.Equal(Today.AddDays(2), plan.PlannedDate);
+        Assert.Equal("Kiểm kệ A", plan.Note);
+        Assert.Equal(2, (await c.Stocktakes.SheetAsync(plan.PlanId)).Count);
+        Assert.Contains(c.Db.Notifications, n => n.Title == $"Kế hoạch kiểm kê {plan.Code} đã thay đổi");
+
+        // Dropping a lot and switching to the whole warehouse both update the sheet.
+        await c.Stocktakes.UpdatePlanAsync(plan.PlanId, input(Today.AddDays(2), b), c.Manager);
+        Assert.Equal([b.ReceiptDetailId], (await c.Stocktakes.SheetAsync(plan.PlanId)).Select(l => l.ReceiptDetailId));
+        await c.Stocktakes.UpdatePlanAsync(plan.PlanId,
+            new PlanInput(StocktakePlanType.Periodic, StocktakeScope.Warehouse, Today.AddDays(2), [b.ReceiptDetailId], null), c.Manager);
+        Assert.Empty(c.Db.StocktakePlanDetails.Where(d => d.PlanId == plan.PlanId));
+        Assert.Equal(await c.Stocktakes.CountableLots().CountAsync(), (await c.Stocktakes.SheetAsync(plan.PlanId)).Count);
+
+        // Counted and waiting for approval: locked. Rejected: editable again.
+        await c.Stocktakes.UpdatePlanAsync(plan.PlanId, input(Today.AddDays(2), b), c.Manager);
+        var s = await c.Stocktakes.SubmitAsync(plan.PlanId, Ctx.Counts((b, b.QuantityOnHand, null)), c.Staff);
+        await Assert.ThrowsAsync<RuleException>(() => c.Stocktakes.UpdatePlanAsync(plan.PlanId, input(Today.AddDays(3), b), c.Manager));
+        await c.Stocktakes.RejectAsync(s.StocktakeId, "Đếm lại kệ B", c.Manager);
+        await c.Stocktakes.UpdatePlanAsync(plan.PlanId, input(Today.AddDays(3), a, b), c.Manager);
+        Assert.Equal(2, (await c.Stocktakes.SheetAsync(plan.PlanId)).Count);
     }
 
     [Fact]
@@ -148,22 +184,61 @@ public class StocktakeTests
     }
 
     [Fact]
-    public async Task Defect_found_while_counting_quarantines_the_lot()
+    public async Task Defect_found_while_counting_sets_aside_the_scanned_items()
+    {
+        await using var c = await Setup();
+        var lot = c.Lot("THT-03");
+        var onHand = lot.QuantityOnHand;
+        var plan = await c.Plan(lot);
+        var e = await Assert.ThrowsAsync<ValidationException>(() => c.Stocktakes.FileDefectAsync(plan.PlanId, new StockDefectInput(lot.ReceiptDetailId, [], "x"), c.Staff));
+        Assert.True(e.Errors.ContainsKey("serials"));
+        Assert.True(e.Errors.ContainsKey("description"));
+        var other = c.Lot("THT-02").Items.First(i => i.Status == ItemStatus.InStock).SerialCode;
+        e = await Assert.ThrowsAsync<ValidationException>(() => c.Stocktakes.FileDefectAsync(plan.PlanId, new StockDefectInput(lot.ReceiptDetailId, [other], "Thớt bị mốc"), c.Staff));
+        Assert.Contains("Không thuộc lô", e.Errors["serials"]);
+
+        // The lot was counted by scanning a little earlier; the defects are found right after.
+        var countedAt = Now.AddMinutes(-10);
+        var shelf = lot.Items.Where(i => i.Status == ItemStatus.InStock).OrderBy(i => i.SerialCode).ToList();
+        var bad = shelf.Take(2).ToList();
+        var report = await c.Stocktakes.FileDefectAsync(plan.PlanId,
+            new StockDefectInput(lot.ReceiptDetailId, bad.Select(i => i.SerialCode.ToLowerInvariant()).ToList(), "Thớt bị mốc mặt dưới"), c.Staff);
+        Assert.Equal(AbnormalSource.Stocktake, report.SourceType);
+        Assert.Equal(ReportScope.Items, report.Scope);
+        Assert.Equal(2, report.Quantity);
+        Assert.Equal(LotStatus.Normal, lot.Status);
+        Assert.All(bad, i => Assert.Equal(ItemStatus.Defective, i.Status));
+        Assert.Equal(onHand - 2, lot.QuantityOnHand);
+        e = await Assert.ThrowsAsync<ValidationException>(() => c.Stocktakes.FileDefectAsync(plan.PlanId, new StockDefectInput(lot.ReceiptDetailId, [bad[0].SerialCode], "Thêm một lỗi nữa"), c.Staff));
+        Assert.Contains("đã có biên bản", e.Errors["serials"]);
+        // Another item may get its own report.
+        await c.Stocktakes.FileDefectAsync(plan.PlanId, new StockDefectInput(lot.ReceiptDetailId, [shelf[2].SerialCode], "Nứt cạnh thớt"), c.Staff);
+
+        // Counting continues: the set-aside items were still on the shelf when the lot was counted, so the count matches.
+        var counted = lot.Items.Where(i => i.Status is ItemStatus.InStock or ItemStatus.Reserved or ItemStatus.Defective).Select(i => i.SerialCode).ToList();
+        var s = await c.Stocktakes.SubmitAsync(plan.PlanId, new StocktakeInput([new CountInput(lot.ReceiptDetailId, null, null, countedAt, counted)]), c.Staff);
+        Assert.Equal(ApprovalStatus.Pending, s.Status);
+        var d = s.Details.Single();
+        Assert.Equal(d.SystemQuantity, d.ActualQuantity);
+        await c.Stocktakes.ApproveAsync(s.StocktakeId, c.Manager);
+        Assert.DoesNotContain(lot.Items, i => i.Status == ItemStatus.Lost);
+        Assert.Equal(onHand - 3, lot.QuantityOnHand);
+    }
+
+    [Fact]
+    public async Task Defect_on_the_whole_lot_quarantines_it_and_blocks_more_reports()
     {
         await using var c = await Setup();
         var lot = c.Lot("THT-03");
         var plan = await c.Plan(lot);
-        var e = await Assert.ThrowsAsync<ValidationException>(() => c.Stocktakes.FileDefectAsync(plan.PlanId, new StockDefectInput(lot.ReceiptDetailId, 0, "x"), c.Staff));
-        Assert.True(e.Errors.ContainsKey("quantity"));
-        Assert.True(e.Errors.ContainsKey("description"));
-
-        var report = await c.Stocktakes.FileDefectAsync(plan.PlanId, new StockDefectInput(lot.ReceiptDetailId, 2, "Thớt bị mốc mặt dưới"), c.Staff);
-        Assert.Equal(AbnormalSource.Stocktake, report.SourceType);
+        var items = lot.Items.Where(i => i.Status == ItemStatus.InStock).OrderBy(i => i.SerialCode).ToList();
+        await c.Stocktakes.FileDefectAsync(plan.PlanId, new StockDefectInput(lot.ReceiptDetailId, [items[0].SerialCode], "Mốc lan cả kiện", WholeLot: true), c.Staff);
         Assert.Equal(LotStatus.Quarantined, lot.Status);
-        await Assert.ThrowsAsync<RuleException>(() => c.Stocktakes.FileDefectAsync(plan.PlanId, new StockDefectInput(lot.ReceiptDetailId, 1, "Thêm một lỗi nữa"), c.Staff));
-        // Counting continues on the same plan.
+        await Assert.ThrowsAsync<RuleException>(() => c.Stocktakes.FileDefectAsync(plan.PlanId, new StockDefectInput(lot.ReceiptDetailId, [items[1].SerialCode], "Thêm một lỗi nữa"), c.Staff));
+        // Typed count after the defect: the set-aside item is not on the shelf any more.
         var s = await c.Stocktakes.SubmitAsync(plan.PlanId, Ctx.Counts((lot, lot.QuantityOnHand, null)), c.Staff);
         Assert.Equal(ApprovalStatus.Pending, s.Status);
+        Assert.Equal(0, s.Details.Single().ActualQuantity - s.Details.Single().SystemQuantity);
     }
     // ---------------- K1 / K2 / K4 ----------------
 
@@ -175,7 +250,7 @@ public class StocktakeTests
         await c.Issues.ApproveAsync(issue.IssueId, c.Manager);
         var items = await c.Db.StockItems.Where(i => i.IssueDetail!.IssueId == issue.IssueId).ToListAsync();
         Assert.All(items, i => Assert.Equal(lot.ReceiptDetailId, i.ReceiptDetailId)); // oldest lot first (FIFO)
-        foreach (var i in items) await c.Issues.ScanAsync(issue.IssueId, i.SerialCode);
+        foreach (var i in items) await c.Issues.ScanAsync(issue.IssueId, i.SerialCode, c.Staff);
         return issue;
     }
 

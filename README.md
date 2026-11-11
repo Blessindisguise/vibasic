@@ -10,7 +10,7 @@
 |---|---|
 | `api/` | ASP.NET Core 8, EF Core 8, SQL Server (LocalDB khi chạy local), JWT |
 | `web/` | React 18, Vite, TypeScript, React Router, TanStack Query; style bằng tokens và class `vb-*` của design system |
-| `docs/` | Ghi chú thiết kế, các thay đổi so với CSDL trong báo cáo |
+| `docs/` | Ghi chú thiết kế, các thay đổi so với CSDL trong báo cáo; [hướng dẫn sử dụng](docs/huong-dan-su-dung.md) (quy tắc, trạng thái, cách thao tác) |
 
 ## Chạy local
 
@@ -45,11 +45,21 @@ cd api; dotnet tool restore; dotnet ef database drop -f -p Vibasic.Infrastructur
 
 ### Dữ liệu mẫu
 
-- 12 mặt hàng thuộc 4 nhóm hàng và 3 nhà cung cấp.
-- 37 lô (mỗi lô là một dòng chi tiết phiếu nhập) với khoảng 4.200 sản phẩm có mã định danh riêng.
-- 6 tuần lịch sử xuất kho, đủ để tính ROP từ số liệu 4 tuần gần nhất.
+- 14 mặt hàng thuộc 4 nhóm hàng và 3 nhà cung cấp. Trong đó có 1 mặt hàng mới nhập 10 ngày ("Chưa đủ dữ liệu") và 1 mặt hàng 8 tuần không có đơn ("Chậm luân chuyển").
+- 12 tuần vận hành mô phỏng theo bộ quy tắc Q1–Q20:
+  - nhập tồn đầu kỳ ngày đầu;
+  - đơn hàng tiếp nhận chiều hôm trước, xuất kho theo FIFO;
+  - tính lại SS, ROP, EOQ mỗi thứ Hai từ đơn hàng 4 tuần;
+  - đề xuất khi tồn ròng ≤ ROP.
+- Quản lý mẫu duyệt (có lúc sửa số lượng), từ chối hoặc để đó. Hàng đã duyệt về sau thời gian giao hàng L, trên phiếu nhập gộp theo nhà cung cấp. Không đủ hàng giao đơn thì có phiếu "Nhập gấp".
+- Khoảng 25 phiếu nhập, 7.800 sản phẩm có mã định danh riêng và 170 phiếu xuất.
+- Khoảng 30 đề xuất bổ sung đủ các trạng thái:
+  - chờ duyệt: có Khẩn cấp, có một đề xuất đã sửa số lượng;
+  - đã duyệt chờ hàng (có một đề xuất nhà cung cấp mới giao một phần và đã quá hạn giao), đã nhập hàng, từ chối, đã đóng.
+- Báo cáo đề xuất có dòng "Theo dõi". Đề xuất 5 ngày gần nhất (trừ Khẩn cấp) để trống cho người dùng duyệt.
+- 2 đơn sỉ vừa tiếp nhận, chưa xuất, làm giảm tồn ròng.
 - 1 lô hàng không đạt đã khoá, nằm cùng phiếu nhập với lô đạt, kèm biên bản bất thường.
-- 3 đơn hàng đang chờ xuất.
+- 3 đơn hàng thường và 2 đơn sỉ đang chờ xuất.
 
 Lịch sử được sinh lùi từ ngày chạy seed nên luôn còn mới.
 

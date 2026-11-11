@@ -47,7 +47,7 @@ export function ReceiptListPage({ role, basePath }: { role: 'manager' | 'staff';
       render: r => (
         <span className="vb-row" style={{ gap: 6, flexWrap: 'nowrap' }}>
           <ReceiptStatusBadge status={r.status} />
-          {r.pendingReports > 0 && <span className="vb-muted" title="Biên bản bất thường chờ xử lý">+{r.pendingReports} BC</span>}
+          {r.pendingReports > 0 && <span className="vb-muted">+{r.pendingReports} biên bản</span>}
         </span>
       ),
     },
@@ -86,7 +86,7 @@ export function ReceiptListPage({ role, basePath }: { role: 'manager' | 'staff';
           maxHeight={touch ? 'calc(100dvh - 300px)' : 'calc(100dvh - 280px)'} caption="Danh sách phiếu nhập kho"
           empty={hasFilter
             ? <EmptyState icon="search" title="Không tìm thấy phiếu phù hợp" description="Thử đổi khoảng ngày, nhà cung cấp hoặc trạng thái." />
-            : <EmptyState icon="package-plus" title="Chưa có phiếu nhập" description={touch ? 'Chọn “Lập phiếu nhập” khi nhận hàng từ nhà cung cấp.' : 'Phiếu do nhân viên kho lập sẽ hiện ở đây.'} />}
+            : <EmptyState icon="package-plus" title="Chưa có phiếu nhập" />}
         />
       )}
     </div>

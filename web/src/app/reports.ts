@@ -3,7 +3,11 @@ import { api } from './api';
 
 export interface InventoryRow {
   productId: number; sku: string; productName: string; unit: string; categoryName: string; supplierName: string;
-  lots: number; onHand: number; available: number; reserved: number; quarantined: number; locked: number; rop?: number; belowRop: boolean;
+  lots: number; onHand: number; available: number; reserved: number; quarantined: number; locked: number; rop?: number;
+  /** Net stock (available − orders not issued, Q8) at or below ROP: the same test as a low-stock alert. */
+  belowRop: boolean; ordered: number; net: number;
+  /** Items set aside as defective: not part of onHand. */
+  defective: number;
 }
 export interface MovementRow {
   productId: number; sku: string; productName: string; unit: string; categoryName: string;
@@ -18,7 +22,8 @@ export interface Dashboard {
   };
   flow: { day: string; in: number; out: number }[];
   pending: { type: string; code: string; title: string; at: string; link: string }[];
-  alerts: { productId: number; sku: string; productName: string; unit: string; available: number; rop: number }[];
+  /** Open low-stock alerts; net = tồn ròng stored on the alert. */
+  alerts: { productId: number; sku: string; productName: string; unit: string; net: number; rop: number }[];
 }
 
 const qs = (f: object) => {

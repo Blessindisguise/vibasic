@@ -5,7 +5,10 @@ import type { Role } from './auth';
 export interface Category { id: number; name: string; description?: string; productCount: number }
 export interface Supplier { id: number; name: string; phone?: string; address?: string; productCount: number }
 export interface Policy {
-  leadTimeDays: number; safetyStock: number; orderingCost: number; holdingCost: number;
+  leadTimeDays: number; orderingCost: number; holdingCost: number;
+  /** Calculated weekly with ROP and EOQ (Q4): SS = 1,65 × σ × √L. */
+  safetyStock?: number; demandStdDev?: number;
+  demandState: 'normal' | 'insufficientData' | 'slowMoving';
   currentRop?: number; currentEoq?: number; avgDailyDemand?: number;
   lastRopCalculatedAt?: string; lastEoqCalculatedAt?: string;
 }
@@ -14,6 +17,8 @@ export interface Product {
   categoryId: number; categoryName: string; supplierId: number; supplierName: string;
   /** Tồn kho khả dụng (lô "Bình thường"). */
   available: number;
+  /** Orders received but not issued; net = available − ordered (tồn ròng), compared with ROP. */
+  ordered: number; net: number;
   /** Lots ever received; the SKU is frozen once above 0. */
   lotCount: number;
   policy?: Policy;
@@ -24,7 +29,7 @@ export interface CategoryInput { name: string; description: string }
 export interface SupplierInput { name: string; phone: string; address: string }
 export interface ProductInput {
   sku: string; name: string; unit: string; categoryId: number | null; supplierId: number | null;
-  leadTimeDays: number | null; safetyStock: number | null; orderingCost: number | null; holdingCost: number | null;
+  leadTimeDays: number | null; orderingCost: number | null; holdingCost: number | null;
 }
 export interface AccountInput { username: string; fullName: string; password: string; role: Role | '' }
 

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button, DataTable, EmptyState, FilterBar, TextField, type DataTableColumn } from '../../../design';
 import { fmt } from '../../../app/format';
 import { matches } from '../../../app/text';
@@ -8,11 +9,12 @@ import { useToast } from '../../../app/toast';
 import { fieldErrors, formError, useSaveSupplier, useSuppliers, type Supplier } from '../../../app/catalog';
 import { ListError, Loading } from '../../../app/ui';
 
-/** UC_03 Quản lý nhà cung cấp. */
+/** UC_03 Quản lý nhà cung cấp; a row opens the supplier's page. */
 export function SuppliersPage() {
   const suppliers = useSuppliers();
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<Supplier | 'new' | null>(null);
+  const nav = useNavigate();
   const rows = useMemo(
     () => (suppliers.data ?? []).filter(s => matches(search, s.name, s.phone, s.address)),
     [suppliers.data, search],
@@ -23,6 +25,10 @@ export function SuppliersPage() {
     { key: 'phone', header: 'Số điện thoại', width: 150, render: s => s.phone ?? <span className="vb-muted">—</span> },
     { key: 'address', header: 'Địa chỉ', render: s => s.address ?? <span className="vb-muted">—</span> },
     { key: 'productCount', header: 'Số mặt hàng', numeric: true, width: 110, render: s => fmt(s.productCount) },
+    {
+      key: 'edit', header: '', width: 64, align: 'right',
+      render: s => <Button variant="ghost" size="sm" onClick={e => { e.stopPropagation(); setEditing(s); }} aria-label={`Sửa nhà cung cấp ${s.name}`}>Sửa</Button>,
+    },
   ];
 
   return (
@@ -36,11 +42,11 @@ export function SuppliersPage() {
       />
       {suppliers.isPending ? <Loading /> : suppliers.isError ? <ListError onRetry={() => suppliers.refetch()} /> : (
         <DataTable
-          columns={columns} rows={rows} onRowClick={s => setEditing(s)} maxHeight="calc(100dvh - 200px)" caption="Danh sách nhà cung cấp"
+          columns={columns} rows={rows} onRowClick={s => nav(`/ql/nha-cung-cap/${s.id}`)} maxHeight="calc(100dvh - 200px)" caption="Danh sách nhà cung cấp"
           empty={search
             ? <EmptyState icon="search" title="Không tìm thấy nhà cung cấp phù hợp" description="Thử từ khóa khác."
                 action={<Button variant="secondary" onClick={() => setSearch('')}>Xoá từ khóa</Button>} />
-            : <EmptyState icon="factory" title="Chưa có nhà cung cấp" description="Thêm nhà cung cấp để gắn cho hàng hóa và lập phiếu nhập kho." />}
+            : <EmptyState icon="factory" title="Chưa có nhà cung cấp" />}
         />
       )}
       {editing && <SupplierDialog supplier={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
@@ -48,7 +54,7 @@ export function SuppliersPage() {
   );
 }
 
-function SupplierDialog({ supplier, onClose }: { supplier: Supplier | null; onClose: () => void }) {
+export function SupplierDialog({ supplier, onClose }: { supplier: Supplier | null; onClose: () => void }) {
   const save = useSaveSupplier();
   const toast = useToast();
   const [f, setF] = useState({ name: supplier?.name ?? '', phone: supplier?.phone ?? '', address: supplier?.address ?? '' });
@@ -70,7 +76,7 @@ function SupplierDialog({ supplier, onClose }: { supplier: Supplier | null; onCl
       busy={save.isPending} error={formError(save.error)} onSubmit={submit} onClose={onClose}
     >
       <TextField label="Tên nhà cung cấp" required autoFocus value={f.name} onChange={set('name')} error={errors.name} />
-      <TextField label="Số điện thoại" type="tel" inputMode="tel" value={f.phone} onChange={set('phone')} error={errors.phone} helper="Ví dụ 0903 118 245." />
+      <TextField label="Số điện thoại" type="tel" inputMode="tel" value={f.phone} onChange={set('phone')} error={errors.phone} placeholder="0903 118 245" />
       <TextField label="Địa chỉ" value={f.address} onChange={set('address')} error={errors.address} />
     </FormDialog>
   );

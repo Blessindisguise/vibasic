@@ -16,17 +16,27 @@ public class OrdersController(VibasicDbContext db, IssueService issues) : Contro
 {
     public record OrderLine(int ProductId, string Sku, string ProductName, string Unit, int Quantity, int Free);
     public record OrderRow(int Id, string ExternalCode, string? CustomerName, DateTime OrderDate, OrderStatus Status,
-        int TotalQuantity, bool Sufficient, List<OrderLine> Lines, int? LastIssueId, string? LastIssueCode, IssueStatus? LastIssueStatus);
+        int TotalQuantity, bool Sufficient, List<OrderLine> Lines, int? LastIssueId, string? LastIssueCode, IssueStatus? LastIssueStatus,
+        string? CustomerPhone, string? ShippingAddress, string? Note, string? CancelReason, DateTime? CancelledAt);
+    /// <param name="ReturnToShelf">Items already picked for the cancelled issue, to put back on the shelf.</param>
+    public record CancelResponse(OrderRow Order, string? IssueCode, List<string> ReturnToShelf);
 
     [HttpGet]
     public async Task<List<OrderRow>> List(OrderStatus? status)
     {
         var q = db.Orders.AsQueryable();
         if (status is not null) q = q.Where(o => o.Status == status);
-        var orders = await q.OrderByDescending(o => o.OrderDate).Take(300)
+        return await Rows(q.OrderByDescending(o => o.OrderDate).Take(300));
+    }
+
+    private async Task<OrderRow> Row(int id) => (await Rows(db.Orders.Where(o => o.OrderId == id))).Single();
+
+    private async Task<List<OrderRow>> Rows(IQueryable<Order> q)
+    {
+        var orders = await q
             .Select(o => new
             {
-                o.OrderId, o.ExternalCode, o.CustomerName, o.OrderDate, o.Status,
+                o.OrderId, o.ExternalCode, o.CustomerName, o.OrderDate, o.Status, o.CustomerPhone, o.ShippingAddress, o.Note, o.CancelReason, o.CancelledAt,
                 Lines = o.Details.Select(d => new { d.ProductId, d.Product.SKU, d.Product.ProductName, d.Product.Unit, d.Quantity }).ToList(),
                 Last = db.GoodsIssues.Where(i => i.OrderId == o.OrderId).OrderByDescending(i => i.IssueDate)
                     .Select(i => new { i.IssueId, i.Code, i.Status }).FirstOrDefault(),
@@ -37,7 +47,8 @@ public class OrdersController(VibasicDbContext db, IssueService issues) : Contro
         {
             var lines = o.Lines.Select(l => new OrderLine(l.ProductId, l.SKU, l.ProductName, l.Unit, l.Quantity, free.GetValueOrDefault(l.ProductId))).ToList();
             return new OrderRow(o.OrderId, o.ExternalCode, o.CustomerName, o.OrderDate, o.Status, lines.Sum(l => l.Quantity),
-                lines.All(l => l.Free >= l.Quantity), lines, o.Last?.IssueId, o.Last?.Code, o.Last?.Status);
+                lines.All(l => l.Free >= l.Quantity), lines, o.Last?.IssueId, o.Last?.Code, o.Last?.Status, o.CustomerPhone, o.ShippingAddress, o.Note,
+                o.CancelReason, o.CancelledAt);
         }).ToList();
     }
 
@@ -50,13 +61,19 @@ public class OrdersController(VibasicDbContext db, IssueService issues) : Contro
     public async Task<OrderRow> Create(OrderInput input)
     {
         var order = await issues.RecordOrderAsync(input);
-        return (await List(null)).Single(o => o.Id == order.OrderId);
+        return await Row(order.OrderId);
+    }
+
+    /// <summary>The customer cancelled: the manager cancels an order not yet delivered, with a reason (its open issue goes too).</summary>
+    [HttpPost("{id:int}/cancel"), Authorize(Policy = Policies.Manager)]
+    public async Task<CancelResponse> Cancel(int id, ReasonInput input)
+    {
+        var r = await issues.CancelOrderAsync(id, input.Reason, User.UserId());
+        return new CancelResponse(await Row(id), r.IssueCode, r.ReturnToShelf);
     }
 
     private async Task<Dictionary<int, int>> FreeByProductAsync() =>
-        await db.StockItems
-            .Where(i => i.Status == ItemStatus.InStock && i.IssueDetailId == null && i.ReceiptDetail.Status == LotStatus.Normal
-                && i.ReceiptDetail.Receipt.Status == ReceiptStatus.Approved)
+        await IssueService.Free(db)
             .GroupBy(i => i.ReceiptDetail.ProductId)
             .Select(g => new { g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Key, x => x.Count);
@@ -71,7 +88,9 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
     public record IssueRow(int Id, string Code, DateTime IssueDate, int OrderId, string OrderCode, string? CustomerName,
         int CreatedBy, string CreatorName, string? ApproverName, DateTime? ApprovedAt, IssueStatus Status,
         int ProductCount, int TotalQuantity, int Picked, string? RejectReason, string? HoldReason,
-        string? ReceiverName, DateTime? DeliveredAt, string? DelivererName);
+        string? ReceiverName, DateTime? DeliveredAt, string? DelivererName,
+        string? CustomerPhone, string? ShippingAddress, string? OrderNote,
+        int? PickerId, string? PickerName, DateTime? PickStartedAt, DateTime? PickActiveAt);
     public record PickItem(int ItemId, string Serial, ItemStatus Status, DateTime? PickedAt);
     public record PickLot(int ReceiptDetailId, string LotCode, DateTime ReceivedDate, LotStatus LotStatus, List<PickItem> Items);
     public record IssueLine(int DetailId, int ProductId, string Sku, string ProductName, string Unit, int Quantity, int Picked, List<PickLot> Lots);
@@ -79,7 +98,8 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
 
     public record CreateInput(int? OrderId);
     public record ScanInput(string? Code);
-    public record DefectInput(List<string>? Serials, string? Description);
+    /// <param name="WholeLot">Defect suspected in the whole lot: quarantine it too.</param>
+    public record DefectInput(List<string>? Serials, string? Description, bool WholeLot = false);
     public record DeliverInput(string? ReceiverName);
     public record DefectResponse(IssueView View, DefectResult Result);
 
@@ -137,12 +157,21 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
     public async Task<IssueView> Revoke(int id, ReasonInput input) => await View((await issues.RevokeAsync(id, input.Reason, User.UserId())).IssueId);
 
     [HttpPost("{id:int}/scan"), Authorize(Policy = Policies.Staff)]
-    public Task<ScanResult> Scan(int id, ScanInput input) => issues.ScanAsync(id, input.Code);
+    public Task<ScanResult> Scan(int id, ScanInput input) => issues.ScanAsync(id, input.Code, User.UserId());
+
+    /// <summary>"Bắt đầu lấy hàng" / "Nhận lại phiếu": only one staff member picks an issue at a time.</summary>
+    [HttpPost("{id:int}/claim"), Authorize(Policy = Policies.Staff)]
+    public async Task<IssueView> Claim(int id) => await View((await issues.ClaimAsync(id, User.UserId())).IssueId);
+
+    /// <summary>"Nhường phiếu" (the picker) or "Gỡ người lấy hàng" (a manager).</summary>
+    [HttpPost("{id:int}/release")]
+    public async Task<IssueView> Release(int id) =>
+        await View((await issues.ReleaseAsync(id, User.UserId(), User.IsInRole(nameof(UserRole.Manager)))).IssueId);
 
     [HttpPost("{id:int}/defects"), Authorize(Policy = Policies.Staff)]
     public async Task<DefectResponse> Defect(int id, DefectInput input)
     {
-        var result = await issues.ReportDefectAsync(id, input.Serials, input.Description, User.UserId());
+        var result = await issues.ReportDefectAsync(id, input.Serials, input.Description, User.UserId(), input.WholeLot);
         return new DefectResponse(await View(id), result);
     }
 
@@ -156,5 +185,7 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
         i.Approver != null ? i.Approver.FullName : null, i.ApprovedAt, i.Status,
         i.Details.Count(), i.Details.Sum(d => d.Quantity), i.Details.SelectMany(d => d.Items).Count(it => it.PickedAt != null),
         i.RejectReason, i.HoldReason, i.ReceiverName, i.DeliveredAt,
-        db.Users.Where(u => u.UserId == i.DeliveredBy).Select(u => u.FullName).FirstOrDefault()));
+        db.Users.Where(u => u.UserId == i.DeliveredBy).Select(u => u.FullName).FirstOrDefault(),
+        i.Order.CustomerPhone, i.Order.ShippingAddress, i.Order.Note,
+        i.PickerId, i.Picker != null ? i.Picker.FullName : null, i.PickStartedAt, i.PickActiveAt));
 }

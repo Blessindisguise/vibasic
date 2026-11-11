@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Vibasic.Domain\Vibasic.Domain.csproj" />
     <ProjectReference Include="..\Vibasic.Infrastructure\Vibasic.Infrastructure.csproj" />
+    <ProjectReference Include="..\Vibasic.Api\Vibasic.Api.csproj" />
   </ItemGroup>
 
 </Project>

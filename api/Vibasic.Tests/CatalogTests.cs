@@ -15,8 +15,8 @@ public class CatalogTests
         return db;
     }
 
-    private static ProductInput NewProduct(VibasicDbContext db, string sku = "THT-04") => new(
-        sku, "Thớt gỗ xà cừ 25cm", "cái", db.ProductCategories.First().CategoryId, db.Suppliers.First().SupplierId, 7, 10, 300_000, 5_000);
+    private static ProductInput NewProduct(VibasicDbContext db, string sku = "THT-08") => new(
+        sku, "Thớt gỗ xà cừ 25cm", "cái", db.ProductCategories.First().CategoryId, db.Suppliers.First().SupplierId, 7, 300_000, 5_000);
 
     private static async Task<ValidationException> Invalid(Func<Task> act) => await Assert.ThrowsAsync<ValidationException>(act);
 
@@ -24,11 +24,12 @@ public class CatalogTests
     public async Task Product_is_created_with_its_inventory_policy_and_normalised_sku()
     {
         await using var db = await SeededDb();
-        var p = await new CatalogService(db).SaveProductAsync(null, NewProduct(db, " tht-04 "));
+        var p = await new CatalogService(db).SaveProductAsync(null, NewProduct(db, " tht-08 "));
         var saved = await db.Products.Include(x => x.Policy).SingleAsync(x => x.ProductId == p.ProductId);
-        Assert.Equal("THT-04", saved.SKU);
+        Assert.Equal("THT-08", saved.SKU);
         Assert.Equal(7, saved.Policy!.LeadTimeDays);
         Assert.Null(saved.Policy.CurrentROP); // derived later by the weekly job, never entered by hand
+        Assert.Null(saved.Policy.SafetyStock); // Q4: calculated, not entered
     }
 
     [Fact]
@@ -45,7 +46,7 @@ public class CatalogTests
     {
         await using var db = await SeededDb();
         var p = await db.Products.Include(x => x.Policy).FirstAsync(x => x.SKU == "THT-01");
-        var input = new ProductInput("THT-99", p.ProductName, p.Unit, p.CategoryId, p.SupplierId, 10, 18, 450_000, 9_000);
+        var input = new ProductInput("THT-99", p.ProductName, p.Unit, p.CategoryId, p.SupplierId, 10, 450_000, 9_000);
         var e = await Invalid(() => new CatalogService(db).SaveProductAsync(p.ProductId, input));
         Assert.Contains("đã có lô nhập kho", e.Errors["sku"]);
 

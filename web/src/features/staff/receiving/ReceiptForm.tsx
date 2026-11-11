@@ -7,7 +7,7 @@ import { useToast } from '../../../app/toast';
 import { Loading } from '../../../app/ui';
 import { FieldGrid } from '../../../app/Modal';
 import { fieldErrors, formError, useProducts, useSuppliers, type Product } from '../../../app/catalog';
-import { useExpected, useReceipt, useSaveReceipt, type ReceiptView } from '../../../app/receiving';
+import { useReceipt, useSaveReceipt, type ReceiptView } from '../../../app/receiving';
 
 interface LineState { key: number; productId: string; received: string; failed: string; doc: string; note: string; defect: string }
 
@@ -41,7 +41,6 @@ export function ReceiptForm({ id, basePath }: { id?: number; basePath: string })
   const [deliveryNo, setDeliveryNo] = useState('');
   const [lines, setLines] = useState<LineState[]>([emptyLine()]);
   const [loaded, setLoaded] = useState(!editing);
-  const expected = useExpected(supplierId ? Number(supplierId) : null);
 
   useEffect(() => {
     if (!editing || loaded || !existing.data) return;
@@ -58,7 +57,7 @@ export function ReceiptForm({ id, basePath }: { id?: number; basePath: string })
 
   if (!loaded || suppliers.isPending || products.isPending) return <Loading />;
   if (editing && existing.data && !['receiving', 'rejected'].includes(existing.data.header.status)) {
-    return <AlertBanner tone="warning" title={`Phiếu ${existing.data.header.code} không sửa được`}>Chỉ sửa được phiếu đang nhập kho hoặc bị từ chối.</AlertBanner>;
+    return <AlertBanner tone="warning" title={`Phiếu ${existing.data.header.code} không sửa được`} />;
   }
 
   const submit = (e: FormEvent) => {
@@ -74,22 +73,27 @@ export function ReceiptForm({ id, basePath }: { id?: number; basePath: string })
       },
     }, {
       onSuccess: view => {
-        toast({ tone: 'success', title: editing ? `Đã lưu phiếu ${view.header.code}` : `Đã lập phiếu ${view.header.code}`, message: `Đã tạo ${view.lots.length} lô. In mã vạch để dán lên hàng.` });
+        toast({ tone: 'success', title: editing ? `Đã lưu phiếu ${view.header.code}` : `Đã lập phiếu ${view.header.code}`, message: `Đã tạo ${view.lots.length} lô.` });
         nav(`${basePath}/${view.header.id}`);
       },
     });
   };
 
+  // A product comes from its supplier only: with a supplier chosen, only its products are offered; a product picked first
+  // chooses the supplier, and the supplier list then keeps only the suppliers of the products on the form.
   const supplier = Number(supplierId);
-  const own = (products.data ?? []).filter(p => p.supplierId === supplier);
-  const others = (products.data ?? []).filter(p => p.supplierId !== supplier);
-  // N1: goods ordered from this supplier (approved proposals) that are not on the form yet.
-  const ordered = new Map((expected.data ?? []).map(e => [e.productId, e]));
-  const notAdded = (expected.data ?? []).filter(e => !lines.some(l => Number(l.productId) === e.productId));
-  const addOrdered = () => setLines(ls => {
-    const kept = ls.filter(l => l.productId || l.received);
-    return [...kept, ...notAdded.map(e => ({ ...emptyLine(), productId: String(e.productId) }))];
-  });
+  const picked = lines.map(l => productById.get(Number(l.productId))).filter((p): p is Product => !!p);
+  const lockedTo = new Set(picked.map(p => p.supplierId));
+  if (supplierId) lockedTo.add(supplier);
+  const supplierOptions = (suppliers.data ?? [])
+    .filter(s => picked.length === 0 || lockedTo.has(s.id))
+    .map(s => ({ value: String(s.id), label: s.name }));
+  const supplierName = suppliers.data?.find(s => s.id === supplier)?.name;
+  const pickProduct = (key: number, productId: string) => {
+    update(key, { productId });
+    const p = productById.get(Number(productId));
+    if (p && !supplierId) setSupplierId(String(p.supplierId));
+  };
   const totals = lines.reduce((t, l) => {
     const r = parseNumber(l.received) ?? 0, f = Math.min(parseNumber(l.failed) ?? 0, r);
     return { passed: t.passed + r - f, failed: t.failed + f };
@@ -104,42 +108,28 @@ export function ReceiptForm({ id, basePath }: { id?: number; basePath: string })
       </div>
       {formError(save.error) && <AlertBanner tone="danger">{formError(save.error)}</AlertBanner>}
       {errors.lines && <AlertBanner tone="danger">{errors.lines}</AlertBanner>}
-      {editing && (
-        <AlertBanner tone="info" title="Lưu ý khi sửa">
-          Mặt hàng giữ nguyên số đạt và không đạt thì giữ mã lô cũ. Mặt hàng đổi số lượng sẽ được tạo mã lô và mã sản phẩm mới, cần in lại mã vạch.
-        </AlertBanner>
-      )}
 
       <section className="vb-panel">
         <div className="vb-panel__head"><h2 className="vb-panel__title">{editing ? `Sửa phiếu ${existing.data?.header.code}` : 'Phiếu nhập kho mới'}</h2></div>
         <div className="vb-panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <FieldGrid>
             <SelectField
-              size="xl" label="Nhà cung cấp" required placeholder="Chọn nhà cung cấp giao hàng" value={supplierId}
-              onChange={e => setSupplierId(e.target.value)} error={errors.supplierId}
-              options={(suppliers.data ?? []).map(s => ({ value: String(s.id), label: s.name }))}
+              size="xl" label="Nhà cung cấp" required placeholder={picked.length === 0 ? 'Chọn nhà cung cấp giao hàng' : undefined} value={supplierId}
+              onChange={e => setSupplierId(e.target.value)} error={errors.supplierId} options={supplierOptions}
             />
             <TextField size="xl" label="Số chứng từ giao hàng" placeholder="Số phiếu giao hàng của nhà cung cấp" value={deliveryNo}
               onChange={e => setDeliveryNo(e.target.value)} error={errors.deliveryNoteNo} />
           </FieldGrid>
           <TextField size="xl" label="Ghi chú phiếu" placeholder="Ví dụ: giao bằng xe của NCC, kiện bị móp" value={note} onChange={e => setNote(e.target.value)} error={errors.note} />
-          {notAdded.length > 0 && (
-            <AlertBanner tone="info" title={`${notAdded.length} mặt hàng đã đặt từ nhà cung cấp này`}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <span>Theo đề xuất bổ sung đã duyệt: {notAdded.map(e => `${e.sku} (đặt ${fmt(e.orderedQuantity)} ${e.unit})`).join(', ')}.</span>
-                <Button type="button" variant="secondary" size="lg" icon="plus" style={{ alignSelf: 'flex-start' }} onClick={addOrdered}>Thêm vào phiếu</Button>
-              </div>
-            </AlertBanner>
-          )}
         </div>
       </section>
 
       {lines.map((l, i) => (
         <LineEditor
-          key={l.key} index={i} line={l} own={own} others={others} product={productById.get(Number(l.productId))}
-          ordered={ordered.get(Number(l.productId))?.orderedQuantity}
-          errors={errors} canRemove={lines.length > 1} supplierChosen={!!supplierId}
-          onChange={patch => update(l.key, patch)} onRemove={() => setLines(ls => ls.filter(x => x.key !== l.key))}
+          key={l.key} index={i} line={l} products={products.data ?? []} supplierId={supplierId ? supplier : null} supplierName={supplierName}
+          taken={new Set(lines.filter(x => x.key !== l.key).map(x => Number(x.productId)))} product={productById.get(Number(l.productId))}
+          errors={errors} canRemove={lines.length > 1}
+          onPick={pid => pickProduct(l.key, pid)} onChange={patch => update(l.key, patch)} onRemove={() => setLines(ls => ls.filter(x => x.key !== l.key))}
         />
       ))}
 
@@ -158,9 +148,10 @@ export function ReceiptForm({ id, basePath }: { id?: number; basePath: string })
   );
 }
 
-function LineEditor({ index, line, own, others, product, ordered, errors, canRemove, supplierChosen, onChange, onRemove }: {
-  index: number; line: LineState; own: Product[]; others: Product[]; product?: Product; ordered?: number; errors: Record<string, string>;
-  canRemove: boolean; supplierChosen: boolean; onChange: (patch: Partial<LineState>) => void; onRemove: () => void;
+function LineEditor({ index, line, products, supplierId, supplierName, taken, product, errors, canRemove, onPick, onChange, onRemove }: {
+  index: number; line: LineState; products: Product[]; supplierId: number | null; supplierName?: string; taken: Set<number>; product?: Product;
+  errors: Record<string, string>; canRemove: boolean;
+  onPick: (productId: string) => void; onChange: (patch: Partial<LineState>) => void; onRemove: () => void;
 }) {
   const k = `lines[${index}].`;
   const unit = product?.unit ?? 'đơn vị';
@@ -170,12 +161,18 @@ function LineEditor({ index, line, own, others, product, ordered, errors, canRem
   const doc = parseNumber(line.doc);
   const differs = doc != null && received != null && doc !== received;
   const productError = errors[k + 'productId'];
+  // With a supplier: its products (plus this line's product if it no longer belongs to it, so the error shows). Without: all, by supplier.
+  const own = supplierId == null ? [] : products.filter(p => p.supplierId === supplierId || p.id === product?.id);
+  const bySupplier = supplierId != null ? [] : [...products.reduce((m, p) => m.set(p.supplierName, [...(m.get(p.supplierName) ?? []), p]), new Map<string, Product[]>())]
+    .sort(([a], [b]) => a.localeCompare(b, 'vi'));
+  const option = (p: Product) => (
+    <option key={p.id} value={p.id} disabled={taken.has(p.id)}>{p.sku} · {p.name}{taken.has(p.id) ? ' (đã có ở dòng khác)' : ''}</option>
+  );
 
   return (
     <section className="vb-panel">
       <div className="vb-panel__head">
         <span style={{ font: 'var(--type-touch-heading)', fontSize: 17 }}>Mặt hàng {index + 1}</span>
-        {ordered != null && <span className="vb-muted" style={{ fontSize: 14 }}>Đã đặt {fmt(ordered)} {unit}</span>}
         {passed != null && passed >= 0 && (
           <span className="vb-row" style={{ marginLeft: 'auto', gap: 12, font: 'var(--type-body)', fontVariantNumeric: 'tabular-nums' }}>
             {passed > 0 && <span><Icon name="circle-check" size={16} style={{ color: 'var(--green-600)', verticalAlign: -3 }} /> Lô đạt: {fmt(passed)} {unit}</span>}
@@ -188,10 +185,13 @@ function LineEditor({ index, line, own, others, product, ordered, errors, canRem
         <div className="vb-field">
           <label htmlFor={`p-${line.key}`} className="vb-field__label">Mặt hàng<span className="req" aria-hidden="true">*</span></label>
           <div className={`vb-input vb-input--xl${productError ? ' vb-input--error' : ''}`} style={{ position: 'relative' }}>
-            <select id={`p-${line.key}`} value={line.productId} onChange={e => onChange({ productId: e.target.value })} aria-invalid={!!productError || undefined}>
-              <option value="">{supplierChosen ? 'Chọn mặt hàng' : 'Chọn nhà cung cấp trước, hoặc chọn mặt hàng'}</option>
-              {own.length > 0 && <optgroup label="Hàng của nhà cung cấp này">{own.map(p => <option key={p.id} value={p.id}>{p.sku} · {p.name}</option>)}</optgroup>}
-              <optgroup label={own.length > 0 ? 'Hàng hóa khác' : 'Hàng hóa'}>{others.map(p => <option key={p.id} value={p.id}>{p.sku} · {p.name}</option>)}</optgroup>
+            <select id={`p-${line.key}`} value={line.productId} onChange={e => onPick(e.target.value)} aria-invalid={!!productError || undefined}>
+              <option value="">
+                {supplierId == null ? 'Chọn mặt hàng (nhà cung cấp được chọn theo)' : own.length ? `Chọn mặt hàng của ${supplierName ?? 'nhà cung cấp'}` : 'Nhà cung cấp này chưa có mặt hàng nào'}
+              </option>
+              {supplierId != null
+                ? own.map(option)
+                : bySupplier.map(([name, list]) => <optgroup key={name} label={name}>{list.map(option)}</optgroup>)}
             </select>
             <Icon name="chevron-down" size={20} style={{ position: 'absolute', right: 14, pointerEvents: 'none', color: 'var(--text-secondary)' }} />
           </div>
@@ -199,12 +199,12 @@ function LineEditor({ index, line, own, others, product, ordered, errors, canRem
         </div>
         <FieldGrid>
           <TextField size="xl" label="Số thực nhận" required inputMode="numeric" suffix={unit} value={line.received}
-            onChange={e => onChange({ received: e.target.value })} error={errors[k + 'receivedQuantity']} helper="Tổng số đếm được, gồm cả hàng không đạt." />
+            onChange={e => onChange({ received: e.target.value })} error={errors[k + 'receivedQuantity']} />
           <TextField size="xl" label="Số không đạt" inputMode="numeric" suffix={unit} value={line.failed}
-            onChange={e => onChange({ failed: e.target.value })} error={errors[k + 'failedQuantity']} helper="Tách thành lô Tạm cách ly." />
+            onChange={e => onChange({ failed: e.target.value })} error={errors[k + 'failedQuantity']} />
           <TextField size="xl" label="Số trên chứng từ" inputMode="numeric" suffix={unit} value={line.doc} placeholder="Bỏ trống nếu khớp"
             onChange={e => onChange({ doc: e.target.value })} error={errors[k + 'documentQuantity']}
-            helper={differs ? `Chênh lệch ${received! - doc! > 0 ? 'dư' : 'thiếu'} ${fmt(Math.abs(received! - doc!))} ${unit}.` : 'Ghi khi số thực nhận khác chứng từ.'} />
+            helper={differs ? `Chênh lệch ${received! - doc! > 0 ? 'dư' : 'thiếu'} ${fmt(Math.abs(received! - doc!))} ${unit}.` : undefined} />
         </FieldGrid>
         {differs && (passed ?? 0) > 0 && (
           <TextField size="xl" label="Ghi chú chênh lệch" required value={line.note} placeholder="Ví dụ: NCC giao thiếu 2 cái, hẹn bù đợt sau"
@@ -212,8 +212,7 @@ function LineEditor({ index, line, own, others, product, ordered, errors, canRem
         )}
         {failed > 0 && (
           <TextField size="xl" multiline label="Mô tả lỗi" required value={line.defect} placeholder="Ví dụ: nứt mặt thớt, cong vênh, mối mọt"
-            onChange={e => onChange({ defect: e.target.value })} error={errors[k + 'defectDescription']}
-            helper="Dùng để lập biên bản bất thường cho lô tạm cách ly khi xác nhận nhập kho." />
+            onChange={e => onChange({ defect: e.target.value })} error={errors[k + 'defectDescription']} />
         )}
       </div>
     </section>

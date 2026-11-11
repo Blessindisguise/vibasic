@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DataTable, EmptyState, SearchField, type DataTableColumn } from '../../design';
-import { fmt, fmtShort } from '../../app/format';
+import { ANY_DATE, fmt, fmtShort, inVnDateRange, type DateRange } from '../../app/format';
 import { Segmented } from '../../app/Segmented';
-import { Code, ListError, Loading } from '../../app/ui';
+import { Code, DateRangeFilter, ListError, Loading, NoneInRange } from '../../app/ui';
 import { matches } from '../../app/text';
 import { suggestFrom } from '../../app/suggest';
-import { ApprovalBadge, SOURCE_LABEL } from '../../app/statusBadges';
+import { ApprovalBadge, SCOPE_LABEL, SOURCE_LABEL } from '../../app/statusBadges';
 import { useReports, type AbnormalSource, type ApprovalStatus, type ReportRow } from '../../app/receiving';
 import { ReportDecision, ReportStatusCell } from './ReportDecision';
 
@@ -19,9 +19,10 @@ export function AbnormalReportsPage({ role, basePath }: { role: 'manager' | 'sta
   const [status, setStatus] = useState<ApprovalStatus | ''>(role === 'manager' ? 'pending' : '');
   const [source, setSource] = useState<AbnormalSource | ''>('');
   const [search, setSearch] = useState('');
+  const [range, setRange] = useState<DateRange>(ANY_DATE);
   const all = useReports(undefined, source || undefined);
-  const rows = useMemo(() => (all.data ?? []).filter(r => (!status || r.status === status) && matches(search, ...reportFields(r))),
-    [all.data, status, search]);
+  const rows = useMemo(() => (all.data ?? []).filter(r => (!status || r.status === status) && matches(search, ...reportFields(r))
+    && inVnDateRange(r.createdAt, range.from, range.to)), [all.data, status, search, range]);
   const count = (s: ApprovalStatus) => (all.data ?? []).filter(r => r.status === s).length;
   // Across every status, so a report is found even while another tab is selected.
   const suggestions = suggestFrom(all.data, search, reportFields, r => ({
@@ -38,6 +39,7 @@ export function AbnormalReportsPage({ role, basePath }: { role: 'manager' | 'sta
     { key: 'lot', header: 'Lô · mặt hàng', render: r => <span><Code>{r.lotCode}</Code> <span className="vb-muted">{r.sku}</span> {r.productName}</span> },
     { key: 'description', header: 'Mô tả lỗi', render: r => <span style={{ whiteSpace: 'normal' }}>{r.description}</span> },
     { key: 'quantity', header: 'SL lỗi', numeric: true, width: 80, render: r => `${fmt(r.quantity)} ${r.unit}` },
+    { key: 'scope', header: 'Phạm vi', width: 130, render: r => SCOPE_LABEL[r.scope] },
     {
       key: 'status', header: 'Trạng thái', width: 170,
       render: r => <ReportStatusCell report={r} />,
@@ -62,18 +64,19 @@ export function AbnormalReportsPage({ role, basePath }: { role: 'manager' | 'sta
           options={[{ value: '', label: 'Mọi nguồn' }, ...(['receipt', 'issue', 'stocktake'] as const).map(s => ({ value: s, label: SOURCE_LABEL[s] }))]}
         />
       </div>
-      <div className="vb-row">
+      <div className="vb-row" style={{ gap: 12, alignItems: 'flex-end' }}>
         <SearchField
           size={touch ? 'lg' : 'md'} placeholder="Mã biên bản, lô, mặt hàng, mô tả…" value={search} onChange={setSearch} style={{ width: 320 }} aria-label="Tìm biên bản"
           suggestions={suggestions} onPickSuggestion={s => s.value && nav(`${basePath}/${(s.value as ReportRow).id}`)}
         />
-        {touch && <span className="vb-muted" style={{ marginLeft: 8 }}>Biên bản được lập khi nhập kho, lấy hàng xuất kho hoặc kiểm kê.</span>}
+        <DateRangeFilter size={touch ? 'lg' : 'md'} label="Ngày lập" value={range} onChange={setRange} />
       </div>
       {all.isPending ? <Loading /> : all.isError ? <ListError onRetry={() => all.refetch()} /> : (
         <DataTable
           columns={columns} rows={rows} density={touch ? 'default' : 'compact'} onRowClick={r => nav(`${basePath}/${r.id}`)}
           maxHeight="calc(100dvh - 240px)" caption="Biên bản bất thường"
-          empty={<EmptyState icon="shield-alert" title="Không có biên bản phù hợp" description="Đổi bộ lọc trạng thái hoặc nguồn phát hiện." />}
+          empty={(range.from || range.to) && !search ? <NoneInRange what="biên bản" onClear={() => setRange(ANY_DATE)} />
+            : <EmptyState icon="shield-alert" title="Không có biên bản phù hợp" description="Đổi bộ lọc trạng thái hoặc nguồn phát hiện." />}
         />
       )}
     </div>

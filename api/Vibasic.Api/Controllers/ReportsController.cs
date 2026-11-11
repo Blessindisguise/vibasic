@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Vibasic.Api.Auth;
 using Vibasic.Domain;
 using Vibasic.Infrastructure;
+using Vibasic.Infrastructure.Decision;
 
 namespace Vibasic.Api.Controllers;
 
@@ -15,10 +16,13 @@ namespace Vibasic.Api.Controllers;
 [ApiController]
 [Route("api/reports")]
 [Authorize(Policy = Policies.Manager)]
-public class ReportsController(VibasicDbContext db) : ControllerBase
+public class ReportsController(VibasicDbContext db, ReplenishmentService replenishment) : ControllerBase
 {
+    /// <param name="Net">Tồn ròng = Available − <paramref name="Ordered"/> (orders not issued yet, Q8).</param>
+    /// <param name="BelowRop">The same test as a low-stock alert: net stock at or below ROP (Q9, Q12).</param>
     public record InventoryRow(int ProductId, string Sku, string ProductName, string Unit, string CategoryName, string SupplierName,
-        int Lots, int OnHand, int Available, int Reserved, int Quarantined, int Locked, decimal? Rop, bool BelowRop);
+        int Lots, int OnHand, int Available, int Reserved, int Quarantined, int Locked, decimal? Rop, bool BelowRop, int Defective,
+        int Ordered, int Net);
     public record MovementRow(int ProductId, string Sku, string ProductName, string Unit, string CategoryName,
         int Opening, int In, int Out, int Adjusted, int Closing, int Receipts, int Issues);
     public record Movement(DateOnly From, DateOnly To, List<MovementRow> Rows);
@@ -32,21 +36,33 @@ public class ReportsController(VibasicDbContext db) : ControllerBase
             .Where(d => categoryId == null || d.Product.CategoryId == categoryId)
             .Select(d => new { d.ProductId, d.Status, d.QuantityOnHand, Reserved = d.Items.Count(i => i.Status == ItemStatus.Reserved) })
             .ToListAsync();
+        // Items set aside as defective are out of stock on hand; shown apart (waiting to go back to the supplier or be scrapped).
+        var defective = await db.StockItems.Where(i => i.Status == ItemStatus.Defective)
+            .GroupBy(i => i.ReceiptDetail.ProductId).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count);
         var products = await db.Products
             .Where(p => productId == null || p.ProductId == productId)
             .Where(p => categoryId == null || p.CategoryId == categoryId)
             .OrderBy(p => p.SKU)
-            .Select(p => new { p.ProductId, p.SKU, p.ProductName, p.Unit, p.Category.CategoryName, p.Supplier.SupplierName, Rop = p.Policy != null ? p.Policy.CurrentROP : null })
+            .Select(p => new
+            {
+                p.ProductId, p.SKU, p.ProductName, p.Unit, p.Category.CategoryName, p.Supplier.SupplierName,
+                Rop = p.Policy != null ? p.Policy.CurrentROP : null, D = p.Policy != null ? p.Policy.AvgDailyDemand : null,
+                Lead = p.Policy != null ? p.Policy.LeadTimeDays : 0,
+            })
             .ToListAsync();
+        var stock = await replenishment.StockAsync(products.Select(p => p.ProductId).ToList());
         return products.Select(p =>
         {
             var mine = lots.Where(l => l.ProductId == p.ProductId).ToList();
             var available = mine.Where(l => l.Status == LotStatus.Normal).Sum(l => l.QuantityOnHand);
+            var ordered = stock[p.ProductId].Ordered;
+            var net = stock[p.ProductId].Available - ordered;
+            var below = p.Rop is { } rop && ReplenishmentRules.Classify(net, rop, p.D ?? 0, p.Lead) is Priority.Urgent or Priority.Order;
             return new InventoryRow(p.ProductId, p.SKU, p.ProductName, p.Unit, p.CategoryName, p.SupplierName, mine.Count,
                 mine.Sum(l => l.QuantityOnHand), available, mine.Where(l => l.Status == LotStatus.Normal).Sum(l => l.Reserved),
                 mine.Where(l => l.Status == LotStatus.Quarantined).Sum(l => l.QuantityOnHand),
                 mine.Where(l => l.Status == LotStatus.Locked).Sum(l => l.QuantityOnHand),
-                p.Rop, p.Rop != null && available <= p.Rop);
+                p.Rop, below, defective.GetValueOrDefault(p.ProductId), ordered, net);
         }).ToList();
     }
 
@@ -78,6 +94,9 @@ public class ReportsController(VibasicDbContext db) : ControllerBase
             .Select(d => new { d.ProductId, d.Quantity, d.IssueId, At = d.Issue.DeliveredAt!.Value }).ToListAsync();
         var adjs = await db.StocktakeDetails.Where(d => ids.Contains(d.ReceiptDetail.ProductId) && d.Stocktake.Status == ApprovalStatus.Approved && d.Stocktake.ApprovedAt >= start)
             .Select(d => new { d.ReceiptDetail.ProductId, Delta = d.ActualQuantity - d.SystemQuantity, At = d.Stocktake.ApprovedAt!.Value }).ToListAsync();
+        // Items set aside as defective left stock when they were reported: an adjustment of -1 each.
+        adjs.AddRange(await db.StockItems.Where(i => ids.Contains(i.ReceiptDetail.ProductId) && i.Status == ItemStatus.Defective && i.DefectiveAt >= start)
+            .Select(i => new { i.ReceiptDetail.ProductId, Delta = -1, At = i.DefectiveAt!.Value }).ToListAsync());
 
         var rows = products.Select(p =>
         {
@@ -111,7 +130,8 @@ public class DashboardController(VibasicDbContext db) : ControllerBase
         int OrdersWaiting, int IssuesToPick);
     public record DayFlow(DateOnly Day, int In, int Out);
     public record PendingItem(string Type, string Code, string Title, DateTime At, string Link);
-    public record AlertItem(int ProductId, string Sku, string ProductName, string Unit, int Available, decimal Rop);
+    /// <param name="Net">Net stock stored on the open alert (Q8).</param>
+    public record AlertItem(int ProductId, string Sku, string ProductName, string Unit, int Net, decimal Rop);
     public record Dashboard(Kpis Kpis, List<DayFlow> Flow, List<PendingItem> Pending, List<AlertItem> Alerts);
 
     [HttpGet]

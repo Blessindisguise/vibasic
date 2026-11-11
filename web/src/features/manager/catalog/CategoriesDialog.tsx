@@ -5,8 +5,8 @@ import { Modal } from '../../../app/Modal';
 import { useToast } from '../../../app/toast';
 import { fieldErrors, formError, useCategories, useSaveCategory, type Category } from '../../../app/catalog';
 
-/** UC_02 3.1: add or edit a product category (name, description) from the product screen. */
-export function CategoriesDialog({ onClose }: { onClose: () => void }) {
+/** UC_02 3.1: add or edit a product category (name, description) from the product screen; "Xem hàng" filters the products by it. */
+export function CategoriesDialog({ onClose, onShowProducts }: { onClose: () => void; onShowProducts: (c: Category) => void }) {
   const categories = useCategories();
   const save = useSaveCategory();
   const toast = useToast();
@@ -35,16 +35,21 @@ export function CategoriesDialog({ onClose }: { onClose: () => void }) {
     { key: 'description', header: 'Mô tả', render: c => c.description ?? <span className="vb-muted">—</span> },
     { key: 'productCount', header: 'Số mặt hàng', numeric: true, width: 100, render: c => fmt(c.productCount) },
     {
-      key: 'edit', header: '', width: 64, align: 'right',
-      render: c => <Button variant="ghost" size="sm" onClick={() => startEdit(c)} aria-label={`Sửa nhóm ${c.name}`}>Sửa</Button>,
+      key: 'edit', header: '', width: 150, align: 'right',
+      render: c => (
+        <div className="vb-row" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap', gap: 4 }}>
+          <Button variant="ghost" size="sm" disabled={c.productCount === 0} onClick={() => onShowProducts(c)} aria-label={`Xem hàng hóa nhóm ${c.name}`}>Xem hàng</Button>
+          <Button variant="ghost" size="sm" onClick={() => startEdit(c)} aria-label={`Sửa nhóm ${c.name}`}>Sửa</Button>
+        </div>
+      ),
     },
   ];
 
   return (
-    <Modal title="Nhóm hàng" description="Nhóm hàng dùng để phân loại và lọc hàng hóa, đề xuất bổ sung và báo cáo." onClose={onClose} width={680}>
+    <Modal title="Nhóm hàng" onClose={onClose} width={680}>
       <DataTable
         columns={columns} rows={categories.data ?? []} maxHeight={280} caption="Danh sách nhóm hàng"
-        empty={<EmptyState icon="folder-tree" title="Chưa có nhóm hàng" description="Thêm nhóm hàng đầu tiên ở biểu mẫu bên dưới." />}
+        empty={<EmptyState icon="folder-tree" title="Chưa có nhóm hàng" />}
       />
       <form onSubmit={submit} noValidate className="vb-panel" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12, background: 'var(--surface-sunken)' }}>
         <div style={{ font: 'var(--type-body-strong)' }}>{editing ? `Sửa nhóm hàng "${editing.name}"` : 'Thêm nhóm hàng'}</div>

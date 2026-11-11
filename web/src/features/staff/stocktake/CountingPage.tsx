@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertBanner, Button, ConfirmDialog, Icon, ScanInput, TextField } from '../../../design';
+import { AlertBanner, Button, Checkbox, ConfirmDialog, EmptyState, Icon, ScanInput, SearchField, TextField } from '../../../design';
 import { fmt, fmtDate } from '../../../app/format';
-import { FormDialog } from '../../../app/Modal';
+import { Modal } from '../../../app/Modal';
 import { Segmented } from '../../../app/Segmented';
 import { SerialRanges } from '../../../app/SerialRanges';
 import { useToast } from '../../../app/toast';
 import { Code, ListError, Loading } from '../../../app/ui';
-import { parseNumber } from '../../../app/text';
+import { matches, parseNumber } from '../../../app/text';
+import { suggestFrom } from '../../../app/suggest';
 import { fieldErrors, formError } from '../../../app/catalog';
 import { LotStatusBadge, PlanStatusBadge } from '../../../app/statusBadges';
 import {
@@ -37,6 +38,13 @@ const countOf = (d: LotDraft): number | null => d.mode === 'scan'
   : parseNumber(d.actual);
 
 /**
+ * What the shelf held when the lot was counted. Items set aside as defective after that moment were still on the shelf then
+ * (the server applies the same rule).
+ */
+const expectedOf = (l: SheetLot, d: LotDraft): number =>
+  l.shelfQuantity + (d.countedAt ? l.defectsAt.filter(t => t > d.countedAt!).length : 0);
+
+/**
  * UC_14: count each lot in scope, by typing the quantity or scanning every label (K4). The expected shelf quantity stays hidden
  * until the lot is counted (K3); items already picked for an issue are shown apart since they are not on the shelf (K2).
  * The count is kept on this device until sent. Defects found while counting are reported per lot (3.1).
@@ -50,6 +58,9 @@ export function CountingPage({ planId }: { planId: number }) {
   const [draft, setDraft] = useState<Draft>(() => loadDraft(planId));
   const [confirm, setConfirm] = useState(false);
   const [defectLot, setDefectLot] = useState<SheetLot | null>(null);
+  const [search, setSearch] = useState('');
+  // Lots still to count when the filter was turned on: a lot stays shown while its number is being typed.
+  const [onlyLeft, setOnlyLeft] = useState<Set<number> | null>(null);
   useEffect(() => saveDraft(planId, draft), [planId, draft]);
 
   const groups = useMemo(() => {
@@ -73,7 +84,20 @@ export function CountingPage({ planId }: { planId: number }) {
   if (sheet.isError) return <ListError onRetry={() => sheet.refetch()} />;
   const lots = sheet.data;
   const counted = lots.filter(l => countOf(draft[l.receiptDetailId] ?? EMPTY) != null).length;
-  const diffs = lots.filter(l => { const a = countOf(draft[l.receiptDetailId] ?? EMPTY); return a != null && a !== l.shelfQuantity; }).length;
+  const diffs = lots.filter(l => { const a = countOf(draft[l.receiptDetailId] ?? EMPTY); return a != null && a !== expectedOf(l, draft[l.receiptDetailId] ?? EMPTY); }).length;
+  // Finding a lot on a long warehouse-wide sheet: by lot code, SKU or name, and optionally only the lots not counted yet.
+  const lotFields = (l: SheetLot) => [l.lotCode, l.sku, l.productName];
+  const shown = groups
+    .map(g => g.filter(l => matches(search, ...lotFields(l)) && (!onlyLeft || onlyLeft.has(l.receiptDetailId))))
+    .filter(g => g.length > 0);
+  const suggestions = suggestFrom(lots, search, lotFields, l => ({
+    key: String(l.receiptDetailId), label: l.lotCode, hint: `${l.sku} · ${l.productName}`,
+    meta: countOf(draft[l.receiptDetailId] ?? EMPTY) != null ? <span style={{ color: 'var(--green-700)', fontWeight: 600 }}>Đã đếm</span> : <span>Chưa đếm</span>,
+  }));
+  const jumpTo = (l: SheetLot) => {
+    setSearch(l.lotCode); setOnlyLeft(null);
+    requestAnimationFrame(() => document.getElementById(`lot-${l.receiptDetailId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+  };
   const set = (id: number, patch: Partial<LotDraft>) => setDraft(d => ({ ...d, [id]: { ...(d[id] ?? EMPTY), ...patch } }));
 
   const payload = (l: SheetLot): CountPayload => {
@@ -109,13 +133,24 @@ export function CountingPage({ planId }: { planId: number }) {
         )}
       </section>
 
-      {p.lastStocktakeStatus === 'rejected' && <AlertBanner tone="danger" title={`Phiếu ${p.lastStocktakeCode} bị từ chối`}>{p.lastRejectReason}. Kiểm đếm lại các lô.</AlertBanner>}
-      <AlertBanner tone="info">
-        Đếm thực tế từng lô: nhập số, hoặc chọn “Quét tem” để quét từng sản phẩm (biết chính xác mã nào thiếu). Không tìm thấy lô thì nhập 0.
-        Số hệ thống chỉ hiện sau khi đếm xong lô. Phát hiện hàng lỗi thì chọn “Báo hàng lỗi” ở lô đó, rồi đếm tiếp.
-      </AlertBanner>
+      {p.lastStocktakeStatus === 'rejected' && <AlertBanner tone="danger" title={`Phiếu ${p.lastStocktakeCode} bị từ chối`}>Lý do: {p.lastRejectReason}</AlertBanner>}
 
-      {groups.map(group => (
+      <div className="vb-row" style={{ gap: 16, alignItems: 'center' }}>
+        <SearchField
+          size="lg" placeholder="Mã lô, SKU, tên hàng…" value={search} onChange={setSearch} style={{ width: 360, maxWidth: '100%' }}
+          aria-label="Tìm lô cần đếm" suggestions={suggestions} onPickSuggestion={s => s.value && jumpTo(s.value as SheetLot)}
+        />
+        <Checkbox size="lg" label={`Chỉ lô chưa đếm (${lots.length - counted})`} checked={!!onlyLeft}
+          onChange={e => setOnlyLeft(e.target.checked ? new Set(lots.filter(l => countOf(draft[l.receiptDetailId] ?? EMPTY) == null).map(l => l.receiptDetailId)) : null)} />
+      </div>
+      {shown.length === 0 && (
+        <div className="vb-panel">
+          <EmptyState icon={onlyLeft && !search ? 'circle-check' : 'search'}
+            title={onlyLeft && !search ? 'Đã đếm hết các lô' : 'Không có lô phù hợp'} description={onlyLeft && !search ? undefined : 'Thử từ khóa khác.'} />
+        </div>
+      )}
+
+      {shown.map(group => (
         <section key={group[0].sku} className="vb-panel">
           <div className="vb-panel__head"><span style={{ font: 'var(--type-touch-heading)', fontSize: 17 }}><Code>{group[0].sku}</Code> {group[0].productName}</span></div>
           <div className="vb-panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -129,7 +164,7 @@ export function CountingPage({ planId }: { planId: number }) {
 
       <ConfirmDialog
         open={confirm} title={`Gửi phiếu kiểm kê cho kế hoạch ${p.code}?`}
-        description={`${lots.length} lô đã đếm, ${diffs} lô có chênh lệch. Quản lý duyệt phiếu thì tồn kho được điều chỉnh theo số thực tế.`}
+        description={`${lots.length} lô đã đếm, ${diffs} lô có chênh lệch.`}
         confirmLabel="Gửi phiếu" onConfirm={send} onCancel={() => setConfirm(false)}
       />
       {defectLot && <StockDefectDialog planId={planId} lot={defectLot} onClose={() => setDefectLot(null)} />}
@@ -143,16 +178,17 @@ function LotCount({ lot: l, draft: d, errors, onChange, onDefect }: {
   const k = `counts[${l.receiptDetailId}].`;
   const mode = d.mode ?? 'manual';
   const actual = countOf(d);
-  const diff = actual == null ? null : actual - l.shelfQuantity;
+  const expected = expectedOf(l, d);
+  const diff = actual == null ? null : actual - expected;
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) minmax(260px, 1.3fr) minmax(200px, 1.2fr)', gap: 16, alignItems: 'start', paddingBottom: 16, borderBottom: '1px solid var(--border-subtle)' }}>
+    <div id={`lot-${l.receiptDetailId}`} style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) minmax(260px, 1.3fr) minmax(200px, 1.2fr)', gap: 16, alignItems: 'start', paddingBottom: 16, borderBottom: '1px solid var(--border-subtle)' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <span style={{ font: '600 17px/24px var(--font-sans)', letterSpacing: 'var(--tracking-code)' }}>{l.lotCode}</span>
         <span className="vb-row" style={{ gap: 8 }}><LotStatusBadge status={l.status} /><span className="vb-muted">nhập {fmtDate(l.receivedDate)}</span></span>
         {l.picking > 0 && (
           <span className="vb-muted" style={{ fontSize: 14, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
             <Icon name="truck" size={16} style={{ flex: 'none', marginTop: 2 }} />
-            <span>Đang soạn cho phiếu xuất: <b>{fmt(l.picking)} {l.unit}</b> (không nằm trên kệ, không đếm)</span>
+            <span>Đang soạn cho phiếu xuất: <b>{fmt(l.picking)} {l.unit}</b></span>
           </span>
         )}
         <Button variant="ghost" size="lg" icon="shield-alert" style={{ alignSelf: 'flex-start', color: 'var(--red-700)' }} onClick={onDefect} disabled={l.status === 'locked'}>Báo hàng lỗi</Button>
@@ -168,9 +204,9 @@ function LotCount({ lot: l, draft: d, errors, onChange, onDefect }: {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {diff == null ? <span className="vb-muted" style={{ marginTop: 56 }}>{mode === 'scan' ? 'Quét hết sản phẩm của lô rồi chọn “Đếm xong lô”.' : 'Nhập số đếm được để đối chiếu.'}</span> : (
+        {diff == null ? null : (
           <span style={{ marginTop: 52, font: 'var(--type-touch-body)', fontVariantNumeric: 'tabular-nums' }}>
-            Trên kệ theo hệ thống {fmt(l.shelfQuantity)} ·{' '}
+            Trên kệ theo hệ thống {fmt(expected)} ·{' '}
             {diff === 0 ? <b style={{ color: 'var(--green-700)' }}><Icon name="check" size={16} style={{ verticalAlign: -3 }} /> Khớp</b>
               : <b style={{ color: diff < 0 ? 'var(--red-700)' : 'var(--blue-700)' }}>{diff < 0 ? 'Thiếu' : 'Thừa'} {fmt(Math.abs(diff))} {l.unit}</b>}
           </span>
@@ -205,6 +241,9 @@ function ScanCounter({ lot: l, draft: d, onChange, error }: {
     if (serials.includes(s)) return say('error', `${s} đã quét rồi.`);
     if (item.status === 'issued') return say('error', `${s} đã xuất kho${item.issueCode ? ` (${item.issueCode})` : ''}. Báo quản lý, không tính vào số đếm.`);
     if (item.picked) return say('error', `${s} đang soạn cho phiếu ${item.issueCode ?? 'xuất'}. Không tính vào số đếm.`);
+    // Set aside before the count started: it is not on the shelf. After: it was, so it still counts.
+    if (item.status === 'defective' && !(d.countedAt && item.defectiveAt && item.defectiveAt > d.countedAt))
+      return say('error', `${s} đã tách ra do lỗi${item.reportCode ? ` (${item.reportCode})` : ''}. Để ở khu hàng lỗi, không tính vào số đếm.`);
     onChange({ serials: [...serials, s], countedAt: serials.length === 0 ? new Date().toISOString() : d.countedAt, done: false });
     say('success', item.status === 'lost' ? `${s} đang ghi “Thất thoát”: tìm thấy lại, sẽ khôi phục khi duyệt.` : `Đúng lô: ${s} · đã quét ${serials.length + 1}`);
   };
@@ -224,8 +263,7 @@ function ScanCounter({ lot: l, draft: d, onChange, error }: {
         )}
       </div>
       <SerialRanges serials={serials} unit={l.unit} />
-      <TextField size="lg" label="Không có tem / tem hỏng" inputMode="numeric" suffix={l.unit} value={d.unlabeled ?? ''} placeholder="0"
-        helper="Sản phẩm của lô không quét được; được cấp mã mới khi duyệt." onChange={e => onChange({ unlabeled: e.target.value })} disabled={d.done} />
+      <TextField size="lg" label="Không có tem / tem hỏng" inputMode="numeric" suffix={l.unit} value={d.unlabeled ?? ''} placeholder="0" onChange={e => onChange({ unlabeled: e.target.value })} disabled={d.done} />
       {error && <AlertBanner tone="danger">{error}</AlertBanner>}
       {d.done
         ? <Button variant="secondary" size="lg" icon="scan-barcode" onClick={() => onChange({ done: false })}>Quét tiếp lô này</Button>
@@ -234,24 +272,77 @@ function ScanCounter({ lot: l, draft: d, onChange, error }: {
   );
 }
 
-/** UC_14 3.1 / UC_11 (nguồn: kiểm kê): lot and source are filled in; staff enter the defect and the quantity. */
+/**
+ * UC_14 3.1 / UC_11 (nguồn: kiểm kê): lot and source are filled in; staff scan the label of each defective item and describe the
+ * defect. Those items are set aside; "Nghi lỗi cả lô" quarantines the whole lot as well.
+ */
 function StockDefectDialog({ planId, lot, onClose }: { planId: number; lot: SheetLot; onClose: () => void }) {
   const file = useStockDefect(planId);
+  const items = useLot(lot.receiptDetailId);
   const toast = useToast();
-  const [quantity, setQuantity] = useState('');
+  const [code, setCode] = useState('');
+  const [serials, setSerials] = useState<string[]>([]);
+  const [feedback, setFeedback] = useState<{ state: 'success' | 'error'; message: string; key: number } | null>(null);
   const [description, setDescription] = useState('');
+  const [wholeLot, setWholeLot] = useState(false);
   const errors = fieldErrors(file.error);
-  const submit = () => file.mutate({ receiptDetailId: lot.receiptDetailId, quantity: parseNumber(quantity), description }, {
-    onSuccess: r => { toast({ tone: 'warning', title: `Đã lập biên bản ${r.code}`, message: `Lô ${lot.lotCode} tạm cách ly. Tiếp tục kiểm đếm.` }); onClose(); },
+  const bySerial = useMemo(() => new Map((items.data?.items ?? []).map(i => [i.serial, i])), [items.data]);
+
+  const scan = (value: string) => {
+    const s = value.trim().toUpperCase();
+    setCode('');
+    if (!s) return;
+    const say = (state: 'success' | 'error', message: string) => setFeedback({ state, message, key: Date.now() });
+    const item = bySerial.get(s);
+    if (s === lot.lotCode) return say('error', `${s} là mã lô. Quét tem sản phẩm bị lỗi.`);
+    if (!item) return say('error', `${s} không thuộc lô ${lot.lotCode}.`);
+    if (serials.includes(s)) return say('error', `${s} đã quét rồi.`);
+    if (item.status === 'defective') return say('error', `${s} đã có biên bản lỗi${item.reportCode ? ` ${item.reportCode}` : ''}.`);
+    if (item.status === 'issued') return say('error', `${s} đã xuất kho.`);
+    if (item.status === 'lost') return say('error', `${s} đang ghi Thất thoát. Báo quản lý.`);
+    if (item.picked) return say('error', `${s} đang soạn cho phiếu ${item.issueCode ?? 'xuất'}; báo lỗi ở màn lấy hàng.`);
+    setSerials(list => [...list, s]);
+    say('success', `Ghi nhận ${s} lỗi · ${serials.length + 1} ${lot.unit}`);
+  };
+
+  const submit = () => file.mutate({ receiptDetailId: lot.receiptDetailId, serials, description, wholeLot }, {
+    onSuccess: r => {
+      toast({
+        tone: 'warning', title: `Đã lập biên bản ${r.code}`,
+        message: wholeLot ? `Lô ${lot.lotCode} tạm cách ly.` : `${r.quantity} ${lot.unit} lỗi.`,
+      });
+      onClose();
+    },
   });
   return (
-    <FormDialog title={`Báo hàng lỗi lô ${lot.lotCode}`} description={`${lot.sku} ${lot.productName} · phát hiện khi kiểm kê`}
-      submitLabel="Lập biên bản" busy={file.isPending} error={formError(file.error)} onSubmit={submit} onClose={onClose}>
-      <TextField size="lg" label="Số lượng lỗi" required autoFocus inputMode="numeric" suffix={lot.unit} value={quantity}
-        onChange={e => setQuantity(e.target.value)} error={errors.quantity} helper={`Tối đa ${fmt(lot.systemQuantity)} ${lot.unit}.`} />
+    // A plain dialog, not a form: the scan field is a form of its own (Enter = one scan) and must not submit the report.
+    <Modal title={`Báo hàng lỗi lô ${lot.lotCode}`} description={`${lot.sku} ${lot.productName} · phát hiện khi kiểm kê`} width={640} onClose={onClose}
+      footer={<>
+        <Button variant="secondary" type="button" onClick={onClose}>Huỷ</Button>
+        <Button type="button" loading={file.isPending} onClick={() => !file.isPending && submit()}>Lập biên bản</Button>
+      </>}>
+      {formError(file.error) && <AlertBanner tone="danger">{formError(file.error)}</AlertBanner>}
+      {items.isPending ? <Loading /> : items.isError ? <ListError onRetry={() => items.refetch()} /> : (
+        <ScanInput size="md" value={code} onChange={setCode} onSubmit={scan} scanKey={feedback?.key ?? 0} label="Quét tem sản phẩm lỗi"
+          placeholder="SP-…" state={feedback?.state ?? 'idle'} message={feedback?.message ?? 'Quét lần lượt từng sản phẩm bị lỗi.'} />
+      )}
+      <div className="vb-field">
+        <span className="vb-field__label">Sản phẩm lỗi<span className="req" aria-hidden="true">*</span> <span className="vb-muted">({serials.length} {lot.unit})</span></span>
+        {serials.length === 0 ? <span className="vb-muted">Chưa quét sản phẩm nào.</span> : (
+          <div className="vb-serials">
+            {serials.map(s => (
+              <button key={s} type="button" className="vb-serial" aria-pressed="true" title="Bỏ mã này" onClick={() => setSerials(list => list.filter(x => x !== s))}>
+                {s} <Icon name="x" size={12} style={{ verticalAlign: -1 }} />
+              </button>
+            ))}
+          </div>
+        )}
+        {errors.serials && <div className="vb-field__help vb-field__help--error">{errors.serials}</div>}
+      </div>
       <TextField size="lg" multiline label="Mô tả lỗi" required value={description} onChange={e => setDescription(e.target.value)}
         error={errors.description} placeholder="Ví dụ: mốc, nứt, mối mọt" />
-      <div className="vb-muted">Lô chuyển “Tạm cách ly”, không được xuất cho đến khi quản lý xử lý biên bản.</div>
-    </FormDialog>
+      <Checkbox size="lg" checked={wholeLot} onChange={e => setWholeLot(e.target.checked)}
+        label={<b>Nghi lỗi cả lô</b>} />
+    </Modal>
   );
 }

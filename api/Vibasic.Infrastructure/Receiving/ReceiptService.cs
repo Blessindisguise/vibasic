@@ -59,7 +59,7 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
         receipt.Note = note;
         receipt.DeliveryNoteNo = deliveryNote;
 
-        var reports = await db.AbnormalReports.Where(a => a.ReceiptDetail.ReceiptId == id).ToListAsync();
+        var reports = await db.AbnormalReports.Include(a => a.Items).Where(a => a.ReceiptDetail.ReceiptId == id).ToListAsync();
         var old = receipt.Details.GroupBy(d => d.ProductId).ToDictionary(g => g.Key, g => g.ToList());
         foreach (var line in lines)
         {
@@ -91,7 +91,7 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
         if (receipt.Details.Count == 0) throw new RuleException($"Phiếu {receipt.Code} chưa có mặt hàng nào.");
         var now = clock.UtcNow;
 
-        var reports = await db.AbnormalReports.Where(a => a.ReceiptDetail.ReceiptId == id).ToListAsync();
+        var reports = await db.AbnormalReports.Include(a => a.Items).Where(a => a.ReceiptDetail.ReceiptId == id).ToListAsync();
         var filed = 0;
         foreach (var lot in receipt.Details.Where(d => d.Status == LotStatus.Quarantined))
         {
@@ -101,8 +101,10 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
                 report = new AbnormalReport
                 {
                     Code = await codes.NextDocumentAsync(CodeGenerator.Abnormal, now), ReceiptDetail = lot, SourceType = AbnormalSource.Receipt,
-                    CreatedBy = userId, CreatedAt = now, Status = ApprovalStatus.Pending,
+                    CreatedBy = userId, CreatedAt = now, Status = ApprovalStatus.Pending, Scope = ReportScope.Lot,
                 };
+                // The failed lot holds only the items that did not pass.
+                report.Items.AddRange(lot.Items.Select(i => new AbnormalReportItem { Item = i }));
                 db.AbnormalReports.Add(report);
             }
             report.Description = lot.Note ?? "Không đạt kiểm định khi nhập kho.";
@@ -138,13 +140,6 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
         receipt.Status = ReceiptStatus.Approved;
         receipt.ApprovedBy = managerId;
         receipt.ApprovedAt = clock.UtcNow;
-        // N1: approved replenishment proposals for these products are now fulfilled.
-        var products = receipt.Details.Where(d => d.Status == LotStatus.Normal).Select(d => d.ProductId).Distinct().ToList();
-        foreach (var p in await db.ReplenishmentProposals.Where(r => r.Status == ProposalStatus.Approved && products.Contains(r.ProductId)).ToListAsync())
-        {
-            p.Status = ProposalStatus.Received;
-            p.Receipt = receipt;
-        }
         notify.ToUser(receipt.CreatedBy, $"Phiếu nhập {receipt.Code} đã được duyệt",
             $"Đã ghi nhận tồn kho {receipt.Details.Where(d => d.Status == LotStatus.Normal).Sum(d => d.Quantity)} sản phẩm.",
             $"/kho/nhap-kho/{id}", Notifier.Success);
@@ -179,17 +174,9 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
         if (receipt.Status != ReceiptStatus.Approved)
             throw new RuleException($"Phiếu {receipt.Code} đang ở trạng thái “{Labels<ReceiptStatus>.ToLabel(receipt.Status)}”, chưa duyệt nên không có gì để hủy.");
         var text = RequireReason(reason);
+        if (await RevokeBlockAsync(receipt) is { } block) throw new RuleException(block);
         var lotIds = receipt.Details.Select(d => d.ReceiptDetailId).ToList();
-        var used = receipt.Details.FirstOrDefault(d => d.QuantityOnHand != d.Quantity
-            || d.Items.Any(i => i.Status != ItemStatus.InStock || i.IssueDetailId != null));
-        if (used is not null)
-            throw new RuleException($"Hàng của lô {used.LotCode} đã được giữ chỗ, xuất kho hoặc điều chỉnh, nên không hủy duyệt phiếu {receipt.Code} được.");
-        if (await db.StocktakePlanDetails.AnyAsync(p => lotIds.Contains(p.ReceiptDetailId))
-            || await db.StocktakeDetails.AnyAsync(s => lotIds.Contains(s.ReceiptDetailId)))
-            throw new RuleException($"Lô của phiếu {receipt.Code} đã nằm trong kế hoạch kiểm kê, không hủy duyệt được.");
         var reports = await db.AbnormalReports.Where(a => lotIds.Contains(a.ReceiptDetailId)).ToListAsync();
-        if (reports.Any(a => a.SourceType != AbnormalSource.Receipt))
-            throw new RuleException($"Lô của phiếu {receipt.Code} đã có biên bản bất thường phát sinh sau khi nhập, không hủy duyệt được.");
 
         foreach (var report in reports)
         {
@@ -204,11 +191,6 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
             lot.QuantityOnHand = 0;
             foreach (var item in lot.Items) item.Status = ItemStatus.Incoming;
         }
-        foreach (var p in await db.ReplenishmentProposals.Where(r => r.ReceiptId == id).ToListAsync())
-        {
-            p.Status = ProposalStatus.Approved;
-            p.ReceiptId = null;
-        }
         receipt.Status = ReceiptStatus.Pending;
         receipt.ApprovedBy = null;
         receipt.ApprovedAt = null;
@@ -217,6 +199,33 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
         await db.SaveChangesAsync();
         await replenish.CheckAsync(receipt.Details.Select(d => d.ProductId));
         return receipt;
+    }
+
+    /// <summary>Why the approval of this receipt can no longer be taken back; null while it still can (or it is not approved).</summary>
+    public async Task<string?> RevokeBlockAsync(int id) => await RevokeBlockAsync(await LoadAsync(id));
+
+    /// <summary>
+    /// Hủy duyệt is possible only while the stock the receipt recorded is untouched. Once any item of it was reserved, issued,
+    /// written off or set aside, its lots were put in a stocktake plan, or an abnormal report was filed on them after receiving,
+    /// later documents depend on that stock and the approval stays.
+    /// </summary>
+    private async Task<string?> RevokeBlockAsync(GoodsReceipt receipt)
+    {
+        if (receipt.Status != ReceiptStatus.Approved) return null;
+        var lotIds = receipt.Details.Select(d => d.ReceiptDetailId).ToList();
+        var used = receipt.Details.FirstOrDefault(d => d.QuantityOnHand != d.Quantity
+            || d.Items.Any(i => i.Status != ItemStatus.InStock || i.IssueDetailId != null));
+        if (used is not null)
+            return $"Hàng của lô {used.LotCode} đã được giữ chỗ, xuất kho hoặc điều chỉnh tồn, nên không hủy duyệt phiếu {receipt.Code} được nữa.";
+        var plan = await db.StocktakePlanDetails.Where(p => lotIds.Contains(p.ReceiptDetailId)).Select(p => p.Plan.Code).FirstOrDefaultAsync()
+            ?? await db.StocktakeDetails.Where(s => lotIds.Contains(s.ReceiptDetailId)).Select(s => s.Stocktake.Code).FirstOrDefaultAsync();
+        if (plan is not null)
+            return $"Lô của phiếu {receipt.Code} đã nằm trong kiểm kê {plan}, không hủy duyệt được nữa.";
+        var report = await db.AbnormalReports.Where(a => lotIds.Contains(a.ReceiptDetailId) && a.SourceType != AbnormalSource.Receipt)
+            .Select(a => a.Code).FirstOrDefaultAsync();
+        if (report is not null)
+            return $"Lô của phiếu {receipt.Code} đã có biên bản {report} lập sau khi nhập kho, không hủy duyệt được nữa.";
+        return null;
     }
 
     // ---------------- helpers ----------------
@@ -280,6 +289,8 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
 
             v.Check(l.ProductId is not null, key + "productId", "Chọn mặt hàng.")
              .Check(l.ProductId is null || product is not null, key + "productId", "Mặt hàng không còn trong danh mục.")
+             .Check(product is null || input.SupplierId is null || product.SupplierId == input.SupplierId, key + "productId",
+                 "Mặt hàng này không do nhà cung cấp đã chọn cung cấp.")
              .Check(product is null || seen.Add(product.ProductId), key + "productId", "Mặt hàng này đã có ở dòng trên. Gộp số lượng vào một dòng.")
              .Check(received is >= 1 and <= MaxLineQuantity, key + "receivedQuantity", "Số thực nhận từ 1 đến 2.000.")
              .Check(failed >= 0 && (received is null || failed <= received), key + "failedQuantity", "Số không đạt từ 0 đến số thực nhận.")

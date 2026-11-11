@@ -8,9 +8,17 @@ export interface LotRow {
   id: number; lotCode: string; productId: number; sku: string; productName: string; unit: string; categoryName: string;
   receivedDate: string; receiptId: number; receiptCode: string; supplierName: string;
   quantity: number; quantityOnHand: number; reserved: number; status: LotStatus;
+  /** Items set aside as defective (out of stock on hand). */
+  defective: number;
 }
-/** picked: already scanned for an issue (staging area, not on the shelf). */
-export interface LotItem { id: number; serial: string; status: ItemStatus; issueId?: number; issueCode?: string; picked: boolean }
+/**
+ * picked: already scanned for an issue (staging area, not on the shelf). orderCode / customerName: the order of the issue the
+ * item is reserved on or was issued with. reportId / reportCode: latest abnormal report listing the item.
+ */
+export interface LotItem {
+  id: number; serial: string; status: ItemStatus; issueId?: number; issueCode?: string; picked: boolean;
+  orderCode?: string; customerName?: string; defectiveAt?: string; reportId?: number; reportCode?: string;
+}
 export interface LotView { lot: LotRow; items: LotItem[]; reports: ReportRow[] }
 
 export type PlanType = 'periodic' | 'adHoc';
@@ -26,6 +34,8 @@ export interface SheetLot {
   receivedDate: string; status: LotStatus;
   /** Stock on hand; `picking` of it is in the staging area, so the shelf should hold `shelfQuantity`. */
   systemQuantity: number; picking: number; shelfQuantity: number;
+  /** When items of the lot were set aside as defective lately; those after the lot was counted were still on the shelf then. */
+  defectsAt: string[];
 }
 export interface PlanInput { planType: PlanType | ''; scopeType: PlanScope | ''; plannedDate: string; lotIds: number[]; note: string }
 
@@ -47,6 +57,8 @@ export interface CountPayload {
   receiptDetailId: number; actualQuantity: number | null; reason: string; countedAt?: string; serials?: string[]; unlabeled?: number;
 }
 export interface StocktakeView { header: StocktakeRow; details: StocktakeDetailRow[]; reports: ReportRow[] }
+/** Manager's plan page: lots in scope (whole warehouse: the lots holding stock now), every count submitted, editable while waiting. */
+export interface PlanView { plan: PlanRow; lots: LotRow[]; stocktakes: StocktakeRow[]; editable: boolean }
 
 export const PLAN_TYPE_LABEL: Record<PlanType, string> = { periodic: 'Định kỳ', adHoc: 'Chỉ định' };
 export const PLAN_SCOPE_LABEL: Record<PlanScope, string> = { warehouse: 'Toàn bộ kho', selectedLots: 'Một số lô' };
@@ -63,6 +75,8 @@ export const findLot = (code: string) => api<{ lotId: number; serial?: string }>
 
 export const usePlans = () => useQuery({ queryKey: ['plans'], queryFn: () => api<PlanRow[]>('/stocktake-plans') });
 export const usePlan = (id: number) => useQuery({ queryKey: ['plans', id], queryFn: () => api<PlanRow>(`/stocktake-plans/${id}`) });
+export const usePlanDetail = (id: number) =>
+  useQuery({ queryKey: ['plans', id, 'detail'], queryFn: () => api<PlanView>(`/stocktake-plans/${id}/detail`) });
 export const useSheet = (id: number, enabled = true) =>
   useQuery({ queryKey: ['plans', id, 'sheet'], enabled, queryFn: () => api<SheetLot[]>(`/stocktake-plans/${id}/sheet`) });
 export const useStocktakes = (status?: ApprovalStatus) =>
@@ -76,12 +90,22 @@ function useRefresh() {
     .forEach(k => qc.invalidateQueries({ queryKey: [k] }));
 }
 
+const planJson = (input: PlanInput) =>
+  ({ ...input, planType: input.planType || null, scopeType: input.scopeType || null, plannedDate: input.plannedDate || null });
+
 export function useCreatePlan() {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: (input: PlanInput) => api<PlanRow>('/stocktake-plans', {
-      method: 'POST', json: { ...input, planType: input.planType || null, scopeType: input.scopeType || null, plannedDate: input.plannedDate || null },
-    }),
+    mutationFn: (input: PlanInput) => api<PlanRow>('/stocktake-plans', { method: 'POST', json: planJson(input) }),
+    onSuccess: refresh,
+  });
+}
+
+/** UC_13, sửa kế hoạch (only while it waits to be counted). */
+export function useUpdatePlan(id: number) {
+  const refresh = useRefresh();
+  return useMutation({
+    mutationFn: (input: PlanInput) => api<PlanView>(`/stocktake-plans/${id}`, { method: 'PUT', json: planJson(input) }),
     onSuccess: refresh,
   });
 }
@@ -98,7 +122,7 @@ export function useSubmitCount(planId: number) {
 export function useStockDefect(planId: number) {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: (input: { receiptDetailId: number; quantity: number | null; description: string }) =>
+    mutationFn: (input: { receiptDetailId: number; serials: string[]; description: string; wholeLot: boolean }) =>
       api<ReportRow>(`/stocktake-plans/${planId}/defects`, { method: 'POST', json: input }),
     onSuccess: refresh,
   });

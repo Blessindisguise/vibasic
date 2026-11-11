@@ -11,7 +11,6 @@ import { Code, ListError, Loading } from '../../../app/ui';
 const ROLE_LABEL: Record<Role, string> = { manager: 'Quản lý', staff: 'Nhân viên kho' };
 const ROLE_OPTIONS = (Object.keys(ROLE_LABEL) as Role[]).map(r => ({ value: r, label: ROLE_LABEL[r] }));
 const STATUS_OPTIONS = [{ value: 'active', label: 'Đang hoạt động' }, { value: 'inactive', label: 'Ngừng hoạt động' }];
-const MIN_PASSWORD = 8;
 
 /** UC_01 Quản lý nhân viên: create, edit, deactivate and reopen accounts. */
 export function AccountsPage() {
@@ -98,7 +97,7 @@ export function AccountsPage() {
       <ConfirmDialog
         open={!!deactivating} tone="danger"
         title={`Ngừng hoạt động tài khoản ${deactivating?.username}?`}
-        description={`${deactivating?.fullName} sẽ không đăng nhập được nữa; phiên đang mở bị đăng xuất ở thao tác kế tiếp. Có thể mở lại tài khoản bất cứ lúc nào.`}
+        description={deactivating ? `${deactivating.fullName}` : undefined}
         confirmLabel="Ngừng hoạt động"
         onConfirm={() => deactivating && toggle(deactivating, false)}
         onCancel={() => setDeactivating(null)}
@@ -124,23 +123,22 @@ function AccountDialog({ account, isSelf, onClose }: { account: Account | null; 
   return (
     <FormDialog
       title={account ? `Sửa tài khoản ${account.username}` : 'Thêm tài khoản'}
-      description={account ? undefined : 'Mật khẩu được mã hóa trước khi lưu. Gửi mật khẩu ban đầu cho nhân viên và đề nghị đổi sau lần đăng nhập đầu.'}
       submitLabel={account ? 'Lưu thay đổi' : 'Tạo tài khoản'}
       busy={save.isPending} error={formError(save.error)} onSubmit={submit} onClose={onClose}
     >
       <TextField label="Họ tên" required autoFocus value={f.fullName} onChange={set('fullName')} error={errors.fullName} />
       <TextField
         label="Tên đăng nhập" required autoComplete="off" value={f.username} onChange={set('username')} error={errors.username}
-        helper="Chữ không dấu, chữ số, dấu chấm, gạch dưới; ví dụ nhanvien3." inputStyle={{ letterSpacing: 'var(--tracking-code)' }}
+        placeholder="nhanvien3" inputStyle={{ letterSpacing: 'var(--tracking-code)' }}
       />
       <TextField
         label={account ? 'Mật khẩu mới' : 'Mật khẩu'} required={!account} type="password" autoComplete="new-password"
         value={f.password} onChange={set('password')} error={errors.password}
-        helper={account ? `Để trống nếu không đổi. Tối thiểu ${MIN_PASSWORD} ký tự.` : `Tối thiểu ${MIN_PASSWORD} ký tự.`}
+        placeholder={account ? 'Để trống nếu không đổi' : undefined}
       />
       <SelectField
         label="Vai trò" required placeholder="Chọn vai trò" options={ROLE_OPTIONS} value={f.role} onChange={set('role')}
-        disabled={isSelf} error={errors.role} helper={isSelf ? 'Không tự đổi vai trò của tài khoản đang đăng nhập.' : undefined}
+        disabled={isSelf} error={errors.role}
       />
     </FormDialog>
   );

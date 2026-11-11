@@ -3,6 +3,7 @@ using Vibasic.Domain;
 using Vibasic.Infrastructure;
 using Vibasic.Infrastructure.Decision;
 using Vibasic.Infrastructure.Abnormal;
+using Vibasic.Infrastructure.Issuing;
 using Vibasic.Infrastructure.Receiving;
 using Vibasic.Infrastructure.Seed;
 
@@ -36,7 +37,8 @@ public class ReceivingTests
         {
             Db = db,
             Receipts = new ReceiptService(db, new CodeGenerator(db), notifier, clock, new ReplenishmentService(db, notifier, clock)),
-            Reports = new AbnormalReportService(db, notifier, clock, new ReplenishmentService(db, notifier, clock)),
+            Reports = new AbnormalReportService(db, notifier, clock, new ReplenishmentService(db, notifier, clock),
+                new IssueService(db, new CodeGenerator(db), notifier, clock, new ReplenishmentService(db, notifier, clock))),
             Staff = db.Users.First(u => u.Username == "nhanvien1").UserId,
             Manager = db.Users.First(u => u.Username == "quanly").UserId,
             Board = db.Products.First(p => p.SKU == "THT-01"),
@@ -91,6 +93,11 @@ public class ReceivingTests
         e = await Assert.ThrowsAsync<ValidationException>(() => c.Receipts.CreateAsync(new ReceiptInput(null, null, []), c.Staff));
         Assert.True(e.Errors.ContainsKey("supplierId"));
         Assert.True(e.Errors.ContainsKey("lines"));
+
+        // A product is received only from the supplier that supplies it.
+        var other = c.Db.Products.First(p => p.SupplierId != c.Board.SupplierId);
+        e = await Assert.ThrowsAsync<ValidationException>(() => c.Receipts.CreateAsync(Input(c, Line(c.Board, 5), Line(other, 5)), c.Staff));
+        Assert.Equal(["lines[1].productId"], e.Errors.Keys);
     }
 
     [Fact]
@@ -106,6 +113,8 @@ public class ReceivingTests
         Assert.Equal(AbnormalSource.Receipt, report.SourceType);
         Assert.Equal(4, report.Quantity);
         Assert.Equal(ApprovalStatus.Pending, report.Status);
+        Assert.Equal(ReportScope.Lot, report.Scope);
+        Assert.Equal(4, await c.Db.AbnormalReportItems.CountAsync(x => x.ReportId == report.ReportId)); // every item of the failed lot
         Assert.Contains(c.Db.Notifications, n => n.UserId == c.Manager && n.Title.Contains(r.Code));
 
         // UC_05 step 7 comes after step 6.
@@ -177,8 +186,10 @@ public class ReceivingTests
         var r = await c.Receipts.CreateAsync(Input(c, Line(c.Ladle, 5)), c.Staff);
         await c.Receipts.SubmitAsync(r.ReceiptId, c.Staff);
         await c.Receipts.ApproveAsync(r.ReceiptId, c.Manager);
+        Assert.Null(await c.Receipts.RevokeBlockAsync(r.ReceiptId));
         r.Details[0].Items[0].Status = ItemStatus.Reserved;
         await c.Db.SaveChangesAsync();
+        Assert.Contains("giữ chỗ", await c.Receipts.RevokeBlockAsync(r.ReceiptId)); // shown on the receipt instead of the button
         var e = await Assert.ThrowsAsync<RuleException>(() => c.Receipts.RevokeAsync(r.ReceiptId, "Nhầm nhà cung cấp", c.Manager));
         Assert.Contains("giữ chỗ", e.Message);
         Assert.Equal(ReceiptStatus.Approved, r.Status);
@@ -248,34 +259,16 @@ public class ReceivingTests
         Assert.Equal(5, await c.Db.StockItems.CountAsync(i => i.ReceiptDetail.ReceiptId == r.ReceiptId));
     }
 
-    // ---------------- N1 / N2 ----------------
+    // ---------------- N2 ----------------
 
     [Fact]
-    public async Task Approved_receipt_fulfils_approved_proposals_and_keeps_the_delivery_note()
+    public async Task Receipt_keeps_the_delivery_note()
     {
         await using var c = await Setup();
-        var proposal = new ReplenishmentProposal
-        {
-            ProductId = c.Board.ProductId, ProposedQuantity = 120, OriginalQuantity = 120, EOQValue = 118.4m,
-            ProposalDate = Now.AddDays(-3), Status = ProposalStatus.Approved, ApprovedBy = c.Manager, ApprovedAt = Now.AddDays(-3),
-        };
-        c.Db.ReplenishmentProposals.Add(proposal);
-        await c.Db.SaveChangesAsync();
-
         var tooLong = await Assert.ThrowsAsync<ValidationException>(() =>
             c.Receipts.CreateAsync(Input(c, Line(c.Board, 120)) with { DeliveryNoteNo = new string('9', 51) }, c.Staff));
         Assert.True(tooLong.Errors.ContainsKey("deliveryNoteNo"));
         var r = await c.Receipts.CreateAsync(Input(c, Line(c.Board, 120)) with { DeliveryNoteNo = " PGH-00871 " }, c.Staff);
         Assert.Equal("PGH-00871", r.DeliveryNoteNo);
-        await c.Receipts.SubmitAsync(r.ReceiptId, c.Staff);
-        Assert.Equal(ProposalStatus.Approved, proposal.Status); // only an approved receipt fulfils it
-
-        await c.Receipts.ApproveAsync(r.ReceiptId, c.Manager);
-        Assert.Equal(ProposalStatus.Received, proposal.Status);
-        Assert.Equal(r.ReceiptId, proposal.ReceiptId);
-
-        await c.Receipts.RevokeAsync(r.ReceiptId, "Nhầm nhà cung cấp", c.Manager);
-        Assert.Equal(ProposalStatus.Approved, proposal.Status);
-        Assert.Null(proposal.ReceiptId);
     }
 }

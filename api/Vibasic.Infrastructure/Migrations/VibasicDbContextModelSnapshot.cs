@@ -65,6 +65,11 @@ namespace Vibasic.Infrastructure.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
 
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<string>("SourceType")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -89,6 +94,30 @@ namespace Vibasic.Infrastructure.Migrations
                     b.HasIndex("ReceiptDetailId");
 
                     b.ToTable("AbnormalReport", (string)null);
+                });
+
+            modelBuilder.Entity("Vibasic.Domain.AbnormalReportItem", b =>
+                {
+                    b.Property<int>("ReportItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ReportItemId"));
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReportId")
+                        .HasColumnType("int");
+
+                    b.HasKey("ReportItemId");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("ReportId", "ItemId")
+                        .IsUnique();
+
+                    b.ToTable("AbnormalReportItem", (string)null);
                 });
 
             modelBuilder.Entity("Vibasic.Domain.GoodsIssue", b =>
@@ -129,6 +158,16 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<int>("OrderId")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("PickActiveAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("PickStartedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("PickerId")
+                        .IsConcurrencyToken()
+                        .HasColumnType("int");
+
                     b.Property<string>("ReceiverName")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
@@ -154,6 +193,8 @@ namespace Vibasic.Infrastructure.Migrations
                     b.HasIndex("DeliveredBy");
 
                     b.HasIndex("OrderId");
+
+                    b.HasIndex("PickerId");
 
                     b.ToTable("GoodsIssue", (string)null);
                 });
@@ -318,6 +359,15 @@ namespace Vibasic.Infrastructure.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("DemandState")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<decimal?>("DemandStdDev")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
                     b.Property<decimal>("HoldingCost")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -338,8 +388,9 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<int>("ProductId")
                         .HasColumnType("int");
 
-                    b.Property<int>("SafetyStock")
-                        .HasColumnType("int");
+                    b.Property<decimal?>("SafetyStock")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
 
                     b.HasKey("PolicyId");
 
@@ -399,24 +450,52 @@ namespace Vibasic.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("OrderId"));
 
+                    b.Property<string>("CancelReason")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("CancelledBy")
+                        .HasColumnType("int");
+
                     b.Property<string>("CustomerName")
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("CustomerPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<string>("ExternalCode")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<DateTime>("OrderDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime?>("ReadyNotifiedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ShippingAddress")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<string>("Status")
+                        .IsConcurrencyToken()
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
                     b.HasKey("OrderId");
+
+                    b.HasIndex("CancelledBy");
 
                     b.HasIndex("ExternalCode")
                         .IsUnique();
@@ -524,6 +603,10 @@ namespace Vibasic.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ProposalId"));
 
+                    b.Property<string>("AdjustBasis")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
                     b.Property<string>("AdjustReason")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
@@ -534,12 +617,30 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<int?>("ApprovedBy")
                         .HasColumnType("int");
 
+                    b.Property<int>("AvailableQuantity")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("AvgDailyDemand")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("BaseQuantity")
+                        .HasColumnType("int");
+
                     b.Property<decimal>("EOQValue")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<int>("NetQuantity")
+                        .HasColumnType("int");
+
                     b.Property<int>("OriginalQuantity")
                         .HasColumnType("int");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<int>("ProductId")
                         .HasColumnType("int");
@@ -550,12 +651,16 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<int>("ProposedQuantity")
                         .HasColumnType("int");
 
-                    b.Property<int?>("ReceiptId")
-                        .HasColumnType("int");
+                    b.Property<decimal>("ROPValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("RejectReason")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
+
+                    b.Property<int?>("ReportId")
+                        .HasColumnType("int");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -566,11 +671,53 @@ namespace Vibasic.Infrastructure.Migrations
 
                     b.HasIndex("ApprovedBy");
 
-                    b.HasIndex("ReceiptId");
+                    b.HasIndex("ReportId");
 
                     b.HasIndex("ProductId", "Status");
 
                     b.ToTable("ReplenishmentProposal", (string)null);
+                });
+
+            modelBuilder.Entity("Vibasic.Domain.ReplenishmentReport", b =>
+                {
+                    b.Property<int>("ReportId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ReportId"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProposalCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Snapshot")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("SupplierCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TotalQuantity")
+                        .HasColumnType("int");
+
+                    b.HasKey("ReportId");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("CreatedBy");
+
+                    b.ToTable("ReplenishmentReport", (string)null);
                 });
 
             modelBuilder.Entity("Vibasic.Domain.StockAlert", b =>
@@ -617,7 +764,11 @@ namespace Vibasic.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ItemId"));
 
+                    b.Property<DateTime?>("DefectiveAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<int?>("IssueDetailId")
+                        .IsConcurrencyToken()
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("PickedAt")
@@ -938,6 +1089,25 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Navigation("ReceiptDetail");
                 });
 
+            modelBuilder.Entity("Vibasic.Domain.AbnormalReportItem", b =>
+                {
+                    b.HasOne("Vibasic.Domain.StockItem", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Vibasic.Domain.AbnormalReport", "Report")
+                        .WithMany("Items")
+                        .HasForeignKey("ReportId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Item");
+
+                    b.Navigation("Report");
+                });
+
             modelBuilder.Entity("Vibasic.Domain.GoodsIssue", b =>
                 {
                     b.HasOne("Vibasic.Domain.User", "Approver")
@@ -962,11 +1132,18 @@ namespace Vibasic.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Vibasic.Domain.User", "Picker")
+                        .WithMany()
+                        .HasForeignKey("PickerId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Approver");
 
                     b.Navigation("Creator");
 
                     b.Navigation("Order");
+
+                    b.Navigation("Picker");
                 });
 
             modelBuilder.Entity("Vibasic.Domain.GoodsIssueDetail", b =>
@@ -1053,6 +1230,16 @@ namespace Vibasic.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Vibasic.Domain.Order", b =>
+                {
+                    b.HasOne("Vibasic.Domain.User", "Canceller")
+                        .WithMany()
+                        .HasForeignKey("CancelledBy")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Canceller");
+                });
+
             modelBuilder.Entity("Vibasic.Domain.OrderDetail", b =>
                 {
                     b.HasOne("Vibasic.Domain.Order", "Order")
@@ -1104,16 +1291,27 @@ namespace Vibasic.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("Vibasic.Domain.GoodsReceipt", "Receipt")
-                        .WithMany()
-                        .HasForeignKey("ReceiptId")
+                    b.HasOne("Vibasic.Domain.ReplenishmentReport", "Report")
+                        .WithMany("Proposals")
+                        .HasForeignKey("ReportId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Approver");
 
                     b.Navigation("Product");
 
-                    b.Navigation("Receipt");
+                    b.Navigation("Report");
+                });
+
+            modelBuilder.Entity("Vibasic.Domain.ReplenishmentReport", b =>
+                {
+                    b.HasOne("Vibasic.Domain.User", "Creator")
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Creator");
                 });
 
             modelBuilder.Entity("Vibasic.Domain.StockAlert", b =>
@@ -1239,6 +1437,11 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Navigation("ReceiptDetail");
                 });
 
+            modelBuilder.Entity("Vibasic.Domain.AbnormalReport", b =>
+                {
+                    b.Navigation("Items");
+                });
+
             modelBuilder.Entity("Vibasic.Domain.GoodsIssue", b =>
                 {
                     b.Navigation("Details");
@@ -1267,6 +1470,11 @@ namespace Vibasic.Infrastructure.Migrations
             modelBuilder.Entity("Vibasic.Domain.Product", b =>
                 {
                     b.Navigation("Policy");
+                });
+
+            modelBuilder.Entity("Vibasic.Domain.ReplenishmentReport", b =>
+                {
+                    b.Navigation("Proposals");
                 });
 
             modelBuilder.Entity("Vibasic.Domain.Stocktake", b =>

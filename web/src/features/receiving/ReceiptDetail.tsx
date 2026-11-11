@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertBanner, ApprovalStepper, Button, ConfirmDialog, DataTable, EmptyState, type DataTableColumn } from '../../design';
+import { AlertBanner, ApprovalStepper, Button, ConfirmDialog, DataTable, EmptyState, Icon, type DataTableColumn } from '../../design';
 import { fmt, fmtDateTime } from '../../app/format';
 import { useToast } from '../../app/toast';
 import { ApiError } from '../../app/api';
@@ -35,7 +35,7 @@ export function ReceiptDetail({ id, role, basePath }: { id: number; role: Role; 
     );
   }
   if (receipt.isError) return <ListError onRetry={() => receipt.refetch()} />;
-  const { header: h, lots, reports, note } = receipt.data;
+  const { header: h, lots, reports, note, revokeBlock } = receipt.data;
   const editable = h.status === 'receiving' || h.status === 'rejected';
   const normalQty = lots.filter(l => l.status === 'normal').reduce((s, l) => s + l.quantity, 0);
   const quarantined = lots.filter(l => l.status === 'quarantined');
@@ -50,8 +50,6 @@ export function ReceiptDetail({ id, role, basePath }: { id: number; role: Role; 
       setDialog(null);
       toast({
         tone: kind === 'reject' || kind === 'revoke' ? 'info' : 'success', title: done[kind],
-        message: kind === 'approve' && quarantined.length > 0 ? 'Xử lý tiếp biên bản bất thường của lô tạm cách ly.'
-          : kind === 'revoke' ? 'Phiếu trở về Chờ duyệt: duyệt lại, hoặc từ chối để nhân viên kho sửa.' : undefined,
       });
     },
     onError: e => { setDialog(null); toast({ tone: 'danger', title: 'Không thực hiện được', message: e.message }); },
@@ -118,8 +116,13 @@ export function ReceiptDetail({ id, role, basePath }: { id: number; role: Role; 
               <Button variant="danger-outline" icon="circle-x" onClick={() => setDialog('reject')}>Từ chối phiếu</Button>
               <Button icon="check" onClick={() => setDialog('approve')}>Duyệt phiếu</Button>
             </>}
-            {role === 'manager' && h.status === 'approved' && (
+            {role === 'manager' && h.status === 'approved' && !revokeBlock && (
               <Button variant="secondary" icon="undo-2" onClick={() => setDialog('revoke')}>Hủy duyệt</Button>
+            )}
+            {role === 'manager' && h.status === 'approved' && revokeBlock && (
+              <span className="vb-muted vb-row" style={{ gap: 6, maxWidth: 360, fontSize: 13, flexWrap: 'nowrap' }} title={revokeBlock}>
+                <Icon name="lock" size={16} /> <span>Không hủy duyệt được</span>
+              </span>
             )}
           </div>
         </div>
@@ -134,21 +137,14 @@ export function ReceiptDetail({ id, role, basePath }: { id: number; role: Role; 
           />
           {h.status === 'rejected' && (
             <AlertBanner tone="danger" title={`Phiếu bị từ chối bởi ${h.approverName ?? 'quản lý'}`}>
-              Lý do: {h.rejectReason}. {role === 'staff' ? 'Sửa phiếu rồi gửi duyệt lại.' : 'Nhân viên kho sẽ sửa và gửi lại.'}
+              Lý do: {h.rejectReason}
             </AlertBanner>
           )}
           {h.status === 'pending' && h.rejectReason && (
             <AlertBanner tone="info" title="Phiếu đã được gửi lại sau khi bị từ chối">Lý do lần trước: {h.rejectReason}</AlertBanner>
           )}
-          {role === 'staff' && h.status === 'receiving' && (
-            <AlertBanner tone="info" title="Bước tiếp theo">
-              In mã vạch, dán lên lô và từng sản phẩm, xếp hàng vào kho{quarantined.length > 0 ? ' (để riêng hàng không đạt)' : ''}, rồi chọn “Xác nhận nhập kho và gửi duyệt”.
-            </AlertBanner>
-          )}
           {role === 'manager' && h.status === 'approved' && reports.some(r => r.status === 'pending') && (
-            <AlertBanner tone="warning" title="Còn biên bản bất thường chờ xử lý">
-              Duyệt biên bản để khóa lô lỗi, hoặc từ chối để đưa lô về Bình thường và tính vào tồn kho.
-            </AlertBanner>
+            <AlertBanner tone="warning" title="Còn biên bản bất thường chờ xử lý" />
           )}
           {note && <div><span className="vb-muted">Ghi chú phiếu: </span>{note}</div>}
         </div>
@@ -169,40 +165,33 @@ export function ReceiptDetail({ id, role, basePath }: { id: number; role: Role; 
           <div className="vb-panel__head"><h3 className="vb-panel__title">Biên bản bất thường</h3></div>
           {reports.length > 0
             ? <DataTable columns={reportColumns} rows={reports} density={touch ? 'default' : 'compact'} onRowClick={r => nav(reportHref(role, r.id))} caption="Biên bản bất thường của phiếu" />
-            : <EmptyState icon="shield-alert" title="Chưa lập biên bản"
-                description={`Hệ thống lập ${quarantined.length} biên bản cho lô tạm cách ly khi bạn xác nhận nhập kho.`} />}
+            : <EmptyState icon="shield-alert" title="Chưa lập biên bản" />}
         </section>
       )}
 
       <ConfirmDialog
         open={dialog === 'submit'} title={`Gửi phiếu ${h.code} cho quản lý duyệt?`}
         description={<>
-          Xác nhận đã dán mã vạch và xếp {fmt(normalQty)} sản phẩm đạt vào kho.
-          {quarantined.length > 0 && <> Hệ thống lập {quarantined.length} biên bản bất thường cho {fmt(quarantined.reduce((s, l) => s + l.quantity, 0))} sản phẩm không đạt và giữ lô ở trạng thái Tạm cách ly.</>}
-          {' '}Sau khi gửi, phiếu không sửa được trừ khi bị từ chối.
+          {fmt(normalQty)} sản phẩm đạt{quarantined.length > 0 && <>, {fmt(quarantined.reduce((s, l) => s + l.quantity, 0))} sản phẩm không đạt</>}.
         </>}
         confirmLabel="Gửi duyệt" onConfirm={() => run('submit')} onCancel={() => setDialog(null)}
       />
       <ConfirmDialog
         open={dialog === 'approve'} title={`Duyệt phiếu ${h.code}?`}
         description={<>
-          Ghi nhận tồn kho {fmt(normalQty)} sản phẩm của {lots.filter(l => l.status === 'normal').length} lô Bình thường.
-          {quarantined.length > 0 && <> Lô tạm cách ly vẫn chưa xuất được cho đến khi xử lý biên bản bất thường.</>}
+          {fmt(normalQty)} sản phẩm của {lots.filter(l => l.status === 'normal').length} lô Bình thường{quarantined.length > 0 && <>, {quarantined.length} lô tạm cách ly</>}.
         </>}
         confirmLabel="Duyệt phiếu" onConfirm={() => run('approve')} onCancel={() => setDialog(null)}
       />
       <ConfirmDialog
         open={dialog === 'reject'} tone="danger" title={`Từ chối phiếu ${h.code}?`} requireReason
-        description="Tồn kho giữ nguyên. Nhân viên kho nhận được lý do để sửa phiếu và gửi lại."
         confirmLabel="Từ chối phiếu" onConfirm={reason => run('reject', reason)} onCancel={() => setDialog(null)}
       />
       <ConfirmDialog
-        open={dialog === 'revoke'} requireReason reasonPlaceholder="Vì sao cần hủy duyệt phiếu này…" reasonHelp="Lý do được gửi kèm thông báo cho nhân viên lập phiếu."
+        open={dialog === 'revoke'} requireReason
         title={`Hủy duyệt phiếu ${h.code}?`}
         description={<>
-          Tồn kho {fmt(normalQty)} sản phẩm của phiếu bị gỡ ra cho đến khi duyệt lại
-          {reports.length > 0 && <>; {reports.length} biên bản bất thường trở về Chờ duyệt và lô liên quan trở về Tạm cách ly</>}.
-          {' '}Phiếu trở về Chờ duyệt: bạn duyệt lại, hoặc từ chối để nhân viên kho sửa. Chỉ hủy được khi hàng của phiếu chưa được giữ chỗ, xuất kho hay kiểm kê.
+          {fmt(normalQty)} sản phẩm{reports.length > 0 && <>, {reports.length} biên bản bất thường</>}.
         </>}
         confirmLabel="Hủy duyệt" onConfirm={reason => run('revoke', reason)} onCancel={() => setDialog(null)}
       />

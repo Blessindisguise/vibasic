@@ -8,7 +8,7 @@ public record CategoryInput(string? Name, string? Description);
 public record SupplierInput(string? Name, string? Phone, string? Address);
 public record ProductInput(
     string? Sku, string? Name, string? Unit, int? CategoryId, int? SupplierId,
-    int? LeadTimeDays, int? SafetyStock, decimal? OrderingCost, decimal? HoldingCost);
+    int? LeadTimeDays, decimal? OrderingCost, decimal? HoldingCost);
 public record UserInput(string? Username, string? FullName, string? Password, UserRole? Role);
 
 /// <summary>Master data: UC_01 (accounts), UC_02 (products, categories, inventory policy), UC_03 (suppliers).</summary>
@@ -99,7 +99,6 @@ public partial class CatalogService(VibasicDbContext db)
             .Check(input.CategoryId is not null, "categoryId", "Chọn nhóm hàng.")
             .Check(input.SupplierId is not null, "supplierId", "Chọn nhà cung cấp chính.")
             .Check(input.LeadTimeDays is >= 1 and <= 365, "leadTimeDays", "Thời gian giao hàng từ 1 đến 365 ngày.")
-            .Check(input.SafetyStock is >= 0 and <= 1_000_000, "safetyStock", "Tồn kho an toàn là số nguyên từ 0 trở lên.")
             .Check(input.OrderingCost is > 0 and <= 1_000_000_000, "orderingCost", "Chi phí đặt hàng phải lớn hơn 0.")
             .Check(input.HoldingCost is > 0 and <= 1_000_000_000, "holdingCost", "Chi phí lưu kho phải lớn hơn 0.");
 
@@ -122,10 +121,9 @@ public partial class CatalogService(VibasicDbContext db)
         entity.Unit = unit!;
         entity.CategoryId = input.CategoryId!.Value;
         entity.SupplierId = input.SupplierId!.Value;
-        // ROP/EOQ are derived by the weekly job (UC_17/18); only their inputs are entered here.
+        // SS, ROP and EOQ are derived by the weekly job (Q4–Q6); only L, S and H are entered here.
         entity.Policy ??= new InventoryPolicy();
         entity.Policy.LeadTimeDays = input.LeadTimeDays!.Value;
-        entity.Policy.SafetyStock = input.SafetyStock!.Value;
         entity.Policy.OrderingCost = input.OrderingCost!.Value;
         entity.Policy.HoldingCost = input.HoldingCost!.Value;
         if (id is null) db.Products.Add(entity);

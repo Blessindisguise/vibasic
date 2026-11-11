@@ -5,6 +5,7 @@ using Vibasic.Api.Auth;
 using Vibasic.Domain;
 using Vibasic.Infrastructure;
 using Vibasic.Infrastructure.Catalog;
+using Vibasic.Infrastructure.Decision;
 
 namespace Vibasic.Api.Controllers;
 
@@ -69,12 +70,19 @@ public class SuppliersController(VibasicDbContext db, CatalogService catalog) : 
 [Authorize]
 public class ProductsController(VibasicDbContext db, CatalogService catalog) : ControllerBase
 {
-    public record PolicyDto(int LeadTimeDays, int SafetyStock, decimal OrderingCost, decimal HoldingCost,
-        decimal? CurrentRop, decimal? CurrentEoq, decimal? AvgDailyDemand, DateTime? LastRopCalculatedAt, DateTime? LastEoqCalculatedAt);
+    /// <param name="SafetyStock">Q4: calculated weekly with ROP and EOQ (null while they cannot be calculated).</param>
+    public record PolicyDto(int LeadTimeDays, decimal OrderingCost, decimal HoldingCost, decimal? SafetyStock,
+        decimal? CurrentRop, decimal? CurrentEoq, decimal? AvgDailyDemand, decimal? DemandStdDev, DemandState DemandState,
+        DateTime? LastRopCalculatedAt, DateTime? LastEoqCalculatedAt);
     /// <param name="Available">Tồn kho khả dụng: sum of QuantityOnHand over "Bình thường" lots.</param>
+    /// <param name="Ordered">Orders received but not issued yet (Q8).</param>
     /// <param name="LotCount">Lots ever received; the SKU is frozen once this is above 0.</param>
     public record ProductRow(int Id, string Sku, string Name, string Unit, int CategoryId, string CategoryName,
-        int SupplierId, string SupplierName, int Available, int LotCount, PolicyDto? Policy);
+        int SupplierId, string SupplierName, int Available, int Ordered, int LotCount, PolicyDto? Policy)
+    {
+        /// <summary>Tồn ròng = Available − Ordered (Q8), compared with ROP.</summary>
+        public int Net => Available - Ordered;
+    }
 
     [HttpGet]
     public async Task<List<ProductRow>> List() => await Rows(db.Products.OrderBy(p => p.SKU)).ToListAsync();
@@ -102,9 +110,11 @@ public class ProductsController(VibasicDbContext db, CatalogService catalog) : C
     private IQueryable<ProductRow> Rows(IQueryable<Product> source) => source.Select(p => new ProductRow(
         p.ProductId, p.SKU, p.ProductName, p.Unit, p.CategoryId, p.Category.CategoryName, p.SupplierId, p.Supplier.SupplierName,
         db.GoodsReceiptDetails.Where(d => d.ProductId == p.ProductId && d.Status == LotStatus.Normal).Sum(d => (int?)d.QuantityOnHand) ?? 0,
+        db.OrderDetails.Where(d => d.ProductId == p.ProductId && ReplenishmentService.OpenOrders.Contains(d.Order.Status)).Sum(d => (int?)d.Quantity) ?? 0,
         db.GoodsReceiptDetails.Count(d => d.ProductId == p.ProductId),
-        p.Policy == null ? null : new PolicyDto(p.Policy.LeadTimeDays, p.Policy.SafetyStock, p.Policy.OrderingCost, p.Policy.HoldingCost,
-            p.Policy.CurrentROP, p.Policy.CurrentEOQ, p.Policy.AvgDailyDemand, p.Policy.LastROPCalculatedAt, p.Policy.LastEOQCalculatedAt)));
+        p.Policy == null ? null : new PolicyDto(p.Policy.LeadTimeDays, p.Policy.OrderingCost, p.Policy.HoldingCost, p.Policy.SafetyStock,
+            p.Policy.CurrentROP, p.Policy.CurrentEOQ, p.Policy.AvgDailyDemand, p.Policy.DemandStdDev, p.Policy.DemandState,
+            p.Policy.LastROPCalculatedAt, p.Policy.LastEOQCalculatedAt)));
 }
 
 [ApiController]

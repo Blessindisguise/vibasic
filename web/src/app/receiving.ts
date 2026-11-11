@@ -16,10 +16,6 @@ export interface ReceiptRow {
   /** Số chứng từ giao hàng của nhà cung cấp. */
   deliveryNoteNo?: string;
 }
-/** Goods ordered through an approved replenishment proposal, not received yet (N1). */
-export interface ExpectedRow {
-  proposalId: number; productId: number; sku: string; productName: string; unit: string; supplierId: number; orderedQuantity: number; approvedAt?: string;
-}
 export interface LotRow {
   id: number; lotCode: string; productId: number; sku: string; productName: string; unit: string;
   quantity: number; quantityOnHand: number; status: LotStatus; documentQuantity?: number; note?: string;
@@ -31,8 +27,12 @@ export interface ReportRow {
   receiptId: number; receiptCode: string; receiptStatus: ReceiptStatus;
   /** Goods issue during which the defect was found (source "Xuất kho"). */
   issueId?: number;
+  /** items: only the listed items are out of stock; lot: the whole lot is quarantined / locked. */
+  scope: ReportScope;
 }
-export interface ReceiptView { header: ReceiptRow; note?: string; lots: LotRow[]; reports: ReportRow[] }
+export type ReportScope = 'items' | 'lot';
+/** revokeBlock: approved receipt whose stock is already in use, and why "Hủy duyệt" is no longer possible. */
+export interface ReceiptView { header: ReceiptRow; note?: string; lots: LotRow[]; reports: ReportRow[]; revokeBlock?: string }
 export interface LabelSheet {
   code: string; supplierName: string; receiptDate: string;
   lots: { lotCode: string; sku: string; productName: string; unit: string; status: LotStatus; quantity: number; serials: string[] }[];
@@ -55,11 +55,6 @@ export const useReceipts = (f: ReceiptFilter = {}) =>
   useQuery({ queryKey: ['receipts', f], queryFn: () => api<ReceiptRow[]>(`/receipts${qs(f)}`) });
 export const useReceipt = (id: number) =>
   useQuery({ queryKey: ['receipt', id], queryFn: () => api<ReceiptView>(`/receipts/${id}`), enabled: id > 0 });
-export const useExpected = (supplierId: number | null) =>
-  useQuery({
-    queryKey: ['receipts', 'expected', supplierId], enabled: supplierId != null,
-    queryFn: () => api<ExpectedRow[]>(`/receipts/expected${qs({ supplierId: String(supplierId) })}`),
-  });
 export const useLabels = (id: number) =>
   useQuery({ queryKey: ['receipt', id, 'labels'], queryFn: () => api<LabelSheet>(`/receipts/${id}/labels`) });
 export const useReports = (status?: ApprovalStatus, source?: AbnormalSource) =>
@@ -71,6 +66,8 @@ export const useReports = (status?: ApprovalStatus, source?: AbnormalSource) =>
 export interface ReportView {
   report: ReportRow; lot: StockLotRow; issueCode?: string; stocktakeId?: number; stocktakeCode?: string;
   items: { status: ItemStatus; count: number }[]; others: ReportRow[];
+  /** The items listed on the report and how they stand now; empty for reports filed before items were recorded. */
+  defective: { id: number; serial: string; status: ItemStatus; issueCode?: string }[];
 }
 export const useReport = (id: number) =>
   useQuery({ queryKey: ['abnormal-reports', 'detail', id], enabled: id > 0, queryFn: () => api<ReportView>(`/abnormal-reports/${id}`) });
@@ -110,8 +107,8 @@ export function useReceiptAction() {
 export function useReportAction() {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: ({ id, action, reason }: { id: number; action: 'approve' | 'reject' | 'revoke'; reason?: string }) =>
-      api<ReportRow>(`/abnormal-reports/${id}/${action}`, { method: 'POST', json: action === 'approve' ? undefined : { reason } }),
+    mutationFn: ({ id, action, reason, wholeLot }: { id: number; action: 'approve' | 'reject' | 'revoke'; reason?: string; wholeLot?: boolean }) =>
+      api<ReportRow>(`/abnormal-reports/${id}/${action}`, { method: 'POST', json: action === 'approve' ? { wholeLot } : { reason } }),
     onSuccess: refresh,
   });
 }

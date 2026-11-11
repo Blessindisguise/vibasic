@@ -13,7 +13,7 @@ public class FoundationTests
     [Theory]
     [InlineData(LotStatus.Quarantined, "Tạm cách ly")]
     [InlineData(LotStatus.Locked, "Đã khóa")]
-    [InlineData(IssueStatus.OnHold, "Chờ xử lý")]
+    [InlineData(IssueStatus.Cancelled, "Đã hủy")]
     public void Status_is_persisted_as_vietnamese_label(object value, string label)
     {
         var conv = (Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter)
@@ -53,12 +53,18 @@ public class FoundationTests
         // Two codes in one unit of work never collide.
         Assert.NotEqual(next, await gen.NextDocumentAsync(CodeGenerator.Issue, now));
 
-        Assert.Equal("PN-2611-0001", await gen.NextDocumentAsync(CodeGenerator.Receipt, now));
-        var (head, first) = await gen.ReserveSerialsAsync("THT-01", now, 5);
-        Assert.Equal("SP-THT01-2611-", head);
+        // A month with no documents yet starts at 0001; serials do the same per product.
+        var nextMonth = now.AddMonths(1);
+        Assert.Equal("PN-2612-0001", await gen.NextDocumentAsync(CodeGenerator.Receipt, nextMonth));
+        var (head, first) = await gen.ReserveSerialsAsync("THT-01", nextMonth, 5);
+        Assert.Equal("SP-THT01-2612-", head);
         Assert.Equal(1, first);
-        var (_, after) = await gen.ReserveSerialsAsync("THT-01", now, 1);
+        var (_, after) = await gen.ReserveSerialsAsync("THT-01", nextMonth, 1);
         Assert.Equal(6, after);
+        // In the current month they continue after the seeded ones.
+        var seeded = await db.StockItems.Where(i => i.SerialCode.StartsWith("SP-THT01-2611-")).Select(i => i.SerialCode).ToListAsync();
+        var (_, current) = await gen.ReserveSerialsAsync("THT-01", now, 1);
+        Assert.Equal(seeded.Count == 0 ? 1 : seeded.Max(s => int.Parse(s[^4..])) + 1, current);
     }
 
     [Fact]
@@ -70,7 +76,8 @@ public class FoundationTests
         Assert.All(lots, l => Assert.Equal(ReceiptStatus.Approved, l.Receipt.Status));
         Assert.All(lots, l => Assert.Equal(l.QuantityOnHand, l.Items.Count(i => i.Status == ItemStatus.InStock)));
         Assert.All(lots, l => Assert.Equal(l.Quantity, l.Items.Count));
-        Assert.Equal(3, await db.Orders.CountAsync(o => o.Status == OrderStatus.Open));
+        // Three orders from the sales system and up to two wholesale orders, all waiting to be issued.
+        Assert.InRange(await db.Orders.CountAsync(o => o.Status == OrderStatus.Open), 3, 5);
     }
 
     [Fact]

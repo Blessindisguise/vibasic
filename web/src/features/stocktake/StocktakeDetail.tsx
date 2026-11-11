@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertBanner, ApprovalStepper, Button, ConfirmDialog, DataTable, EmptyState, type DataTableColumn } from '../../design';
+import { AlertBanner, ApprovalStepper, Button, Checkbox, ConfirmDialog, DataTable, EmptyState, type DataTableColumn } from '../../design';
 import { ApiError } from '../../app/api';
 import { fmt, fmtDateTime, fmtShort } from '../../app/format';
 import { SerialRanges } from '../../app/SerialRanges';
 import { useToast } from '../../app/toast';
-import { Code, ListError, Loading } from '../../app/ui';
+import { Code, ListError, Loading, NO_MATCH, PanelSearch } from '../../app/ui';
+import { matches } from '../../app/text';
 import { ApprovalBadge, LotStatusBadge } from '../../app/statusBadges';
 import { useStocktake, useStocktakeAction, type StocktakeDetailRow } from '../../app/stock';
 import { reportHref, type ReportRow } from '../../app/receiving';
@@ -19,6 +20,8 @@ export function StocktakeDetail({ id, role, back }: { id: number; role: 'manager
   const nav = useNavigate();
   const [dialog, setDialog] = useState<'approve' | 'reject' | null>(null);
   const touch = role === 'staff';
+  const [search, setSearch] = useState('');
+  const [onlyDiff, setOnlyDiff] = useState(false);
 
   if (stocktake.isPending) return <Loading />;
   if (stocktake.error instanceof ApiError && stocktake.error.status === 404) {
@@ -31,8 +34,8 @@ export function StocktakeDetail({ id, role, back }: { id: number; role: 'manager
     onSuccess: () => {
       setDialog(null);
       toast(kind === 'approve'
-        ? { tone: 'success', title: `Đã duyệt phiếu ${h.code}`, message: 'Tồn kho đã điều chỉnh theo số thực tế; kế hoạch hoàn thành.' }
-        : { tone: 'info', title: `Đã từ chối phiếu ${h.code}`, message: 'Tồn kho giữ nguyên; nhân viên sẽ kiểm đếm lại.' });
+        ? { tone: 'success', title: `Đã duyệt phiếu ${h.code}` }
+        : { tone: 'info', title: `Đã từ chối phiếu ${h.code}` });
     },
     onError: e => { setDialog(null); toast({ tone: 'danger', title: 'Không thực hiện được', message: e.message }); },
   });
@@ -50,7 +53,7 @@ export function StocktakeDetail({ id, role, back }: { id: number; role: 'manager
         </span>
       ),
     },
-    { key: 'system', header: <span title="Số sản phẩm hệ thống ghi nhận trên kệ lúc đếm (không gồm hàng đang soạn cho phiếu xuất)">Trên kệ (HT)</span>, numeric: true, width: 110, render: d => fmt(d.systemQuantity) },
+    { key: 'system', header: 'Trên kệ (HT)', numeric: true, width: 110, render: d => fmt(d.systemQuantity) },
     { key: 'actual', header: 'Thực tế', numeric: true, width: 90, render: d => <b>{fmt(d.actualQuantity)}</b> },
     {
       key: 'diff', header: 'Chênh lệch', numeric: true, width: 110,
@@ -65,9 +68,9 @@ export function StocktakeDetail({ id, role, back }: { id: number; role: 'manager
       render: d => (
         <span style={{ display: 'flex', flexDirection: 'column', gap: 4, whiteSpace: 'normal' }}>
           {d.reason ? <span>{d.reason}</span> : <span className="vb-muted">—</span>}
-          {d.unlabeled > 0 && <span className="vb-muted">{fmt(d.unlabeled)} {d.unit} không có tem: cấp mã mới khi duyệt.</span>}
+          {d.unlabeled > 0 && <span className="vb-muted">{fmt(d.unlabeled)} {d.unit} không có tem</span>}
           {(d.missingSerials?.length ?? 0) > 0 && <>
-            <span className="vb-muted">Không quét được, sẽ ghi thất thoát:</span>
+            <span className="vb-muted">Không quét được:</span>
             <SerialRanges serials={d.missingSerials!} unit={d.unit} />
           </>}
         </span>
@@ -111,17 +114,24 @@ export function StocktakeDetail({ id, role, back }: { id: number; role: 'manager
             <span style={{ color: h.shortage ? 'var(--red-700)' : undefined }}>Thiếu {fmt(h.shortage)}</span>
             <span style={{ color: h.surplus ? 'var(--blue-700)' : undefined }}>Thừa {fmt(h.surplus)}</span>
           </div>
-          {h.status === 'rejected' && <AlertBanner tone="danger" title={`Bị từ chối bởi ${h.approverName}`}>Lý do: {h.rejectReason}. Tồn kho giữ nguyên, kế hoạch trở về Chờ thực hiện.</AlertBanner>}
-          {h.status === 'approved' && <AlertBanner tone="success">Tồn kho đã điều chỉnh: sản phẩm thiếu được đánh dấu thất thoát (lô quét tem: đúng các mã không quét được), sản phẩm thừa hoặc không có tem được tạo mã định danh mới.</AlertBanner>}
-          <div className="vb-muted">“Trên kệ (HT)” là số hệ thống ghi nhận trên kệ tại lúc đếm từng lô; hàng đang soạn cho phiếu xuất không tính.</div>
+          {h.status === 'rejected' && <AlertBanner tone="danger" title={`Bị từ chối bởi ${h.approverName}`}>Lý do: {h.rejectReason}</AlertBanner>}
+          {h.status === 'approved' && <AlertBanner tone="success" title="Tồn kho đã điều chỉnh" />}
           {role === 'manager' && h.status === 'pending' && reports.some(r => r.status === 'pending') && (
-            <AlertBanner tone="warning" title="Có biên bản bất thường kèm theo">Xử lý biên bản ở bảng bên dưới (UC_15 bước 9).</AlertBanner>
+            <AlertBanner tone="warning" title="Có biên bản bất thường kèm theo" />
           )}
         </div>
       </section>
       <section className="vb-panel">
-        <div className="vb-panel__head"><h3 className="vb-panel__title">Đối chiếu theo lô</h3></div>
-        <DataTable columns={columns} rows={details} density={touch ? 'default' : 'compact'} caption="Đối chiếu theo lô" />
+        <div className="vb-panel__head" style={{ flexWrap: 'wrap', gap: 12 }}>
+          <h3 className="vb-panel__title">Đối chiếu theo lô <span className="vb-muted">({fmt(details.length)})</span></h3>
+          <PanelSearch size={touch ? 'lg' : 'md'} value={search} onChange={setSearch} placeholder="Mã lô, SKU, tên hàng…" label="Lọc lô" />
+          <Checkbox size={touch ? 'lg' : 'md'} label="Chỉ lô chênh lệch" checked={onlyDiff} onChange={e => setOnlyDiff(e.target.checked)} />
+        </div>
+        <DataTable
+          columns={columns} density={touch ? 'default' : 'compact'} caption="Đối chiếu theo lô"
+          rows={details.filter(d => matches(search, d.lotCode, d.sku, d.productName, d.reason) && (!onlyDiff || d.actualQuantity !== d.systemQuantity))}
+          empty={search || onlyDiff ? NO_MATCH : undefined}
+        />
       </section>
       {reports.length > 0 && (
         <section className="vb-panel">
@@ -131,13 +141,11 @@ export function StocktakeDetail({ id, role, back }: { id: number; role: 'manager
       )}
       <ConfirmDialog
         open={dialog === 'approve'} title={`Duyệt phiếu ${h.code}?`}
-        description={h.diffLots === 0 ? 'Số thực tế khớp hệ thống; kế hoạch chuyển Hoàn thành.'
-          : `Điều chỉnh ${h.diffLots} lô: ${fmt(h.shortage)} sản phẩm thiếu được đánh dấu thất thoát, ${fmt(h.surplus)} sản phẩm thừa được tạo mã mới. Hàng đang giữ chỗ bị thiếu sẽ được thay theo FIFO.`}
+        description={h.diffLots === 0 ? 'Khớp hệ thống.' : `${h.diffLots} lô chênh lệch · thiếu ${fmt(h.shortage)} · thừa ${fmt(h.surplus)}.`}
         confirmLabel="Duyệt và điều chỉnh" onConfirm={() => run('approve')} onCancel={() => setDialog(null)}
       />
       <ConfirmDialog
         open={dialog === 'reject'} tone="danger" requireReason title={`Từ chối phiếu ${h.code}?`}
-        description="Tồn kho giữ nguyên. Kế hoạch trở về Chờ thực hiện để nhân viên kiểm đếm lại."
         confirmLabel="Từ chối, kiểm lại" onConfirm={reason => run('reject', reason)} onCancel={() => setDialog(null)}
       />
     </div>

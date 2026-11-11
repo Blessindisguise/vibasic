@@ -7,19 +7,26 @@ import { StaffLayout, STAFF_NAV } from '../features/staff/StaffLayout';
 import { ProductsPage } from '../features/manager/catalog/ProductsPage';
 import { SuppliersPage } from '../features/manager/catalog/SuppliersPage';
 import { AccountsPage } from '../features/manager/catalog/AccountsPage';
+import { ProductDetail } from '../features/manager/catalog/ProductDetail';
+import { SupplierDetail } from '../features/manager/catalog/SupplierDetail';
 import { ApprovalsPage } from '../features/manager/approvals/ApprovalsPage';
 import { ReceiptListPage } from '../features/receiving/ReceiptListPage';
 import { ReceiptDetail } from '../features/receiving/ReceiptDetail';
 import { ReceiptForm } from '../features/staff/receiving/ReceiptForm';
 import { ReceiptLabelsPage } from '../features/print/ReceiptLabelsPage';
+import { ReportPrintPage } from '../features/print/ReportPrintPage';
+import { InventoryPrintPage, MovementPrintPage } from '../features/print/ReportsPrintPage';
+import { ReplenishmentPrintPage } from '../features/print/ReplenishmentPrintPage';
 import { IssueListPage } from '../features/issuing/IssueListPage';
 import { IssueDetail } from '../features/issuing/IssueDetail';
 import { StaffIssueHome } from '../features/staff/issuing/StaffIssueHome';
 import { OrderAllocationPage } from '../features/staff/issuing/OrderAllocationPage';
+import { OrderListPage } from '../features/issuing/OrderListPage';
 import { LotLookupPage } from '../features/stock/LotLookupPage';
 import { LotDetailPage } from '../features/stock/LotDetailPage';
 import { StocktakeManagerPage } from '../features/stocktake/StocktakeManagerPage';
 import { StocktakeDetail } from '../features/stocktake/StocktakeDetail';
+import { PlanDetail } from '../features/stocktake/PlanDetail';
 import { StaffStocktakeHome } from '../features/staff/stocktake/StaffStocktakeHome';
 import { CountingPage } from '../features/staff/stocktake/CountingPage';
 import { AbnormalReportsPage } from '../features/abnormal/AbnormalReportsPage';
@@ -27,7 +34,7 @@ import { ReportDetail } from '../features/abnormal/ReportDetail';
 import { AlertsPage } from '../features/decision/AlertsPage';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
 import { ReportsPage } from '../features/reports/ReportsPage';
-import { ProposalsPage } from '../features/decision/ProposalsPage';
+import { ProposalsPage, ReplenishmentReportsPage } from '../features/decision/ProposalsPage';
 
 function RequireRole({ role, children }: { role: Role; children: ReactNode }) {
   const { user, ready } = useAuth();
@@ -59,6 +66,7 @@ const receiptScreen = (role: Role, base: string): Screen => ([first, second]) =>
 /** /ql/xuat-kho[/:id]; staff /kho/xuat-kho (orders, pick queue, issues), /don/:orderId, /:id. */
 const issueScreen = (role: Role, base: string): Screen => ([first, second]) => {
   if (!first) return role === 'staff' ? <StaffIssueHome /> : <IssueListPage role={role} basePath={base} />;
+  if (role === 'manager' && first === 'don') return <OrderListPage basePath={base} />;
   if (role === 'staff' && first === 'don') {
     const orderId = Number(second);
     return Number.isInteger(orderId) && orderId > 0 ? <OrderAllocationPage key={orderId} orderId={orderId} /> : <Navigate to={base} replace />;
@@ -77,7 +85,7 @@ const lotScreen = (role: Role, base: string): Screen => ([first]) => {
   return id ? <LotDetailPage key={id} id={id} role={role} basePath={base} /> : <Navigate to={base} replace />;
 };
 
-/** Manager: plans + stocktakes, /phieu/:id. Staff: plans to count, /:planId (counting), /phieu/:id. */
+/** Manager: plans + stocktakes, /:planId (plan detail, edit), /phieu/:id. Staff: plans to count, /:planId (counting), /phieu/:id. */
 const stocktakeScreen = (role: Role, base: string): Screen => ([first, second]) => {
   if (!first) return role === 'manager' ? <StocktakeManagerPage /> : <StaffStocktakeHome />;
   if (first === 'phieu') {
@@ -85,7 +93,8 @@ const stocktakeScreen = (role: Role, base: string): Screen => ([first, second]) 
     return id ? <StocktakeDetail key={id} id={id} role={role} back={role === 'manager' ? `${base}?tab=phieu` : base} /> : <Navigate to={base} replace />;
   }
   const planId = positiveId(first);
-  return role === 'staff' && planId ? <CountingPage key={planId} planId={planId} /> : <Navigate to={base} replace />;
+  if (!planId) return <Navigate to={base} replace />;
+  return role === 'staff' ? <CountingPage key={planId} planId={planId} /> : <PlanDetail key={planId} id={planId} back={base} />;
 };
 
 /** /ql/bat-thuong or /kho/bao-loi, and /:reportId. */
@@ -100,14 +109,22 @@ const MANAGER_SCREENS: Record<string, Screen> = {
   'bao-cao': () => <ReportsPage />,
   'cho-duyet': () => <ApprovalsPage />,
   'canh-bao': () => <AlertsPage />,
-  'de-xuat': () => <ProposalsPage />,
+  'de-xuat': ([first]) => (!first ? <ProposalsPage /> : first === 'bao-cao' ? <ReplenishmentReportsPage /> : <Navigate to="/ql/de-xuat" replace />),
   'lo-hang': lotScreen('manager', '/ql/lo-hang'),
   'kiem-ke': stocktakeScreen('manager', '/ql/kiem-ke'),
   'bat-thuong': reportScreen('manager', '/ql/bat-thuong'),
   'nhap-kho': receiptScreen('manager', '/ql/nhap-kho'),
   'xuat-kho': issueScreen('manager', '/ql/xuat-kho'),
-  'hang-hoa': () => <ProductsPage />,
-  'nha-cung-cap': () => <SuppliersPage />,
+  'hang-hoa': ([first]) => {
+    if (!first) return <ProductsPage />;
+    const id = positiveId(first);
+    return id ? <ProductDetail key={id} id={id} back="/ql/hang-hoa" /> : <Navigate to="/ql/hang-hoa" replace />;
+  },
+  'nha-cung-cap': ([first]) => {
+    if (!first) return <SuppliersPage />;
+    const id = positiveId(first);
+    return id ? <SupplierDetail key={id} id={id} back="/ql/nha-cung-cap" /> : <Navigate to="/ql/nha-cung-cap" replace />;
+  },
   'tai-khoan': () => <AccountsPage />,
 };
 
@@ -160,5 +177,9 @@ export const router = createBrowserRouter([
     ],
   },
   { path: '/in/nhap-kho/:id', element: <RequireUser><ReceiptLabelsPage /></RequireUser> },
+  { path: '/in/bien-ban/:id', element: <RequireUser><ReportPrintPage /></RequireUser> },
+  { path: '/in/bao-cao/ton-kho', element: <RequireRole role="manager"><InventoryPrintPage /></RequireRole> },
+  { path: '/in/bao-cao/nhap-xuat', element: <RequireRole role="manager"><MovementPrintPage /></RequireRole> },
+  { path: '/in/bao-cao/de-xuat/:id', element: <RequireRole role="manager"><ReplenishmentPrintPage /></RequireRole> },
   { path: '*', element: <Home /> },
 ]);
