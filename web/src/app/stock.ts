@@ -83,7 +83,7 @@ export const useStocktakes = (status?: ApprovalStatus) =>
   useQuery({ queryKey: ['stocktakes', status ?? 'all'], queryFn: () => api<StocktakeRow[]>(`/stocktakes${qs({ status })}`) });
 export const useStocktake = (id: number) => useQuery({ queryKey: ['stocktake', id], queryFn: () => api<StocktakeView>(`/stocktakes/${id}`) });
 
-/** Stocktake changes touch plans, lots, stock, issues, approvals and notifications. */
+/** Stocktake changes touch plans, lots, stock, issues and approvals. */
 function useRefresh() {
   const qc = useQueryClient();
   return () => ['plans', 'stocktakes', 'stocktake', 'lots', 'lot', 'products', 'approvals', 'abnormal-reports', 'issues', 'issue', 'orders', 'decision']

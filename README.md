@@ -63,6 +63,43 @@ cd api; dotnet tool restore; dotnet ef database drop -f -p Vibasic.Infrastructur
 
 Lịch sử được sinh lùi từ ngày chạy seed nên luôn còn mới.
 
+## Cấu trúc và cách hoạt động
+
+Trình duyệt chạy web React. Web gọi API qua đường dẫn `/api/...`: khi chạy dev, Vite chuyển các lời gọi này sang API ở cổng 5030. API kiểm tra quyền bằng JWT, xử lý nghiệp vụ rồi đọc ghi SQL Server qua EF Core.
+
+```
+Trình duyệt (React, :5173) ──/api──▶ ASP.NET Core API (:5030) ──EF Core──▶ SQL Server "Vibasic" (22 bảng)
+```
+
+### `api/`: phía máy chủ, chia 4 project
+
+| Project | Vai trò |
+|---|---|
+| `Vibasic.Domain` | Lớp dữ liệu (`Entities.cs`: 22 bảng) và trạng thái (`Enums.cs`). Trạng thái lưu trong DB bằng nhãn tiếng Việt, ví dụ "Chờ lấy hàng". |
+| `Vibasic.Infrastructure` | Toàn bộ quy tắc nghiệp vụ, mỗi nhóm một service: `Receiving` (nhập kho), `Issuing` (xuất kho FIFO, hủy đơn), `Stocktaking` (kiểm kê), `Abnormal` (biên bản bất thường), `Decision` (ROP, EOQ, cảnh báo, đề xuất), `Catalog` (danh mục). Ngoài ra có `VibasicDbContext` (ánh xạ bảng), `CodeGenerator` (mã phiếu, mã lô, mã sản phẩm), `Migrations` (lịch sử thay đổi CSDL) và `Seed` (dữ liệu mẫu). |
+| `Vibasic.Api` | Cửa vào HTTP. `Controllers/` nhận yêu cầu, kiểm tra vai trò rồi gọi service tương ứng. `Auth/` cấp JWT khi đăng nhập. `ReplenishmentJob` chạy nền, tính lại ROP và EOQ lúc 02:00 thứ Hai. `Program.cs` cấu hình mọi thứ và tự áp migration khi khởi động. |
+| `Vibasic.Tests` | Kiểm thử tự động bằng xUnit, chạy trên DB giả trong bộ nhớ. |
+
+Mỗi thay đổi tồn kho đều đi qua cùng một luồng: controller gọi service, service kiểm tra quy tắc rồi ghi DB, sau đó gọi `ReplenishmentService.CheckAsync`. Hàm này mở, cập nhật hoặc đóng cảnh báo và đề xuất bổ sung theo tồn ròng mới.
+
+### `web/`: phía giao diện
+
+| Thư mục | Vai trò |
+|---|---|
+| `src/app/` | Phần dùng chung: `router.tsx` (đường dẫn trang), `api.ts` (gọi API kèm JWT), `auth.tsx` (đăng nhập và vai trò), và các file hook gọi API theo nghiệp vụ như `issuing.ts`, `receiving.ts`, `stock.ts`, `decision.ts`. |
+| `src/features/` | Màn hình theo nghiệp vụ: `manager/` (khung giao diện Quản lý), `staff/` (khung giao diện Nhân viên kho cho tablet và điện thoại), `receiving/`, `issuing/`, `stocktake/`, `abnormal/`, `decision/`, `reports/`, `print/` (trang in tem, biên bản, báo cáo). |
+| `src/design/` | Bộ component, màu và font chép từ `design-system/vibasic-design`. |
+
+Đường dẫn trang theo vai trò: `/ql/...` cho Quản lý, `/kho/...` cho Nhân viên kho, `/in/...` cho các trang in.
+
+### `docs/`
+
+- [Hướng dẫn sử dụng](docs/huong-dan-su-dung.md): quy tắc, trạng thái và cách thao tác.
+- [Từ điển dữ liệu](docs/tu-dien-du-lieu.md): 22 bảng, từng cột, màn hình nào dùng bảng nào, quy trình từng bước.
+- [Thay đổi so với CSDL trong báo cáo](docs/schema-changes.md).
+- Sơ đồ lớp: [ảnh](docs/so-do-lop.png), [PlantUML](docs/so-do-lop.puml), [Mermaid](docs/so-do-lop.mmd).
+- `anh-giao-dien/`: ảnh chụp từng màn hình và từng bước quy trình.
+
 ## Kiểm thử
 
 ```powershell
@@ -74,10 +111,11 @@ cd web; npx tsc -b
 
 | Giai đoạn | Nội dung | Trạng thái |
 |---|---|---|
-| 1 | Nền tảng: CSDL 19 bảng theo sơ đồ lớp Hình 3.10, dữ liệu mẫu, đăng nhập JWT, khung giao diện cho hai vai trò | Xong |
+| 1 | Nền tảng: CSDL theo sơ đồ lớp Hình 3.10, dữ liệu mẫu, đăng nhập JWT, khung giao diện cho hai vai trò | Xong |
 | 2 | Danh mục (UC_01–03) và chính sách tồn kho | Xong |
-| 3 | Nhập kho (UC_04–06, UC_10 phần nhập), xử lý biên bản của lô cách ly khi nhập (UC_12), thông báo | Xong |
-| 4 | Xuất kho FIFO (UC_07–10), báo hàng lỗi khi xuất (UC_11 nguồn xuất kho) | Xong |
+| 3 | Nhập kho (UC_04–06), duyệt phiếu nhập (UC_10), xử lý biên bản của lô cách ly khi nhập (UC_12) | Xong |
+| 4 | Xuất kho FIFO (UC_07–09), báo hàng lỗi khi xuất (UC_11 nguồn xuất kho) | Xong |
 | 5 | Biên bản bất thường, kiểm kê, tra cứu lô (UC_11–16) | Xong |
 | 6 | ROP, EOQ, cảnh báo, đề xuất (UC_17–18) | Xong |
 | 7 | Báo cáo và tổng quan (UC_19) | Xong |
+| 8 | Hủy đơn hàng (UC_20), đề xuất theo bộ quy tắc Q1–Q20, báo cáo đề xuất DX; phiếu xuất không cần duyệt; bỏ thông báo trong app; CSDL chốt 22 bảng | Xong |
