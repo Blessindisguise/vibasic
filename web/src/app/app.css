@@ -6,7 +6,7 @@ html, body, #root { height: 100%; }
 .vb-btn--ghost.vb-on-brand:hover { background: var(--green-600); color: #fff; }
 .vb-btn--ghost.vb-on-brand:active { background: var(--green-700); }
 
-/* Phone header: the page title needs the room, so the user's name is hidden (notifications and logout stay). */
+/* Phone header: the page title needs the room, so the user's name is hidden (logout stays). */
 @media (max-width: 480px) { .vb-shell-user { display: none !important; } }
 
 /* Staff sidebar on tablets: 48 px rows, 16 px labels (touch targets ≥ 44 px). */
