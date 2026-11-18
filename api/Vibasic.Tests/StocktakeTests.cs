@@ -40,14 +40,13 @@ public class StocktakeTests
         var db = new VibasicDbContext(new DbContextOptionsBuilder<VibasicDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         await DbSeeder.SeedAsync(db, Now.AddDays(-1));
         var clock = new FixedClock(Now);
-        var notifier = new Notifier(db, clock);
         var codes = new CodeGenerator(db);
-        var replenish = new ReplenishmentService(db, notifier, clock);
-        var issues = new IssueService(db, codes, notifier, clock, replenish);
+        var replenish = new ReplenishmentService(db, clock);
+        var issues = new IssueService(db, codes, clock, replenish);
         await TestStock.AddLotsAsync(db, clock, TestStock.MultiLot);
         return new Ctx
         {
-            Db = db, Issues = issues, Stocktakes = new StocktakeService(db, codes, notifier, clock, issues, replenish),
+            Db = db, Issues = issues, Stocktakes = new StocktakeService(db, codes, clock, issues, replenish),
             Staff = db.Users.First(u => u.Username == "nhanvien1").UserId,
             Manager = db.Users.First(u => u.Username == "quanly").UserId,
         };
@@ -71,7 +70,6 @@ public class StocktakeTests
         var sheet = await c.Stocktakes.SheetAsync(whole.PlanId);
         Assert.Equal(await c.Stocktakes.CountableLots().CountAsync(), sheet.Count);
         Assert.Contains(sheet, s => s.Status == LotStatus.Locked); // locked lots are physically there and are counted too
-        Assert.Contains(c.Db.Notifications, n => n.Title.Contains(whole.Code));
     }
 
     [Fact]
@@ -90,7 +88,6 @@ public class StocktakeTests
         Assert.Equal(Today.AddDays(2), plan.PlannedDate);
         Assert.Equal("Kiểm kệ A", plan.Note);
         Assert.Equal(2, (await c.Stocktakes.SheetAsync(plan.PlanId)).Count);
-        Assert.Contains(c.Db.Notifications, n => n.Title == $"Kế hoạch kiểm kê {plan.Code} đã thay đổi");
 
         // Dropping a lot and switching to the whole warehouse both update the sheet.
         await c.Stocktakes.UpdatePlanAsync(plan.PlanId, input(Today.AddDays(2), b), c.Manager);
@@ -179,7 +176,7 @@ public class StocktakeTests
         var onIssue = await c.Db.StockItems.Where(i => i.IssueDetail!.IssueId == issue.IssueId).ToListAsync();
         Assert.Equal(all, onIssue.Count);
         Assert.Equal(2, onIssue.Count(i => i.ReceiptDetailId != lot.ReceiptDetailId));
-        Assert.Equal(IssueStatus.Pending, issue.Status);
+        Assert.Equal(IssueStatus.Ready, issue.Status);
         AssertConsistent(lot);
     }
 
@@ -247,7 +244,6 @@ public class StocktakeTests
     {
         var order = await c.Issues.RecordOrderAsync(new OrderInput(code, null, null, [new(sku, qty)]));
         var issue = await c.Issues.CreateAsync(order.OrderId, c.Staff);
-        await c.Issues.ApproveAsync(issue.IssueId, c.Manager);
         var items = await c.Db.StockItems.Where(i => i.IssueDetail!.IssueId == issue.IssueId).ToListAsync();
         Assert.All(items, i => Assert.Equal(lot.ReceiptDetailId, i.ReceiptDetailId)); // oldest lot first (FIFO)
         foreach (var i in items) await c.Issues.ScanAsync(issue.IssueId, i.SerialCode, c.Staff);

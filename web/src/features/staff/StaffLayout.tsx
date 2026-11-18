@@ -5,7 +5,6 @@ import wordmarkWhite from '../../design/assets/wordmark-white.png';
 import { useAuth } from '../../app/auth';
 import { ToastProvider } from '../../app/toast';
 import { useMediaQuery } from '../../app/useMediaQuery';
-import { NotificationBell } from '../../app/NotificationBell';
 
 export const STAFF_NAV: (NavItem & { title?: string })[] = [
   { key: 'xuat-kho', label: 'Xuất kho', icon: 'package-minus', section: 'Nghiệp vụ', title: 'Xuất kho theo FIFO' },
@@ -26,7 +25,6 @@ export function StaffLayout() {
   const phone = useMediaQuery('(max-width: 767px)');
   const key = pathname.split('/')[2] || 'xuat-kho';
   const item = STAFF_NAV.find(n => n.key === key);
-  const bell = <NotificationBell onBrand={phone} />;
 
   return (
     <ToastProvider placement="touch">
@@ -50,8 +48,8 @@ export function StaffLayout() {
               </div>
             )}
           actions={phone
-            ? <>{bell}<IconButton icon="log-out" label="Đăng xuất" size="lg" onClick={logout} style={{ color: '#fff', order: 10 }} className="vb-on-brand" /></>
-            : bell}
+            ? <IconButton icon="log-out" label="Đăng xuất" size="lg" onClick={logout} style={{ color: '#fff', order: 10 }} className="vb-on-brand" />
+            : undefined}
           contentPadding={phone ? 16 : 24}
         >
           <Outlet />

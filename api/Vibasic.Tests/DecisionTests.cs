@@ -65,14 +65,13 @@ public class DecisionTests
         var db = new VibasicDbContext(new DbContextOptionsBuilder<VibasicDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         await DbSeeder.SeedAsync(db, Now);
         var clock = new Clock(Now);
-        var notifier = new Notifier(db, clock);
-        var replenish = new ReplenishmentService(db, notifier, clock);
+        var replenish = new ReplenishmentService(db, clock);
         var codes = new CodeGenerator(db);
         return new Ctx
         {
             Db = db, Clock = clock, Replenish = replenish,
-            Receipts = new ReceiptService(db, codes, notifier, clock, replenish),
-            Issues = new IssueService(db, codes, notifier, clock, replenish),
+            Receipts = new ReceiptService(db, codes, clock, replenish),
+            Issues = new IssueService(db, codes, clock, replenish),
             Staff = db.Users.First(u => u.Username == "nhanvien1").UserId,
             Manager = db.Users.First(u => u.Username == "quanly").UserId,
         };
@@ -189,7 +188,6 @@ public class DecisionTests
         var proposal = c.Pending(p.SKU);
         Assert.NotNull(proposal);
         Assert.Equal(await c.Net(p.SKU), proposal!.NetQuantity);
-        Assert.Contains(c.Db.Notifications, n => n.Title.Contains(p.SKU));
     }
 
     [Fact]

@@ -5,7 +5,6 @@ import wordmarkWhite from '../../design/assets/wordmark-white.png';
 import { useAuth } from '../../app/auth';
 import { ToastProvider } from '../../app/toast';
 import { fmtLongDate } from '../../app/format';
-import { NotificationBell } from '../../app/NotificationBell';
 import { useApprovalSummary } from '../../app/receiving';
 import { useDecisionSummary } from '../../app/decision';
 
@@ -46,7 +45,6 @@ export function ManagerLayout() {
         <AppShell
           role="manager"
           navItems={navItems}
-          actions={<NotificationBell />}
           activeKey={key}
           onNavigate={k => nav(`/ql/${k}`)}
           user={{ name: user?.fullName }}

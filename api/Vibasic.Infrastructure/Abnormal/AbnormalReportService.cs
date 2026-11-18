@@ -13,7 +13,7 @@ namespace Vibasic.Infrastructure.Abnormal;
 /// </list>
 /// The manager may change the scope when approving. A report raised at receiving always covers its (failed) lot.
 /// </summary>
-public class AbnormalReportService(VibasicDbContext db, Notifier notify, IClock clock, Decision.ReplenishmentService replenish, IssueService issues)
+public class AbnormalReportService(VibasicDbContext db, IClock clock, Decision.ReplenishmentService replenish, IssueService issues)
 {
     /// <param name="wholeLot">Null keeps the scope the report was filed with.</param>
     public async Task<AbnormalReport> ApproveAsync(int id, int managerId, bool? wholeLot = null)
@@ -35,10 +35,6 @@ public class AbnormalReportService(VibasicDbContext db, Notifier notify, IClock 
         report.Status = ApprovalStatus.Approved;
         report.ApprovedBy = managerId;
         report.ApprovedAt = clock.UtcNow;
-        notify.ToUser(report.CreatedBy, $"Biên bản {report.Code} đã được duyệt",
-            report.Scope == ReportScope.Lot ? $"Lô {lot.LotCode} đã bị khóa và không được xuất."
-                : $"{report.Items.Count} sản phẩm lỗi đã loại khỏi tồn kho; phần còn lại của lô {lot.LotCode} xuất bình thường.",
-            $"/kho/bao-loi/{id}", Notifier.Info);
         await db.SaveChangesAsync();
         await replenish.CheckLotsAsync([report.ReceiptDetailId]);
         return report;
@@ -56,10 +52,6 @@ public class AbnormalReportService(VibasicDbContext db, Notifier notify, IClock 
         report.RejectReason = text;
         report.ApprovedBy = managerId;
         report.ApprovedAt = clock.UtcNow;
-        notify.ToUser(report.CreatedBy, $"Biên bản {report.Code} bị từ chối",
-            (report.Scope == ReportScope.Lot ? $"Lô {lot.LotCode} trở về Bình thường và được tính vào tồn kho."
-                : $"{report.Items.Count} sản phẩm của lô {lot.LotCode} trở về Trong kho; đưa lại lên kệ.") + $" Lý do: {text}",
-            $"/kho/bao-loi/{id}", Notifier.Warning);
         await db.SaveChangesAsync();
         await replenish.CheckLotsAsync([report.ReceiptDetailId]);
         return report;
@@ -94,15 +86,14 @@ public class AbnormalReportService(VibasicDbContext db, Notifier notify, IClock 
             && await db.StockItems.AnyAsync(i => i.ReceiptDetailId == lot.ReceiptDetailId && (i.IssueDetailId != null || i.Status == ItemStatus.Issued)))
             throw new RuleException($"Sản phẩm của lô {lot.LotCode} đã được giữ chỗ hoặc xuất kho, không hủy quyết định được.");
 
-        var text = RequireReason(reason);
-        var was = Labels<ApprovalStatus>.ToLabel(report.Status);
+        RequireReason(reason);
         var now = clock.UtcNow;
         if (report.Status == ApprovalStatus.Rejected)
         {
             var replace = (wholeLot ? await db.StockItems.Where(i => i.ReceiptDetailId == lot.ReceiptDetailId).ToListAsync() : setAside)
                 .Where(i => i.Status == ItemStatus.Reserved).Select(i => i.ItemId).ToList();
             if (replace.Count > 0)
-                await issues.ReplaceReservedAsync(replace, wholeLot ? [lot.ReceiptDetailId] : [], null,
+                await issues.ReplaceReservedAsync(replace, wholeLot ? [lot.ReceiptDetailId] : [],
                     $"Biên bản {report.Code} được xem xét lại; không đủ hàng thay thế cho sản phẩm của lô {lot.LotCode}.");
             foreach (var item in setAside) Defects.Mark(item, now);
         }
@@ -111,10 +102,6 @@ public class AbnormalReportService(VibasicDbContext db, Notifier notify, IClock 
         report.RejectReason = null;
         report.ApprovedBy = null;
         report.ApprovedAt = null;
-        notify.ToUser(report.CreatedBy, $"Biên bản {report.Code} được xem xét lại",
-            $"Quyết định “{was}” đã được hủy (lý do: {text}); "
-            + (wholeLot ? $"lô {lot.LotCode} trở về Tạm cách ly cho đến khi quản lý duyệt lại." : $"{report.Items.Count} sản phẩm lỗi để riêng cho đến khi quản lý duyệt lại."),
-            $"/kho/bao-loi/{id}", Notifier.Info);
         await db.SaveChangesAsync();
         await replenish.CheckLotsAsync([report.ReceiptDetailId]);
         return report;

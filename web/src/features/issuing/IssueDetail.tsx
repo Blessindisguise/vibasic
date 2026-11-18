@@ -14,7 +14,7 @@ import { suggestFrom } from '../../app/suggest';
 import { ApprovalBadge, IssueStatusBadge } from '../../app/statusBadges';
 import { fieldErrors, formError } from '../../app/catalog';
 import {
-  pickHoldExpired, pickHoldUntil, useDeliver, useIssue, useIssueAction, usePicker, useReportDefect, useScan, type IssueLine, type IssueRow, type IssueView,
+  pickHoldExpired, pickHoldUntil, useDeliver, useIssue, usePicker, useReportDefect, useScan, type IssueLine, type IssueRow, type IssueView,
 } from '../../app/issuing';
 import { OrderContact } from './OrderContact';
 import { CancelOrderDialog } from './CancelOrderDialog';
@@ -24,13 +24,15 @@ import { SerialRanges } from '../../app/SerialRanges';
 
 type Role = 'manager' | 'staff';
 
-/** UC_09 step 5 / UC_10 step 2 for issues; staff pick, scan, report defects and deliver here once approved (UC_08). */
+/**
+ * UC_09 step 5: an issue needs no approval. Staff pick, scan, report defects and deliver here as soon as it is created (UC_08);
+ * the manager follows it, cancels the order or removes the picker.
+ */
 export function IssueDetail({ id, role, basePath }: { id: number; role: Role; basePath: string }) {
   const issue = useIssue(id);
-  const action = useIssueAction();
   const toast = useToast();
   const nav = useNavigate();
-  const [dialog, setDialog] = useState<'approve' | 'reject' | 'revoke' | 'unassign' | 'cancelOrder' | null>(null);
+  const [dialog, setDialog] = useState<'unassign' | 'cancelOrder' | null>(null);
   const picker = usePicker();
   const { user } = useAuth();
   const touch = role === 'staff';
@@ -47,22 +49,10 @@ export function IssueDetail({ id, role, basePath }: { id: number; role: Role; ba
   }
   if (issue.isError) return <ListError onRetry={() => issue.refetch()} />;
   const { header: h, lines, reports } = issue.data;
-  const picking = role === 'staff' && h.status === 'approved';
+  const picking = role === 'staff' && h.status === 'ready';
   const mine = picking && h.pickerId === user?.id;
 
-  const run = (kind: 'approve' | 'reject' | 'revoke', reason?: string) => action.mutate({ id, action: kind, reason }, {
-    onSuccess: () => {
-      setDialog(null);
-      toast({
-        tone: kind === 'approve' ? 'success' : 'info',
-        title: kind === 'approve' ? `Đã duyệt phiếu ${h.code}` : kind === 'reject' ? `Đã từ chối phiếu ${h.code}` : `Đã hủy duyệt phiếu ${h.code}`,
-        message: kind === 'revoke' ? 'Phiếu trở về Chờ duyệt; nhân viên kho đã được báo dừng lấy hàng.' : undefined,
-      });
-    },
-    onError: e => { setDialog(null); toast({ tone: 'danger', title: 'Không thực hiện được', message: e.message }); },
-  });
-
-  const stepStatus = h.status === 'pending' ? 'pending' : h.status === 'rejected' || h.status === 'cancelled' ? 'rejected' : 'approved';
+  const stepStatus = h.status === 'ready' ? 'pending' : h.status === 'cancelled' ? 'rejected' : 'approved';
 
   return (
     <div className="vb-stack">
@@ -81,32 +71,25 @@ export function IssueDetail({ id, role, basePath }: { id: number; role: Role; ba
               Đơn <b>{h.orderCode}</b> · Lập {fmtDateTime(h.issueDate)} bởi {h.creatorName}
             </div>
           </div>
-          {role === 'manager' && h.status === 'pending' && (
-            <div className="vb-row">
-              <Button variant="ghost" icon="ban" onClick={() => setDialog('cancelOrder')}>Hủy đơn</Button>
-              <Button variant="danger-outline" icon="circle-x" onClick={() => setDialog('reject')}>Từ chối phiếu</Button>
-              <Button icon="check" onClick={() => setDialog('approve')}>Duyệt phiếu</Button>
-            </div>
-          )}
-          {role === 'manager' && h.status === 'approved' && (
+          {role === 'manager' && h.status === 'ready' && (
             <div className="vb-row">
               <Button variant="ghost" icon="ban" onClick={() => setDialog('cancelOrder')}>Hủy đơn</Button>
               {h.pickerId && <Button variant="ghost" icon="x" onClick={() => setDialog('unassign')}>Gỡ người lấy hàng</Button>}
-              <Button variant="secondary" icon="undo-2" onClick={() => setDialog('revoke')}>Hủy duyệt</Button>
             </div>
           )}
         </div>
         <div className="vb-panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <ApprovalStepper
             status={stepStatus} draftLabel="Lập phiếu" size={size}
+            labels={{ pending: 'Chờ lấy hàng', approved: 'Đã xuất', rejected: 'Đã hủy' }}
             history={{
               draft: { by: h.creatorName, at: fmtDateTime(h.issueDate) },
-              pending: { at: fmtDateTime(h.issueDate) },
-              [h.status === 'rejected' ? 'rejected' : 'approved']: h.approvedAt ? { by: h.approverName, at: fmtDateTime(h.approvedAt) } : undefined,
+              pending: h.pickerName ? { by: h.pickerName, at: fmtDateTime(h.pickStartedAt) } : undefined,
+              approved: h.deliveredAt ? { by: h.delivererName, at: fmtDateTime(h.deliveredAt) } : undefined,
             }}
           />
           <OrderContact name={h.customerName} phone={h.customerPhone} address={h.shippingAddress} note={h.orderNote} />
-          {role === 'manager' && h.status === 'approved' && (
+          {role === 'manager' && h.status === 'ready' && (
             <Facts min={200}>
               <Fact label="Người lấy hàng" value={h.pickerName ?? <span className="vb-muted">Chưa ai nhận phiếu</span>} />
               {h.pickerId && <Fact label="Bắt đầu lúc" value={fmtDateTime(h.pickStartedAt)} />}
@@ -115,9 +98,11 @@ export function IssueDetail({ id, role, basePath }: { id: number; role: Role; ba
               <Fact label="Đã quét" value={`${fmt(h.picked)}/${fmt(h.totalQuantity)}`} />
             </Facts>
           )}
-          {h.status === 'rejected' && <AlertBanner tone="danger" title={`Bị từ chối bởi ${h.approverName}`}>Lý do: {h.rejectReason}</AlertBanner>}
-          {h.status === 'cancelled' && <AlertBanner tone="warning" title="Phiếu đã hủy">{h.holdReason}</AlertBanner>}
-          {h.status === 'pending' && role === 'staff' && <AlertBanner tone="info" title="Chờ quản lý duyệt" />}
+          {h.status === 'cancelled' && (
+            <AlertBanner tone="warning" title="Phiếu đã hủy">
+              {h.cancelReason}. Hàng đã lấy của phiếu này (nếu có) trả lại kệ.
+            </AlertBanner>
+          )}
           {h.status === 'issued' && (
             <AlertBanner tone="success" title="Đã giao hàng">
               Giao cho {h.receiverName} lúc {fmtDateTime(h.deliveredAt)}{h.delivererName && `, nhân viên ${h.delivererName}`}{h.shippingAddress && `, tới ${h.shippingAddress}`}.
@@ -132,21 +117,6 @@ export function IssueDetail({ id, role, basePath }: { id: number; role: Role; ba
 
       {reports.length > 0 && <ReportsPanel reports={reports} touch={touch} />}
 
-      <ConfirmDialog
-        open={dialog === 'approve'} title={`Duyệt phiếu ${h.code}?`}
-        description={`${fmt(h.totalQuantity)} sản phẩm · đơn ${h.orderCode}.`}
-        confirmLabel="Duyệt phiếu" onConfirm={() => run('approve')} onCancel={() => setDialog(null)}
-      />
-      <ConfirmDialog
-        open={dialog === 'reject'} tone="danger" requireReason title={`Từ chối phiếu ${h.code}?`}
-        description={`${fmt(h.totalQuantity)} sản phẩm · đơn ${h.orderCode}.`}
-        confirmLabel="Từ chối phiếu" onConfirm={reason => run('reject', reason)} onCancel={() => setDialog(null)}
-      />
-      <ConfirmDialog
-        open={dialog === 'revoke'} requireReason title={`Hủy duyệt phiếu ${h.code}?`}
-        description={`Đã quét ${fmt(h.picked)}/${fmt(h.totalQuantity)} sản phẩm.`}
-        confirmLabel="Hủy duyệt" onConfirm={reason => run('revoke', reason)} onCancel={() => setDialog(null)}
-      />
       {dialog === 'cancelOrder' && (
         <CancelOrderDialog
           order={{ id: h.orderId, code: h.orderCode, customerName: h.customerName, quantity: h.totalQuantity, issueCode: h.code, picked: h.picked }}
@@ -176,7 +146,7 @@ function nextPick(line: IssueLine) {
 }
 
 /**
- * Staff on an approved issue they do not hold: start picking when nobody holds it, otherwise see who does.
+ * Staff on an issue to pick that they do not hold: start picking when nobody holds it, otherwise see who does.
  * A holder past the 3-day hold can be taken over.
  */
 function ClaimPanel({ header: h }: { header: IssueRow }) {

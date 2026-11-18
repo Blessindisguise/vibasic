@@ -1,6 +1,6 @@
 # Từ điển dữ liệu — CSDL Vibasic
 
-Lấy trực tiếp từ DB hiện tại `(localdb)\MSSQLLocalDB` → `Vibasic` (đã áp đủ 10 migration, ngày 11/11/2026).
+Lấy trực tiếp từ DB hiện tại `(localdb)\MSSQLLocalDB` → `Vibasic` (đã áp đủ 10 migration, ngày 11/11/2026). Cập nhật ngày 12/11/2026 theo migration `IssueNoApprovalNoNotifications`: phiếu xuất không cần duyệt, bỏ bảng Notification.
 
 **Quy ước**
 - **PK**: khóa chính, tự tăng (`IDENTITY`). **FK → Bảng**: khóa ngoại. **UQ**: giá trị không trùng.
@@ -13,14 +13,15 @@ Lấy trực tiếp từ DB hiện tại `(localdb)\MSSQLLocalDB` → `Vibasic` 
   - KH: kế hoạch kiểm kê; KK: phiếu kiểm kê;
   - BC: biên bản bất thường; DX: báo cáo đề xuất.
 
-Có 23 bảng, chia theo nhóm:
+Có 22 bảng, chia theo nhóm:
 - **Danh mục:** User, ProductCategory, Supplier, Product.
 - **Nhập kho:** GoodsReceipt, GoodsReceiptDetail, StockItem.
 - **Xuất kho:** Order, OrderDetail, GoodsIssue, GoodsIssueDetail.
 - **Kiểm kê:** StocktakePlan, StocktakePlanDetail, Stocktake, StocktakeDetail, StocktakeItem★.
 - **Biên bản bất thường:** AbnormalReport, AbnormalReportItem★.
 - **Hỗ trợ ra quyết định:** InventoryPolicy, StockAlert, ReplenishmentProposal, ReplenishmentReport★.
-- **Hệ thống:** Notification★.
+
+App không có thông báo trong app: mỗi việc cần làm hiện ở màn hình riêng của nó (Chờ duyệt, Cảnh báo tồn kho, Đơn chờ xuất, Cần lấy hàng, Kiểm kê).
 
 ---
 
@@ -131,7 +132,6 @@ Mỗi dòng chi tiết là một **lô**; không có bảng Lô riêng. Hàng đ
 | CancelReason ★ | nvarchar(255) | Có | | Lý do hủy đơn |
 | CancelledAt ★ | datetime2 | Có | | Thời điểm hủy |
 | CancelledBy ★ | int | Có | FK → User | Quản lý hủy đơn |
-| ReadyNotifiedAt ★ | datetime2 | Có | | Đơn "Chờ xử lý" đã đủ hàng trở lại và đã báo nhân viên kho; xoá khi đơn lại chuyển "Chờ xử lý" |
 
 Ý nghĩa trạng thái:
 - **Chờ xử lý:** thiếu hàng.
@@ -154,11 +154,8 @@ Mỗi dòng chi tiết là một **lô**; không có bảng Lô riêng. Hàng đ
 | OrderId | int | Không | FK → Order | Đơn hàng được xuất |
 | IssueDate | datetime2 | Không | | Ngày lập phiếu |
 | CreatedBy ★ | int | Không | FK → User | Nhân viên lập phiếu |
-| ApprovedBy | int | Có | FK → User | Quản lý duyệt hoặc từ chối |
-| ApprovedAt ★ | datetime2 | Có | | Thời điểm duyệt hoặc từ chối |
-| Status | nvarchar(20) | Không | | Chờ duyệt / Đã duyệt / Từ chối / Đã hủy★ / Đã xuất |
-| RejectReason ★ | nvarchar(255) | Có | | Lý do từ chối |
-| HoldReason ★ | nvarchar(255) | Có | | Lý do phiếu "Đã hủy": đơn bị hủy, hoặc không đủ hàng thay thế khi báo lỗi |
+| Status | nvarchar(20) | Không | | Chờ lấy hàng★ / Đã hủy★ / Đã xuất |
+| CancelReason ★ | nvarchar(255) | Có | | Lý do phiếu "Đã hủy": đơn bị hủy, hoặc không đủ hàng thay thế khi báo lỗi |
 | ReceiverName ★ | nvarchar(100) | Có | | Người nhận hàng (biên bản giao hàng) |
 | DeliveredAt ★ | datetime2 | Có | | Thời điểm giao |
 | DeliveredBy ★ | int | Có | FK → User | Nhân viên giao hàng |
@@ -334,33 +331,18 @@ Quản lý lập báo cáo từ các đề xuất đã chọn để gửi bên m
 | TotalQuantity | int | Không | | Tổng số lượng đề xuất |
 | Snapshot | nvarchar(max) | Không | | Nội dung báo cáo lúc lập (JSON): nhóm theo nhà cung cấp, các dòng đề xuất và dòng "Theo dõi". Lưu lại để in ra giống hệt lần đầu |
 
----
-
-## 7. Hệ thống
-
-### Notification ★ — Thông báo trong app
-| Thuộc tính | Kiểu dữ liệu | Null | Khóa | Ý nghĩa |
-|---|---|---|---|---|
-| NotificationId | int | Không | PK | Mã thông báo |
-| UserId | int | Không | FK → User | Người nhận. Thông báo cho cả một vai trò được tách thành một dòng cho mỗi người |
-| Title | nvarchar(200) | Không | | Tiêu đề |
-| Message | nvarchar(500) | Có | | Nội dung |
-| Link | nvarchar(200) | Có | | Đường dẫn màn hình liên quan, mở khi bấm vào thông báo |
-| Tone | nvarchar(10) | Không | | Màu hiển thị: info / success / warning / danger |
-| CreatedAt | datetime2 | Không | | Thời điểm tạo |
-| IsRead | bit | Không | | 1 = đã đọc |
 
 ---
 
-## 8. Giao diện và bảng dữ liệu liên quan
+## 7. Giao diện và bảng dữ liệu liên quan
 
 Ảnh chụp ngày 11/11/2026 từ app đang chạy với dữ liệu mẫu, khung 1280×900. Ảnh nằm trong thư mục [anh-giao-dien/](anh-giao-dien/). Dưới mỗi ảnh là các bảng mà màn hình đó đọc hoặc ghi.
 
-### 8.1. Đăng nhập
+### 7.1. Đăng nhập
 ![Đăng nhập](anh-giao-dien/01-dang-nhap.png)
 *Bảng: User.*
 
-### 8.2. Quản lý — Theo dõi
+### 7.2. Quản lý — Theo dõi
 
 **Tổng quan kho**
 ![Tổng quan](anh-giao-dien/10-ql-tong-quan.png)
@@ -382,11 +364,11 @@ Quản lý lập báo cáo từ các đề xuất đã chọn để gửi bên m
 ![In báo cáo đề xuất](anh-giao-dien/73-in-bao-cao-de-xuat.png)
 *Bảng: ReplenishmentReport (cột Snapshot), ReplenishmentProposal.*
 
-### 8.3. Quản lý — Nghiệp vụ
+### 7.3. Quản lý — Nghiệp vụ
 
-**Chờ duyệt** (phiếu nhập, phiếu xuất, phiếu kiểm kê, biên bản)
+**Chờ duyệt** (phiếu nhập, phiếu kiểm kê, biên bản; phiếu xuất không cần duyệt)
 ![Chờ duyệt](anh-giao-dien/11-ql-cho-duyet.png)
-*Bảng: GoodsReceipt, GoodsIssue, Stocktake, AbnormalReport.*
+*Bảng: GoodsReceipt, Stocktake, AbnormalReport.*
 
 **Danh sách phiếu nhập kho**
 ![Phiếu nhập kho](anh-giao-dien/20-ql-nhap-kho.png)
@@ -404,8 +386,8 @@ Quản lý lập báo cáo từ các đề xuất đã chọn để gửi bên m
 ![Phiếu xuất kho](anh-giao-dien/30-ql-xuat-kho.png)
 *Bảng: GoodsIssue, Order, User.*
 
-**Phiếu xuất chờ duyệt**
-![Phiếu xuất chờ duyệt](anh-giao-dien/31-ql-phieu-xuat-cho-duyet.png)
+**Chi tiết phiếu xuất đang chờ lấy hàng**
+![Phiếu xuất chờ lấy hàng](anh-giao-dien/31-ql-phieu-xuat-cho-lay-hang.png)
 *Bảng: GoodsIssue, GoodsIssueDetail, StockItem, GoodsReceiptDetail, Order.*
 
 **Phiếu xuất đã giao**
@@ -444,7 +426,7 @@ Quản lý lập báo cáo từ các đề xuất đã chọn để gửi bên m
 ![In biên bản](anh-giao-dien/62-in-bien-ban.png)
 *Bảng: AbnormalReport, AbnormalReportItem.*
 
-### 8.4. Quản lý — Phân tích
+### 7.4. Quản lý — Phân tích
 
 **Báo cáo tồn kho, biến động nhập xuất**
 ![Báo cáo](anh-giao-dien/80-ql-bao-cao.png)
@@ -457,7 +439,7 @@ Quản lý lập báo cáo từ các đề xuất đã chọn để gửi bên m
 ![In báo cáo nhập xuất](anh-giao-dien/82-in-bao-cao-nhap-xuat.png)
 *Bảng: GoodsReceipt/GoodsReceiptDetail, GoodsIssue/GoodsIssueDetail, Stocktake/StocktakeDetail, AbnormalReport.*
 
-### 8.5. Quản lý — Danh mục
+### 7.5. Quản lý — Danh mục
 
 **Hàng hóa**
 ![Hàng hóa](anh-giao-dien/90-ql-hang-hoa.png)
@@ -479,7 +461,7 @@ Quản lý lập báo cáo từ các đề xuất đã chọn để gửi bên m
 ![Tài khoản](anh-giao-dien/94-ql-tai-khoan.png)
 *Bảng: User.*
 
-### 8.6. Nhân viên kho
+### 7.6. Nhân viên kho
 
 **Xuất kho: đơn chờ xuất, hàng chờ lấy hàng**
 ![Xuất kho](anh-giao-dien/a0-kho-xuat-kho.png)
@@ -522,11 +504,11 @@ Quản lý lập báo cáo từ các đề xuất đã chọn để gửi bên m
 
 ---
 
-## 9. Quy trình từng bước
+## 8. Quy trình từng bước
 
 Các bước dưới đây được làm thật trên **bản sao** của CSDL, nên dữ liệu thật không bị thay đổi. Ảnh nằm trong [anh-giao-dien/quy-trinh/](anh-giao-dien/quy-trinh/). Dưới mỗi bước có ghi dữ liệu thay đổi ở bảng nào.
 
-### 9.1. Nhập kho (UC_04, UC_05)
+### 8.1. Nhập kho (UC_04, UC_05)
 
 **Bước 1. Nhân viên mở phiếu nhập mới**
 ![](anh-giao-dien/quy-trinh/n01-lap-phieu-nhap-moi.png)
@@ -582,7 +564,7 @@ Biên bản lập khi nhập kho chỉ được xử lý sau khi phiếu nhập 
 - GoodsReceiptDetail: Status = Đã khóa;
 - StockItem: Lỗi, DefectiveAt.
 
-### 9.2. Xuất kho theo FIFO (UC_07 – UC_10)
+### 8.2. Xuất kho theo FIFO (UC_07 – UC_09)
 
 **Bước 1. Nhân viên chọn đơn chờ xuất**
 ![](anh-giao-dien/quy-trinh/x00-kho-don-cho-xuat.png)
@@ -592,28 +574,23 @@ Biên bản lập khi nhập kho chỉ được xử lý sau khi phiếu nhập 
 
 ![](anh-giao-dien/quy-trinh/x01-kho-phan-bo-fifo.png)
 
-**Bước 3. "Lập phiếu xuất và gửi duyệt"**
+**Bước 3. "Lập phiếu xuất"**
 - Hộp xác nhận tóm tắt các mặt hàng và lô sẽ lấy.
+- Phiếu không cần Quản lý duyệt: lập xong là lấy hàng được ngay.
 
 ![](anh-giao-dien/quy-trinh/x02-kho-xac-nhan-lap-phieu-xuat.png)
-![](anh-giao-dien/quy-trinh/x03-kho-phieu-xuat-cho-duyet.png)
 *Dữ liệu:*
-- GoodsIssue: Status = Chờ duyệt;
+- GoodsIssue: Status = Chờ lấy hàng;
 - GoodsIssueDetail;
 - StockItem: Đã giữ chỗ, IssueDetailId;
 - Order: Status = Đang xuất.
 
-**Bước 4. Quản lý duyệt phiếu xuất**
-![](anh-giao-dien/quy-trinh/x04-ql-duyet-phieu-xuat.png)
-![](anh-giao-dien/quy-trinh/x05-ql-phieu-xuat-da-duyet.png)
-*Dữ liệu:* GoodsIssue: Status = Đã duyệt, ApprovedBy, ApprovedAt.
-
-**Bước 5. Nhân viên nhận phiếu, bắt đầu lấy hàng**
+**Bước 4. Nhân viên nhận phiếu, bắt đầu lấy hàng**
 ![](anh-giao-dien/quy-trinh/x06-kho-phieu-xuat-cho-lay-hang.png)
 ![](anh-giao-dien/quy-trinh/x07-kho-bat-dau-lay-hang.png)
 *Dữ liệu:* GoodsIssue: PickerId, PickStartedAt, PickActiveAt.
 
-**Bước 6. Quét tem từng sản phẩm**
+**Bước 5. Quét tem từng sản phẩm**
 - Quét đúng mã thì sản phẩm được đánh dấu đã lấy.
 - Quét mã không thuộc phiếu thì bị báo lỗi ngay.
 
@@ -621,7 +598,7 @@ Biên bản lập khi nhập kho chỉ được xử lý sau khi phiếu nhập 
 ![](anh-giao-dien/quy-trinh/x09-kho-quet-sai-ma.png)
 *Dữ liệu:* StockItem.PickedAt.
 
-**Bước 7. Phát hiện hàng lỗi khi lấy hàng**
+**Bước 6. Phát hiện hàng lỗi khi lấy hàng**
 - Chọn các sản phẩm lỗi, mô tả lỗi rồi bấm "Lập biên bản".
 - Hệ thống tách các sản phẩm lỗi và thay bằng sản phẩm kế tiếp theo FIFO.
 
@@ -632,7 +609,7 @@ Biên bản lập khi nhập kho chỉ được xử lý sau khi phiếu nhập 
 - AbnormalReportItem;
 - StockItem: sản phẩm lỗi chuyển Lỗi; sản phẩm thay thế chuyển Đã giữ chỗ.
 
-**Bước 8. Quét đủ rồi xác nhận giao hàng**
+**Bước 7. Quét đủ rồi xác nhận giao hàng**
 ![](anh-giao-dien/quy-trinh/x12-kho-da-quet-du.png)
 ![](anh-giao-dien/quy-trinh/x13-kho-xac-nhan-giao-hang.png)
 ![](anh-giao-dien/quy-trinh/x14-kho-da-xuat-kho.png)
@@ -642,11 +619,11 @@ Biên bản lập khi nhập kho chỉ được xử lý sau khi phiếu nhập 
 - GoodsReceiptDetail.QuantityOnHand giảm theo từng lô;
 - Order: Status = Đã xuất.
 
-### 9.3. Biên bản bất thường (UC_11, UC_12)
+### 8.3. Biên bản bất thường (UC_11, UC_12)
 
 Biên bản được lập ở ba chỗ:
-- khi nhập kho: tự động, xem mục 9.1, bước 4;
-- khi xuất kho: xem mục 9.2, bước 7;
+- khi nhập kho: tự động, xem mục 8.1, bước 4;
+- khi xuất kho: xem mục 8.2, bước 6;
 - khi kiểm kê: xem bên dưới.
 
 **Lập biên bản khi kiểm kê**

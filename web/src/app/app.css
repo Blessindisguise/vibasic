@@ -12,8 +12,6 @@ html, body, #root { height: 100%; }
 /* Staff sidebar on tablets: 48 px rows, 16 px labels (touch targets ≥ 44 px). */
 .vb-nav-item.vb-nav-item--touch { height: 48px; font-size: 16px; line-height: 24px; gap: 12px; padding: 0 12px; }
 
-.vb-notification:hover { background: var(--grey-50) !important; }
-.vb-notification:focus-visible { outline: none; box-shadow: inset var(--focus-ring); }
 
 /* Segmented control (tabs between approval types, status filters). */
 .vb-seg { display: inline-flex; gap: 2px; padding: 3px; background: var(--grey-100); border-radius: var(--radius-md); max-width: 100%; overflow-x: auto; }

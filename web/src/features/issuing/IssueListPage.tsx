@@ -40,13 +40,16 @@ export function IssueListPage({ role, basePath }: { role: 'manager' | 'staff'; b
       render: i => <span>{fmt(i.totalQuantity)} <span className="vb-muted">· {i.productCount} mặt hàng</span></span>,
     },
     { key: 'creatorName', header: 'Người lập', width: 140 },
-    { key: 'approverName', header: 'Người duyệt', width: 140, render: i => i.approverName ?? <span className="vb-muted">—</span> },
+    {
+      key: 'picker', header: 'Người lấy hàng', width: 140,
+      render: i => (i.status === 'issued' ? i.delivererName : i.pickerName) ?? <span className="vb-muted">—</span>,
+    },
     {
       key: 'status', header: 'Trạng thái', width: 150,
       render: i => (
         <span className="vb-row" style={{ gap: 6, flexWrap: 'nowrap' }}>
           <IssueStatusBadge status={i.status} />
-          {i.status === 'approved' && <span className="vb-muted" style={{ fontVariantNumeric: 'tabular-nums' }}>{i.picked}/{i.totalQuantity}</span>}
+          {i.status === 'ready' && <span className="vb-muted" style={{ fontVariantNumeric: 'tabular-nums' }}>{i.picked}/{i.totalQuantity}</span>}
         </span>
       ),
     },

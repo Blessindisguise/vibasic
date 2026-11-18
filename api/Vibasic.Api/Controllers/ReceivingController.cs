@@ -187,52 +187,21 @@ public class AbnormalReportsController(VibasicDbContext db, AbnormalReportServic
     }
 }
 
-/// <summary>Counts for the manager's "Chờ duyệt" badge and tabs.</summary>
+/// <summary>Counts for the manager's "Chờ duyệt" badge and tabs. Goods issues need no approval.</summary>
 [ApiController]
 [Route("api/approvals")]
 [Authorize(Policy = Policies.Manager)]
 public class ApprovalsController(VibasicDbContext db) : ControllerBase
 {
-    public record Summary(int Receipts, int Issues, int Stocktakes, int AbnormalReports, int Total);
+    public record Summary(int Receipts, int Stocktakes, int AbnormalReports, int Total);
 
     [HttpGet("summary")]
     public async Task<Summary> Get()
     {
         var receipts = await db.GoodsReceipts.CountAsync(r => r.Status == ReceiptStatus.Pending);
-        var issues = await db.GoodsIssues.CountAsync(i => i.Status == IssueStatus.Pending);
         var stocktakes = await db.Stocktakes.CountAsync(s => s.Status == ApprovalStatus.Pending);
         var reports = await db.AbnormalReports.CountAsync(a => a.Status == ApprovalStatus.Pending);
-        return new Summary(receipts, issues, stocktakes, reports, receipts + issues + stocktakes + reports);
+        return new Summary(receipts, stocktakes, reports, receipts + stocktakes + reports);
     }
 }
 
-[ApiController]
-[Route("api/notifications")]
-[Authorize]
-public class NotificationsController(VibasicDbContext db) : ControllerBase
-{
-    public record Item(int Id, string Title, string? Message, string? Link, string Tone, DateTime CreatedAt, bool IsRead);
-    public record Feed(int Unread, List<Item> Items);
-    public record ReadInput(List<int>? Ids);
-
-    [HttpGet]
-    public async Task<Feed> Get()
-    {
-        var me = User.UserId();
-        var mine = db.Notifications.Where(n => n.UserId == me);
-        var items = await mine.OrderByDescending(n => n.CreatedAt).Take(30)
-            .Select(n => new Item(n.NotificationId, n.Title, n.Message, n.Link, n.Tone, n.CreatedAt, n.IsRead)).ToListAsync();
-        return new Feed(await mine.CountAsync(n => !n.IsRead), items);
-    }
-
-    /// <summary>Marks the given notifications read, or all of them when no ids are sent.</summary>
-    [HttpPost("read")]
-    public async Task<IActionResult> Read(ReadInput input)
-    {
-        var me = User.UserId();
-        var q = db.Notifications.Where(n => n.UserId == me && !n.IsRead);
-        if (input.Ids is { Count: > 0 }) q = q.Where(n => input.Ids.Contains(n.NotificationId));
-        await q.ExecuteUpdateAsync(s => s.SetProperty(n => n.IsRead, true));
-        return NoContent();
-    }
-}

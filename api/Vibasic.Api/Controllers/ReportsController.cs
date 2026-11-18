@@ -143,14 +143,14 @@ public class DashboardController(VibasicDbContext db) : ControllerBase
         var kpis = new Kpis(
             await lots.Where(d => d.Status == LotStatus.Normal).SumAsync(d => (int?)d.QuantityOnHand) ?? 0,
             await db.Products.CountAsync(),
-            await db.GoodsReceipts.CountAsync(r => r.Status == ReceiptStatus.Pending) + await db.GoodsIssues.CountAsync(i => i.Status == IssueStatus.Pending)
+            await db.GoodsReceipts.CountAsync(r => r.Status == ReceiptStatus.Pending)
                 + await db.Stocktakes.CountAsync(s => s.Status == ApprovalStatus.Pending) + await db.AbnormalReports.CountAsync(a => a.Status == ApprovalStatus.Pending),
             await db.StockAlerts.CountAsync(a => a.Status == AlertStatus.Open),
             await db.ReplenishmentProposals.CountAsync(r => r.Status == ProposalStatus.Pending),
             await lots.CountAsync(d => d.Status == LotStatus.Quarantined),
             await lots.CountAsync(d => d.Status == LotStatus.Locked),
             await db.Orders.CountAsync(o => o.Status == OrderStatus.Open || o.Status == OrderStatus.OnHold),
-            await db.GoodsIssues.CountAsync(i => i.Status == IssueStatus.Approved));
+            await db.GoodsIssues.CountAsync(i => i.Status == IssueStatus.Ready));
 
         // Last 7 local days, today included.
         var first = today.AddDays(-6);
@@ -166,8 +166,6 @@ public class DashboardController(VibasicDbContext db) : ControllerBase
         var pending = new List<PendingItem>();
         pending.AddRange(await db.GoodsReceipts.Where(r => r.Status == ReceiptStatus.Pending)
             .Select(r => new PendingItem("Phiếu nhập", r.Code, r.Supplier.SupplierName, r.SubmittedAt ?? r.ReceiptDate, "/ql/nhap-kho/" + r.ReceiptId)).ToListAsync());
-        pending.AddRange(await db.GoodsIssues.Where(i => i.Status == IssueStatus.Pending)
-            .Select(i => new PendingItem("Phiếu xuất", i.Code, i.Order.CustomerName ?? i.Order.ExternalCode, i.IssueDate, "/ql/xuat-kho/" + i.IssueId)).ToListAsync());
         pending.AddRange(await db.Stocktakes.Where(s => s.Status == ApprovalStatus.Pending)
             .Select(s => new PendingItem("Phiếu kiểm kê", s.Code, "Kế hoạch " + s.Plan.Code, s.StocktakeDate, "/ql/kiem-ke/phieu/" + s.StocktakeId)).ToListAsync());
         pending.AddRange(await db.AbnormalReports.Where(a => a.Status == ApprovalStatus.Pending)

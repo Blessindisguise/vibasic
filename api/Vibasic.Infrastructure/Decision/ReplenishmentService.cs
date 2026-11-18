@@ -15,10 +15,8 @@ namespace Vibasic.Infrastructure.Decision;
 /// proposed again only after the lead time + 3 days; a proposal left out holds for the rest of the week.</item>
 /// </list>
 /// </summary>
-public class ReplenishmentService(VibasicDbContext db, Notifier notify, IClock clock)
+public class ReplenishmentService(VibasicDbContext db, IClock clock)
 {
-    private static readonly System.Globalization.CultureInfo Vi = System.Globalization.CultureInfo.GetCultureInfo("vi-VN");
-
     /// <summary>Orders received but not issued yet: they hold stock that is no longer free (Q8).</summary>
     public static readonly OrderStatus[] OpenOrders = [OrderStatus.Open, OrderStatus.OnHold, OrderStatus.InProgress];
 
@@ -123,7 +121,7 @@ public class ReplenishmentService(VibasicDbContext db, Notifier notify, IClock c
 
     /// <summary>
     /// Run after a change of stock or open orders has been saved. Compares net stock with the stored ROP and opens, updates or
-    /// closes the alert and the open proposal (Q9, Q10), and tells staff about "Chờ xử lý" orders that can now be issued. Saves.
+    /// closes the alert and the open proposal (Q9, Q10). Saves.
     /// </summary>
     public async Task CheckAsync(IEnumerable<int> productIds)
     {
@@ -148,9 +146,6 @@ public class ReplenishmentService(VibasicDbContext db, Notifier notify, IClock c
             if (outcome.NewAlert is { } alert)
             {
                 db.StockAlerts.Add(alert);
-                await notify.ToRoleAsync(UserRole.Manager, $"Cảnh báo tồn kho thấp: {product.SKU}",
-                    $"{product.ProductName} còn tồn ròng {alert.CurrentQuantity} {product.Unit} (khả dụng {available}, đơn chưa xuất {ordered}), "
-                    + $"không lớn hơn ROP {alert.ROPValue.ToString("#,##0.#", Vi)}.", "/ql/canh-bao", Notifier.Warning);
             }
             if (outcome.NewProposal is { } proposal)
             {
@@ -158,34 +153,7 @@ public class ReplenishmentService(VibasicDbContext db, Notifier notify, IClock c
                 db.ReplenishmentProposals.Add(proposal);
             }
         }
-        await NotifyReadyOrdersAsync(ids);
         await db.SaveChangesAsync();
-    }
-
-    /// <summary>
-    /// "Chờ xử lý" orders (short of stock) for these products that now have enough free stock: staff are told once per order.
-    /// Oldest first, each taking its share of the free stock, so two orders are not both told about the same goods. Does not save.
-    /// </summary>
-    private async Task NotifyReadyOrdersAsync(List<int> productIds)
-    {
-        var waiting = await db.Orders.Include(o => o.Details)
-            .Where(o => o.Status == OrderStatus.OnHold && o.Details.Any(d => productIds.Contains(d.ProductId)))
-            .OrderBy(o => o.OrderDate).ThenBy(o => o.OrderId).ToListAsync();
-        if (!waiting.Any(o => o.ReadyNotifiedAt is null)) return;
-        var needed = waiting.SelectMany(o => o.Details.Select(d => d.ProductId)).Distinct().ToList();
-        var free = await Issuing.IssueService.Free(db).Where(i => needed.Contains(i.ReceiptDetail.ProductId))
-            .GroupBy(i => i.ReceiptDetail.ProductId).Select(g => new { g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.Key, x => x.Count);
-        foreach (var order in waiting)
-        {
-            if (order.Details.Any(d => free.GetValueOrDefault(d.ProductId) < d.Quantity)) continue;
-            foreach (var d in order.Details) free[d.ProductId] -= d.Quantity;
-            if (order.ReadyNotifiedAt is not null) continue;
-            order.ReadyNotifiedAt = clock.UtcNow;
-            await notify.ToRoleAsync(UserRole.Staff, $"Đơn {order.ExternalCode} đã đủ hàng",
-                $"{order.CustomerName ?? "Khách lẻ"}, {order.Details.Sum(d => d.Quantity)} sản phẩm. Lập phiếu xuất cho đơn này.",
-                $"/kho/xuat-kho/don/{order.OrderId}", Notifier.Success);
-        }
     }
 
     public record Outcome(StockAlert? NewAlert, ReplenishmentProposal? NewProposal);

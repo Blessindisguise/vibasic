@@ -24,7 +24,7 @@ export function CancelOrderDialog({ order, onClose }: {
           toast({
             tone: 'info', title: `Đã hủy đơn ${order.code}`,
             message: r.issueCode
-              ? `Phiếu ${r.issueCode} đã hủy.${r.returnToShelf.length ? ` Trả lại kệ: ${r.returnToShelf.join(', ')}.` : ''}`
+              ? `Phiếu ${r.issueCode} đã hủy. Hàng đã lấy (nếu có) trả lại kệ.`
               : undefined,
           });
           onClose();

@@ -54,7 +54,7 @@ export function OrderListPage({ basePath }: { basePath: string }) {
       { key: 'reason', header: 'Lý do hủy', width: 280, render: (o: OrderRow) => <span style={{ whiteSpace: 'normal' }}>{o.cancelReason}</span> },
     ]),
   ];
-  const openIssue = (o: OrderRow) => (o.lastIssueStatus === 'pending' || o.lastIssueStatus === 'approved' ? o.lastIssueCode : undefined);
+  const openIssue = (o: OrderRow) => (o.lastIssueStatus === 'ready' ? o.lastIssueCode : undefined);
 
   return (
     <div className="vb-stack">

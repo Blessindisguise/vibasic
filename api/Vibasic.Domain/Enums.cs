@@ -65,10 +65,9 @@ public enum OrderStatus
 
 public enum IssueStatus
 {
-    [Label("Chờ duyệt")] Pending,
-    [Label("Đã duyệt")] Approved,
-    [Label("Từ chối")] Rejected,
-    /// <summary>Ended without delivery, items released (reason in HoldReason): the order was cancelled, or no replacement was left (UC_08 3.2). // + ext</summary>
+    /// <summary>Created from an order with its FIFO items reserved; no approval step. // + ext</summary>
+    [Label("Chờ lấy hàng")] Ready,
+    /// <summary>Ended without delivery, items released (reason in CancelReason): the order was cancelled, or no replacement was left (UC_08 3.2). // + ext</summary>
     [Label("Đã hủy")] Cancelled,
     [Label("Đã xuất")] Issued,
 }

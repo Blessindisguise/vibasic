@@ -6,22 +6,32 @@ CSDL làm theo **sơ đồ lớp Hình 3.10**: 19 bảng, tên bảng và tên c
 
 Các bảng dưới đây liệt kê những cột và giá trị **được thêm** vì đặc tả use case cần mà sơ đồ chưa có chỗ lưu. Mục đích là để cập nhật lại báo cáo cho khớp với code.
 
+## Bỏ duyệt phiếu xuất và bỏ thông báo (migration `IssueNoApprovalNoNotifications`, 12/11/2026)
+
+- **Phiếu xuất không cần Quản lý duyệt.** Đơn hàng đã quyết định xuất gì, hệ thống chọn lô theo FIFO, quét từng tem khi lấy hàng chặn lấy nhầm; bước duyệt không kiểm soát thêm được gì mà làm chậm khi có nhiều đơn lẻ. Quản lý vẫn có Hủy đơn, Gỡ người lấy hàng và duyệt biên bản bất thường.
+  - `GoodsIssue.Status`: **Chờ lấy hàng** / Đã hủy / Đã xuất. Bỏ Chờ duyệt, Đã duyệt, Từ chối. Dữ liệu cũ: Chờ duyệt và Đã duyệt → Chờ lấy hàng; Từ chối → Đã hủy, lý do "Quản lý từ chối: …".
+  - `GoodsIssue` bỏ cột `ApprovedBy`, `ApprovedAt`, `RejectReason`. Cột `HoldReason` đổi tên thành `CancelReason`.
+  - UC_10 không còn áp dụng cho phiếu xuất (chỉ còn phiếu nhập; phiếu kiểm kê ở UC_15, biên bản ở UC_12).
+- **Bỏ thông báo trong app.** Mỗi việc đã có màn hình riêng (Chờ duyệt, Cảnh báo tồn kho, Đơn chờ xuất có dấu "Đủ hàng", Cần lấy hàng, Kiểm kê).
+  - Xoá bảng `Notification` và cột `Order.ReadyNotifiedAt`.
+  - Danh sách mã đã lấy khi phiếu bị hủy (trước đây gửi kèm thông báo) không lưu lại: hàng đã lấy đang ở trên tay nhân viên và mỗi sản phẩm có tem ghi mã lô, nên chỉ cần trả toàn bộ hàng của phiếu về kệ. Phiếu "Đã hủy" ghi lời nhắc này. Cột `GoodsIssue.ReturnSerials` từng thêm cho việc này đã bỏ (migration `IssueDropReturnSerials`).
+  - Lý do "hủy duyệt" phiếu nhập và "hủy quyết định" biên bản vẫn bắt buộc nhập nhưng không còn được lưu ở đâu (trước đây chỉ gửi kèm thông báo).
+
 ## Cột thêm
 
 | Bảng | Cột | Kiểu | Lý do (use case) |
 |---|---|---|---|
 | GoodsReceipt, GoodsIssue, Stocktake, AbnormalReport, StocktakePlan | `Code` | nvarchar(20), UNIQUE | Mã hiển thị PN-/PX-/KK-/BC-/KH-yymm-nnnn trên chứng từ và màn hình |
-| GoodsReceipt, GoodsIssue, Stocktake, AbnormalReport, ReplenishmentProposal | `RejectReason` | nvarchar(255) NULL | UC_05 4.1, UC_10 3.1, UC_12 3.1, UC_15 4.1, UC_18 6.1: "ghi lý do từ chối" |
-| GoodsReceipt, GoodsIssue, Stocktake, AbnormalReport, ReplenishmentProposal | `ApprovedAt` | datetime2 NULL | Hiển thị thời điểm duyệt cạnh người duyệt (tiến trình duyệt) |
+| GoodsReceipt, Stocktake, AbnormalReport, ReplenishmentProposal | `RejectReason` | nvarchar(255) NULL | UC_05 4.1, UC_12 3.1, UC_15 4.1, UC_18 6.1: "ghi lý do từ chối" |
+| GoodsReceipt, Stocktake, AbnormalReport, ReplenishmentProposal | `ApprovedAt` | datetime2 NULL | Hiển thị thời điểm duyệt cạnh người duyệt (tiến trình duyệt) |
 | GoodsReceipt | `SubmittedAt`, `Note` | datetime2 NULL, nvarchar(255) NULL | Thời điểm gửi duyệt; ghi chú chung của phiếu |
 | GoodsReceiptDetail | `LotCode` | nvarchar(50), UNIQUE | Mã lô LOT-yymm-nnn in trên mã vạch lô (UC_04 bước 8). Sơ đồ lớp không có cột mã lô. |
 | GoodsReceiptDetail | `DocumentQuantity`, `Note` | int NULL, nvarchar(255) NULL | UC_04 3.1: số lượng trên chứng từ khác số thực nhận, ghi chú chênh lệch |
 | GoodsIssue | `CreatedBy` | int FK(User) | NFR bảo mật: ghi người lập trên mọi chứng từ |
 | GoodsIssue | `ReceiverName`, `DeliveredAt`, `DeliveredBy` | nvarchar(100), datetime2, int FK(User) | UC_08 bước 6: biên bản giao hàng |
-| GoodsIssue | `HoldReason` | nvarchar(255) NULL | UC_07 3.1, UC_08 3.2: lý do phiếu "Đã hủy" (không đủ hàng thay thế, hoặc đơn bị hủy) |
+| GoodsIssue | `CancelReason` (trước là `HoldReason`) | nvarchar(255) NULL | UC_07 3.1, UC_08 3.2: lý do phiếu "Đã hủy" (không đủ hàng thay thế, hoặc đơn bị hủy) |
 | Order | `CustomerName` | nvarchar(150) NULL | Hiển thị khách hàng khi chọn đơn cần xuất |
 | Order | `CancelReason`, `CancelledAt`, `CancelledBy` | nvarchar(255) NULL, datetime2 NULL, int FK(User) NULL | Khách hủy đơn: Quản lý (thay cho hệ thống bán hàng) hủy đơn chưa giao, ghi lý do (migration `OrderCancel`) |
-| Order | `ReadyNotifiedAt` | datetime2 NULL | Đơn "Chờ xử lý" đã đủ hàng trở lại: đã báo nhân viên kho một lần; xoá khi đơn lại chuyển "Chờ xử lý" |
 | Order | `CustomerPhone`, `ShippingAddress`, `Note` | nvarchar(20), nvarchar(300), nvarchar(500), NULL | Thông tin giao hàng của đơn: số điện thoại, địa chỉ, ghi chú. Hiện ở đơn chờ xuất, màn phân bổ và phiếu xuất |
 | GoodsIssue | `PickerId`, `PickStartedAt`, `PickActiveAt` | int FK(User) NULL, datetime2 NULL, datetime2 NULL | Nhân viên đang lấy hàng phiếu này, lúc nhận phiếu (phiếu được giữ 3 ngày từ lúc này), lần thao tác cuối (xem quy ước "Nhận phiếu khi lấy hàng") |
 | StockItem | `PickedAt` | datetime2 NULL | UC_08 bước 2: ghi nhận đã quét đối chiếu |
@@ -46,7 +56,6 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
 
 | Bảng | Cột | Lý do |
 |---|---|---|
-| `Notification` | NotificationId, UserId FK, Title, Message, Link, Tone, CreatedAt, IsRead | Các use case "thông báo cho Quản lý / nhân viên kho" (UC_05, UC_10, UC_11, UC_12, sơ đồ 3.8) |
 | `StocktakeItem` | StocktakeItemId, DetailId FK(StocktakeDetail, xoá theo), ItemId FK(StockItem), UNIQUE(DetailId, ItemId) | Các mã đã quét khi đếm lô bằng tem, để biết chính xác sản phẩm nào thiếu |
 | `ReplenishmentReport` | ReportId, Code (DX-yymm-nnnn, UNIQUE), CreatedAt, CreatedBy FK(User), ProposalCount, SupplierCount, TotalQuantity, Snapshot nvarchar(max) | UC_18: báo cáo đề xuất bổ sung Quản lý lập từ các đề xuất đã chọn. `Snapshot` lưu nội dung báo cáo (JSON) để in lại đúng như lúc lập |
 | `AbnormalReportItem` | ReportItemId, ReportId FK(AbnormalReport, xoá theo), ItemId FK(StockItem), UNIQUE(ReportId, ItemId) | Các sản phẩm lỗi ghi trên biên bản. Biên bản lập khi nhập kho ghi mọi sản phẩm của lô không đạt |
@@ -57,7 +66,7 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
 |---|---|---|---|
 | StockItem.Status | Trong kho / Đã xuất | **Chờ nhập**, **Đã giữ chỗ**, **Thất thoát**, **Lỗi** | Sản phẩm được tạo khi lập phiếu nhập nhưng chỉ vào tồn khi phiếu được duyệt. Sản phẩm được giữ chỗ theo FIFO khi lập phiếu xuất. Phần thiếu khi kiểm kê được đánh dấu thất thoát (UC_15 bước 7). Sản phẩm ghi trên biên bản bất thường được tách ra ở trạng thái "Lỗi". |
 | Order.Status | Chưa xuất / Chờ xử lý / Đã xuất | **Đang xuất**, **Đã hủy** | Đang xuất: đơn đã có phiếu xuất nhưng chưa giao. Đã hủy: khách hủy, không còn tính vào tồn ròng (Q8) và nhu cầu (Q1) |
-| GoodsIssue.Status | Chờ duyệt / Đã duyệt / Từ chối / Chờ xử lý / Đã xuất | **Chờ xử lý → Đã hủy** | Phiếu kết thúc không giao, hàng đã nhả: đơn bị hủy, hoặc không đủ hàng thay thế (UC_08 3.2; đơn khi đó "Chờ xử lý"). Lý do ở `HoldReason`. Migration `OrderCancel` đổi dữ liệu cũ |
+| GoodsIssue.Status | Chờ duyệt / Đã duyệt / Từ chối / Chờ xử lý / Đã xuất | **Đổi thành** Chờ lấy hàng / Đã hủy / Đã xuất | Phiếu không cần duyệt: lập xong là "Chờ lấy hàng". "Đã hủy" (thay cho Chờ xử lý, migration `OrderCancel`): phiếu kết thúc không giao, hàng đã nhả, vì đơn bị hủy hoặc không đủ hàng thay thế (UC_08 3.2). Lý do ở `CancelReason` |
 | StocktakePlan.Status | Chờ thực hiện / Hoàn thành | **Đang kiểm kê** | Đã có phiếu kiểm kê đang chờ duyệt |
 | ReplenishmentProposal.Status | Chờ duyệt / Đã duyệt / Từ chối | **Đổi thành** Chờ xem xét / Đã lập báo cáo / Không đề xuất; thêm **Đã đóng** | Đề xuất chỉ là gợi ý: Quản lý xem xét rồi lập báo cáo cho bộ phận mua hàng, hệ thống dừng ở đó (không theo dõi mua hay hàng về). Đã đóng: hệ thống tự đóng khi tồn vượt ROP trước khi Quản lý xử lý. Migration đổi dữ liệu cũ: Đã duyệt và Đã nhập hàng → Đã lập báo cáo, Chờ duyệt → Chờ xem xét, Từ chối → Không đề xuất |
 
@@ -81,11 +90,10 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
   - Khi phiếu bị từ chối, `ApprovedBy` và `ApprovedAt` ghi người và thời điểm từ chối. Khi phiếu được gửi lại, hai cột này được xoá.
   - Mỗi dòng nhận tối đa 2.000 sản phẩm, vì mã sản phẩm có 4 chữ số cho mỗi SKU trong tháng.
   - Mặt hàng trên phiếu phải do nhà cung cấp của phiếu cung cấp (nhà cung cấp chính của hàng hóa). Chọn nhà cung cấp trước thì chỉ hiện hàng của nhà cung cấp đó; chọn mặt hàng trước thì nhà cung cấp được chọn theo, và danh sách nhà cung cấp chỉ còn nhà cung cấp của các mặt hàng đã chọn. Server cũng kiểm tra điều này.
-- **Xuất kho (UC_07–10):**
+- **Xuất kho (UC_07–09):**
   - Sản phẩm được phân bổ khi đang "Trong kho", chưa gắn phiếu nào, thuộc lô "Bình thường" của phiếu nhập đã duyệt. Thứ tự FIFO tính theo ngày phiếu nhập, rồi theo lô, rồi theo mã sản phẩm.
-  - Lập phiếu thì sản phẩm chuyển "Đã giữ chỗ" và vẫn được tính trong tồn của lô cho đến khi giao hàng.
-  - Thiếu hàng thì không tạo phiếu: đơn chuyển "Chờ xử lý" và Quản lý nhận thông báo.
-  - Quản lý từ chối phiếu thì sản phẩm được trả về tồn kho và đơn trở về "Chưa xuất".
+  - Lập phiếu thì sản phẩm chuyển "Đã giữ chỗ" và vẫn được tính trong tồn của lô cho đến khi giao hàng. Phiếu ở "Chờ lấy hàng", không qua duyệt.
+  - Thiếu hàng thì không tạo phiếu: đơn chuyển "Chờ xử lý".
   - Mỗi sản phẩm phải được quét trước khi xác nhận giao hàng. Mã quét bị từ chối khi sai phiếu, sai thứ tự FIFO (khác lô), thuộc lô bị khoá hoặc cách ly, hoặc là mã lô.
   - **Sản phẩm cùng lô thay được cho nhau.** Nhân viên quét một sản phẩm cùng lô nhưng không có trong danh sách thì hệ thống đổi chỗ giữ, FIFO vẫn đúng vì cùng lô:
     - Sản phẩm đang tự do thì được gắn vào phiếu, và một sản phẩm chưa quét cùng lô của phiếu được trả về tồn.
@@ -102,14 +110,14 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
   - Báo cáo tồn kho có thêm cột "Hàng lỗi", không tính vào tồn thực tế. Báo cáo biến động tính sản phẩm bị tách ra là điều chỉnh âm tại thời điểm lập biên bản.
 - **Báo hàng lỗi khi xuất (UC_08 3.1, UC_11):**
   - Mỗi lô có hàng lỗi được lập một biên bản (`IssueId` ghi phiếu xuất). Sản phẩm lỗi được gỡ khỏi phiếu và thay ngay bằng sản phẩm kế tiếp theo FIFO, có thể cùng lô. Hàng đã quét khác của lô vẫn giữ nguyên.
-  - Chọn "Nghi lỗi cả lô" thì cả lô chuyển "Tạm cách ly". Mọi sản phẩm của lô đang giữ chỗ trên các phiếu chưa xuất được đổi sang lô khác theo FIFO, hàng đã quét phải trả lại kệ, và người lập các phiếu khác nhận được thông báo.
+  - Chọn "Nghi lỗi cả lô" thì cả lô chuyển "Tạm cách ly". Mọi sản phẩm của lô đang giữ chỗ trên các phiếu chưa xuất được đổi sang lô khác theo FIFO, hàng đã quét phải trả lại kệ; danh sách lấy hàng của các phiếu khác tự cập nhật.
   - Việc thay thế làm ngay khi lập biên bản, không chờ Quản lý duyệt.
-  - Không đủ hàng thay thế thì phiếu chuyển "Đã hủy" (UC_08 3.2): mọi sản phẩm được gỡ khỏi phiếu và đơn chuyển "Chờ xử lý". Khi hàng về đủ, nhân viên kho được báo để lập phiếu mới.
+  - Không đủ hàng thay thế thì phiếu chuyển "Đã hủy" (UC_08 3.2): mọi sản phẩm được gỡ khỏi phiếu và đơn chuyển "Chờ xử lý". Hàng đã quét được trả lại kệ. Khi hàng về đủ, đơn có dấu "Đủ hàng" ở tab Đơn chờ xuất để lập phiếu mới.
   - Quét một sản phẩm "Lỗi" khi lấy hàng thì bị từ chối.
 - **Kiểm kê (UC_13–15):**
   - Ngày dự kiến của kế hoạch không được trước hôm nay (giờ Việt Nam).
   - Quản lý mở kế hoạch để xem chi tiết: loại, phạm vi, ngày, ghi chú, các lô cần kiểm (phạm vi "Toàn bộ kho" thì là các lô đang có hàng) và mọi phiếu kiểm kê đã gửi cho kế hoạch.
-  - **Sửa kế hoạch** (loại, ngày, phạm vi, lô, ghi chú) chỉ được khi kế hoạch "Chờ thực hiện", kể cả sau khi phiếu kiểm kê bị từ chối. Khi "Đang kiểm kê" (có phiếu chờ duyệt) hoặc "Hoàn thành" thì không sửa được. Kế hoạch đang sửa được giữ ngày cũ dù ngày đó đã qua, và giữ được lô đã hết hàng. Lô mới thêm vào phải còn tồn. Nhân viên kho nhận thông báo về những gì đã đổi.
+  - **Sửa kế hoạch** (loại, ngày, phạm vi, lô, ghi chú) chỉ được khi kế hoạch "Chờ thực hiện", kể cả sau khi phiếu kiểm kê bị từ chối. Khi "Đang kiểm kê" (có phiếu chờ duyệt) hoặc "Hoàn thành" thì không sửa được. Kế hoạch đang sửa được giữ ngày cũ dù ngày đó đã qua, và giữ được lô đã hết hàng. Lô mới thêm vào phải còn tồn.
   - Phạm vi "Toàn bộ kho" gồm mọi lô của phiếu nhập đã duyệt còn tồn tại thời điểm kiểm, kể cả lô tạm cách ly và đã khóa, vì chúng vẫn nằm trong kho.
   - Số đếm được lưu nháp trên máy nhân viên, kèm thời điểm đếm từng lô (`CountedAt`). Phiếu kiểm kê chỉ được tạo khi gửi.
   - **Số hệ thống = số sản phẩm trên kệ tại thời điểm đếm lô.** Gồm sản phẩm "Trong kho", "Đã giữ chỗ" và "Đã xuất", cùng sản phẩm "Lỗi" bị tách ra sau lúc đếm (`DefectiveAt` > `CountedAt`). Trừ những sản phẩm đã được quét lấy cho phiếu xuất trước thời điểm đó (`PickedAt` ≤ `CountedAt`), vì chúng đang ở khu soạn hàng hoặc đã giao. Nhờ vậy:
@@ -150,7 +158,7 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
     - Tồn ròng = tồn khả dụng − tổng số lượng của các đơn "Chưa xuất / Chờ xử lý / Đang xuất".
     - Việc kiểm tra chạy sau mọi thay đổi tồn hoặc đơn: tiếp nhận đơn mới, duyệt hoặc hủy duyệt phiếu nhập, giao hàng, báo lỗi, duyệt kiểm kê, duyệt hoặc từ chối biên bản.
     - **Tồn ròng ≤ ROP:**
-      - Mở cảnh báo (kèm thông báo cho Quản lý) hoặc cập nhật cảnh báo đang mở. `StockAlert.CurrentQuantity` lưu tồn ròng.
+      - Mở cảnh báo hoặc cập nhật cảnh báo đang mở. `StockAlert.CurrentQuantity` lưu tồn ròng.
       - Mỗi mặt hàng có tối đa một đề xuất mở. Đề xuất "Chờ xem xét" được cập nhật căn cứ và số lượng; số quản lý đã sửa thì giữ.
     - **Tồn ròng > ROP:** cảnh báo và đề xuất đang chờ chuyển "Đã đóng".
     - **Đã chốt: đề xuất chỉ là gợi ý.** Quản lý tick các đề xuất và lập báo cáo (bảng `ReplenishmentReport`); đề xuất chuyển "Đã lập báo cáo" và kết thúc. Mua gì, bao nhiêu, khi nào do bộ phận mua hàng quyết định ngoài hệ thống, nên phiếu nhập không nối với đề xuất.
@@ -187,7 +195,7 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
 - **Nhận phiếu khi lấy hàng (mở rộng):** mỗi lúc chỉ một nhân viên lấy hàng một phiếu xuất "Đã duyệt".
   - Bấm "Bắt đầu lấy hàng" là nhận phiếu. Quét mã trên phiếu chưa ai nhận cũng tự nhận phiếu.
   - Người khác mở phiếu thì chỉ xem được, kèm dòng "Đang do … lấy hàng". Họ không quét, báo lỗi hay xác nhận giao hàng được.
-  - Phiếu được giữ cho người đã nhận trong 3 ngày, tính từ lúc nhận phiếu (quét thêm không gia hạn). Hết 3 ngày, người khác được bấm "Nhận lại phiếu" và người cũ nhận thông báo để bàn giao hàng đã lấy. Trong 3 ngày đó, muốn đổi người thì người đang giữ nhường phiếu hoặc Quản lý gỡ. Quét mã không bao giờ tự chiếm phiếu của người khác.
+  - Phiếu được giữ cho người đã nhận trong 3 ngày, tính từ lúc nhận phiếu (quét thêm không gia hạn). Hết 3 ngày, người khác được bấm "Nhận lại phiếu" và hai người tự bàn giao hàng đã lấy. Trong 3 ngày đó, muốn đổi người thì người đang giữ nhường phiếu hoặc Quản lý gỡ. Quét mã không bao giờ tự chiếm phiếu của người khác.
   - "Nhường phiếu" (người đang lấy) và "Gỡ người lấy hàng" (Quản lý, bất cứ lúc nào) trả phiếu về trạng thái chưa ai nhận. Các mã đã quét được giữ nguyên.
   - Từ chối phiếu thì xóa người lấy hàng. Hủy duyệt thì giữ, để khi duyệt lại người đó lấy tiếp.
 - **Chống ghi đè khi hai người thao tác cùng lúc:** ba cột được đánh dấu concurrency token (EF thêm điều kiện vào câu UPDATE, không thêm cột):
@@ -195,7 +203,7 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
   - `Order.Status`: hai người cùng lập phiếu xuất cho một đơn.
   - `StockItem.IssueDetailId`: hai phiếu cùng giữ chỗ một sản phẩm.
   - Bên lưu sau nhận lỗi 409 "Dữ liệu vừa được người khác thay đổi. Tải lại trang rồi thử lại."
-- **Hủy duyệt (mở rộng, Chương 3 không có):** Quản lý có thể rút lại quyết định đã đưa ra. Mỗi lần hủy bắt buộc nhập lý do (tối thiểu 5 ký tự). Lý do được gửi kèm thông báo cho người lập và không lưu thành cột riêng.
+- **Hủy duyệt (mở rộng, Chương 3 không có):** Quản lý có thể rút lại quyết định đã đưa ra. Mỗi lần hủy bắt buộc nhập lý do (tối thiểu 5 ký tự). Lý do bắt buộc nhập nhưng không lưu thành cột riêng.
   - **Phiếu nhập** "Đã duyệt" trở về "Chờ duyệt". Tồn của mọi lô trong phiếu về 0, sản phẩm về "Chờ nhập". Biên bản bất thường của phiếu trở về "Chờ duyệt" và lô liên quan về "Tạm cách ly". Đề xuất bổ sung đã chuyển "Đã nhập hàng" nhờ phiếu này trở về "Đã duyệt". Sau đó Quản lý duyệt lại, hoặc từ chối để nhân viên sửa phiếu. Không hủy được trong các trường hợp sau:
     - Có sản phẩm đã được giữ chỗ, đã xuất hoặc bị điều chỉnh (tồn lô khác số nhập).
     - Lô đã nằm trong kế hoạch kiểm kê hoặc phiếu kiểm kê.
