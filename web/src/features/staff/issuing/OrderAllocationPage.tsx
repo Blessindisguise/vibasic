@@ -58,7 +58,7 @@ export function OrderAllocationPage({ orderId }: { orderId: number }) {
             <div className="vb-muted" style={{ fontSize: 14, marginTop: 2 }}>Đặt {fmtDateTime(order?.orderDate)}</div>
           </div>
           {canIssue && (a.sufficient
-            ? <Button size="xl" icon="send" loading={create.isPending} onClick={openConfirm}>Lập phiếu xuất và gửi duyệt</Button>
+            ? <Button size="xl" icon="send" loading={create.isPending} onClick={openConfirm}>Lập phiếu xuất</Button>
             : <Button size="xl" variant="secondary" icon="circle-pause" loading={create.isPending} onClick={openConfirm}>Ghi nhận thiếu hàng</Button>)}
         </div>
         <div className="vb-panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

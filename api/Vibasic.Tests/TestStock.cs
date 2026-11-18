@@ -16,8 +16,7 @@ internal static class TestStock
     /// </summary>
     public static async Task AddLotsAsync(VibasicDbContext db, IClock clock, params string[] skus)
     {
-        var notifier = new Notifier(db, clock);
-        var receipts = new ReceiptService(db, new CodeGenerator(db), notifier, clock, new ReplenishmentService(db, notifier, clock));
+        var receipts = new ReceiptService(db, new CodeGenerator(db), clock, new ReplenishmentService(db, clock));
         var staff = db.Users.First(u => u.Username == "nhanvien1").UserId;
         var manager = db.Users.First(u => u.Username == "quanly").UserId;
         foreach (var group in db.Products.Where(p => skus.Contains(p.SKU)).ToList().GroupBy(p => p.SupplierId))

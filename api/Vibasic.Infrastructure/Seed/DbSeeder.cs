@@ -396,8 +396,8 @@ public static class DbSeeder
             var delivered = o.IssueUtc.AddHours(2);
             var issue = new GoodsIssue
             {
-                Order = order, IssueDate = o.IssueUtc, Creator = rnd.Next(2) == 0 ? staff1 : staff2, Approver = manager,
-                ApprovedAt = o.IssueUtc.AddMinutes(30), Status = IssueStatus.Issued, ReceiverName = "Tài xế Nguyễn Văn Bình",
+                Order = order, IssueDate = o.IssueUtc, Creator = rnd.Next(2) == 0 ? staff1 : staff2,
+                Status = IssueStatus.Issued, ReceiverName = "Tài xế Nguyễn Văn Bình",
                 DeliveredAt = delivered, DeliveredBy = null,
             };
             foreach (var (sku, qty) in o.Lines)

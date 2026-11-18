@@ -18,8 +18,7 @@ public class OrdersController(VibasicDbContext db, IssueService issues) : Contro
     public record OrderRow(int Id, string ExternalCode, string? CustomerName, DateTime OrderDate, OrderStatus Status,
         int TotalQuantity, bool Sufficient, List<OrderLine> Lines, int? LastIssueId, string? LastIssueCode, IssueStatus? LastIssueStatus,
         string? CustomerPhone, string? ShippingAddress, string? Note, string? CancelReason, DateTime? CancelledAt);
-    /// <param name="ReturnToShelf">Items already picked for the cancelled issue, to put back on the shelf.</param>
-    public record CancelResponse(OrderRow Order, string? IssueCode, List<string> ReturnToShelf);
+    public record CancelResponse(OrderRow Order, string? IssueCode);
 
     [HttpGet]
     public async Task<List<OrderRow>> List(OrderStatus? status)
@@ -69,7 +68,7 @@ public class OrdersController(VibasicDbContext db, IssueService issues) : Contro
     public async Task<CancelResponse> Cancel(int id, ReasonInput input)
     {
         var r = await issues.CancelOrderAsync(id, input.Reason, User.UserId());
-        return new CancelResponse(await Row(id), r.IssueCode, r.ReturnToShelf);
+        return new CancelResponse(await Row(id), r.IssueCode);
     }
 
     private async Task<Dictionary<int, int>> FreeByProductAsync() =>
@@ -79,15 +78,15 @@ public class OrdersController(VibasicDbContext db, IssueService issues) : Contro
             .ToDictionaryAsync(x => x.Key, x => x.Count);
 }
 
-/// <summary>UC_07–09 (staff) and UC_10 for issues (manager).</summary>
+/// <summary>UC_07–09: issues are created and picked by staff, with no approval step.</summary>
 [ApiController]
 [Route("api/issues")]
 [Authorize]
 public class IssuesController(VibasicDbContext db, IssueService issues) : ControllerBase
 {
     public record IssueRow(int Id, string Code, DateTime IssueDate, int OrderId, string OrderCode, string? CustomerName,
-        int CreatedBy, string CreatorName, string? ApproverName, DateTime? ApprovedAt, IssueStatus Status,
-        int ProductCount, int TotalQuantity, int Picked, string? RejectReason, string? HoldReason,
+        int CreatedBy, string CreatorName, IssueStatus Status,
+        int ProductCount, int TotalQuantity, int Picked, string? CancelReason,
         string? ReceiverName, DateTime? DeliveredAt, string? DelivererName,
         string? CustomerPhone, string? ShippingAddress, string? OrderNote,
         int? PickerId, string? PickerName, DateTime? PickStartedAt, DateTime? PickActiveAt);
@@ -147,15 +146,6 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
         return await View((await issues.CreateAsync(input.OrderId.Value, User.UserId())).IssueId);
     }
 
-    [HttpPost("{id:int}/approve"), Authorize(Policy = Policies.Manager)]
-    public async Task<IssueView> Approve(int id) => await View((await issues.ApproveAsync(id, User.UserId())).IssueId);
-
-    [HttpPost("{id:int}/reject"), Authorize(Policy = Policies.Manager)]
-    public async Task<IssueView> Reject(int id, ReasonInput input) => await View((await issues.RejectAsync(id, input.Reason, User.UserId())).IssueId);
-
-    [HttpPost("{id:int}/revoke"), Authorize(Policy = Policies.Manager)]
-    public async Task<IssueView> Revoke(int id, ReasonInput input) => await View((await issues.RevokeAsync(id, input.Reason, User.UserId())).IssueId);
-
     [HttpPost("{id:int}/scan"), Authorize(Policy = Policies.Staff)]
     public Task<ScanResult> Scan(int id, ScanInput input) => issues.ScanAsync(id, input.Code, User.UserId());
 
@@ -180,11 +170,12 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
 
     private async Task<IssueView> View(int id) => (await Get(id)).Value!;
 
+
     private IQueryable<IssueRow> Rows(IQueryable<GoodsIssue> source) => source.Select(i => new IssueRow(
         i.IssueId, i.Code, i.IssueDate, i.OrderId, i.Order.ExternalCode, i.Order.CustomerName, i.CreatedBy, i.Creator.FullName,
-        i.Approver != null ? i.Approver.FullName : null, i.ApprovedAt, i.Status,
+        i.Status,
         i.Details.Count(), i.Details.Sum(d => d.Quantity), i.Details.SelectMany(d => d.Items).Count(it => it.PickedAt != null),
-        i.RejectReason, i.HoldReason, i.ReceiverName, i.DeliveredAt,
+        i.CancelReason, i.ReceiverName, i.DeliveredAt,
         db.Users.Where(u => u.UserId == i.DeliveredBy).Select(u => u.FullName).FirstOrDefault(),
         i.Order.CustomerPhone, i.Order.ShippingAddress, i.Order.Note,
         i.PickerId, i.Picker != null ? i.Picker.FullName : null, i.PickStartedAt, i.PickActiveAt));

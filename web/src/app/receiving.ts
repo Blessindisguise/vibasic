@@ -74,13 +74,13 @@ export const useReport = (id: number) =>
 export const useApprovalSummary =(enabled = true) =>
   useQuery({
     queryKey: ['approvals'], enabled, refetchInterval: 60_000,
-    queryFn: () => api<{ receipts: number; issues: number; stocktakes: number; abnormalReports: number; total: number }>('/approvals/summary'),
+    queryFn: () => api<{ receipts: number; stocktakes: number; abnormalReports: number; total: number }>('/approvals/summary'),
   });
 
-/** Every receipt or report change can move counts, stock and notifications, so refresh them together. */
+/** Every receipt or report change can move counts and stock, so refresh them together. */
 function useRefresh() {
   const qc = useQueryClient();
-  return () => ['receipts', 'receipt', 'abnormal-reports', 'approvals', 'products', 'notifications', 'decision', 'lot', 'lots', 'issue', 'stocktake']
+  return () => ['receipts', 'receipt', 'abnormal-reports', 'approvals', 'products', 'decision', 'lot', 'lots', 'issue', 'stocktake']
     .forEach(k => qc.invalidateQueries({ queryKey: [k] }));
 }
 
@@ -110,21 +110,6 @@ export function useReportAction() {
     mutationFn: ({ id, action, reason, wholeLot }: { id: number; action: 'approve' | 'reject' | 'revoke'; reason?: string; wholeLot?: boolean }) =>
       api<ReportRow>(`/abnormal-reports/${id}/${action}`, { method: 'POST', json: action === 'approve' ? { wholeLot } : { reason } }),
     onSuccess: refresh,
-  });
-}
-
-// ---------------- notifications ----------------
-
-export interface NotificationItem { id: number; title: string; message?: string; link?: string; tone: string; createdAt: string; isRead: boolean }
-
-export const useNotifications = () =>
-  useQuery({ queryKey: ['notifications'], refetchInterval: 30_000, queryFn: () => api<{ unread: number; items: NotificationItem[] }>('/notifications') });
-
-export function useMarkRead() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (ids?: number[]) => api<void>('/notifications/read', { method: 'POST', json: { ids } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
   });
 }
 

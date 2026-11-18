@@ -29,14 +29,12 @@ public class IssuingTests
         public (VibasicDbContext db, IssueService issues) OtherRequest()
         {
             var db = new VibasicDbContext(new DbContextOptionsBuilder<VibasicDbContext>().UseInMemoryDatabase(DbName).Options);
-            var notifier = new Notifier(db, Clock);
-            return (db, new IssueService(db, new CodeGenerator(db), notifier, Clock, new ReplenishmentService(db, notifier, Clock)));
+            return (db, new IssueService(db, new CodeGenerator(db), Clock, new ReplenishmentService(db, Clock)));
         }
 
-        public async Task<GoodsIssue> Approved(string code, string sku, int qty)
+        public async Task<GoodsIssue> Ready(string code, string sku, int qty)
         {
             var issue = await Issues.CreateAsync((await Order(code, (sku, qty))).OrderId, Staff);
-            await Issues.ApproveAsync(issue.IssueId, Manager);
             return issue;
         }
 
@@ -59,13 +57,12 @@ public class IssuingTests
         var db = new VibasicDbContext(new DbContextOptionsBuilder<VibasicDbContext>().UseInMemoryDatabase(name).Options);
         await DbSeeder.SeedAsync(db, Now.AddDays(-1));
         var clock = new FixedClock(Now);
-        var notifier = new Notifier(db, clock);
-        var replenish = new ReplenishmentService(db, notifier, clock);
-        var issues = new IssueService(db, new CodeGenerator(db), notifier, clock, replenish);
+        var replenish = new ReplenishmentService(db, clock);
+        var issues = new IssueService(db, new CodeGenerator(db), clock, replenish);
         await TestStock.AddLotsAsync(db, clock, TestStock.MultiLot);
         return new Ctx
         {
-            Db = db, Issues = issues, Reports = new AbnormalReportService(db, notifier, clock, replenish, issues),
+            Db = db, Issues = issues, Reports = new AbnormalReportService(db, clock, replenish, issues),
             Staff = db.Users.First(u => u.Username == "nhanvien1").UserId,
             Manager = db.Users.First(u => u.Username == "quanly").UserId,
             Staff2 = db.Users.First(u => u.Username == "nhanvien2").UserId,
@@ -88,7 +85,7 @@ public class IssuingTests
         Assert.Equal([firstLotFree, 3], preview.Lines.Single().Lots.Select(l => l.Take));
 
         var issue = await c.Issues.CreateAsync(order.OrderId, c.Staff);
-        Assert.Equal(IssueStatus.Pending, issue.Status);
+        Assert.Equal(IssueStatus.Ready, issue.Status); // no approval step: ready to pick at once
         Assert.StartsWith("PX-2611-", issue.Code);
         Assert.Equal(OrderStatus.InProgress, order.Status);
         var line = Assert.Single(issue.Details);
@@ -113,51 +110,12 @@ public class IssuingTests
     }
 
     [Fact]
-    public async Task Rejected_issue_releases_items_and_reopens_the_order()
-    {
-        await using var c = await Setup();
-        var order = await c.Order("DH-T-03", ("DUA-02", 10));
-        var issue = await c.Issues.CreateAsync(order.OrderId, c.Staff);
-        await Assert.ThrowsAsync<ValidationException>(() => c.Issues.RejectAsync(issue.IssueId, "", c.Manager));
-        await c.Issues.RejectAsync(issue.IssueId, "Khách đổi ngày nhận hàng", c.Manager);
-        Assert.Equal(IssueStatus.Rejected, issue.Status);
-        Assert.Equal(OrderStatus.Open, order.Status);
-        Assert.Empty(c.ItemsOf(issue));
-        Assert.False(await c.Db.StockItems.AnyAsync(i => i.Status == ItemStatus.Reserved));
-    }
-
-    [Fact]
-    public async Task Revoked_issue_returns_to_pending_keeping_its_items_until_delivery()
-    {
-        await using var c = await Setup();
-        var order = await c.Order("DH-T-09", ("DUA-02", 4));
-        var issue = await c.Issues.CreateAsync(order.OrderId, c.Staff);
-        await Assert.ThrowsAsync<RuleException>(() => c.Issues.RevokeAsync(issue.IssueId, "Khách hoãn", c.Manager)); // not approved
-        await c.Issues.ApproveAsync(issue.IssueId, c.Manager);
-        var items = c.ItemsOf(issue);
-        await c.Issues.ScanAsync(issue.IssueId, items[0].SerialCode, c.Staff);
-
-        await c.Issues.RevokeAsync(issue.IssueId, "Khách hoãn ngày nhận", c.Manager);
-        Assert.Equal(IssueStatus.Pending, issue.Status);
-        Assert.Null(issue.ApprovedBy);
-        Assert.Equal(OrderStatus.InProgress, order.Status);
-        Assert.All(c.ItemsOf(issue), i => Assert.Equal(ItemStatus.Reserved, i.Status));
-        await Assert.ThrowsAsync<RuleException>(() => c.Issues.ScanAsync(issue.IssueId, items[1].SerialCode, c.Staff)); // picking paused
-
-        await c.Issues.ApproveAsync(issue.IssueId, c.Manager);
-        foreach (var item in items) await c.Issues.ScanAsync(issue.IssueId, item.SerialCode, c.Staff);
-        await c.Issues.DeliverAsync(issue.IssueId, "Chị Mai", c.Staff);
-        await Assert.ThrowsAsync<RuleException>(() => c.Issues.RevokeAsync(issue.IssueId, "Quá muộn", c.Manager)); // delivered
-    }
-
-    [Fact]
     public async Task Picking_validates_scans_then_delivery_deducts_each_lot()
     {
         await using var c = await Setup();
         var order = await c.Order("DH-T-04", ("THT-01", 6));
         var issue = await c.Issues.CreateAsync(order.OrderId, c.Staff);
-        await Assert.ThrowsAsync<RuleException>(() => c.Issues.ScanAsync(issue.IssueId, "x", c.Staff)); // not approved yet
-        await c.Issues.ApproveAsync(issue.IssueId, c.Manager);
+        await Assert.ThrowsAsync<RuleException>(() => c.Issues.ScanAsync(issue.IssueId, "x", c.Staff)); // unknown code
 
         var reserved = c.ItemsOf(issue);
         var locked = await c.Db.StockItems.FirstAsync(i => i.ReceiptDetail.Status == LotStatus.Locked);
@@ -199,7 +157,7 @@ public class IssuingTests
     {
         await using var c = await Setup();
         var (free, newest) = FreeStock(c, "MUO-01");
-        var issue = await c.Approved("DH-T-L1", "MUO-01", free); // everything, so the newest lot is taken whole
+        var issue = await c.Ready("DH-T-L1", "MUO-01", free); // everything, so the newest lot is taken whole
         var lotItems = c.ItemsOf(issue).Where(i => i.ReceiptDetailId == newest.ReceiptDetailId).ToList();
         Assert.Equal(30, lotItems.Count);
         await c.Issues.ScanAsync(issue.IssueId, lotItems[0].SerialCode, c.Staff); // one item scanned on its own first
@@ -219,7 +177,7 @@ public class IssuingTests
     {
         await using var c = await Setup();
         var (free, newest) = FreeStock(c, "MUO-01");
-        var issue = await c.Approved("DH-T-L2", "MUO-01", free - 1); // 29 of the newest lot's 30
+        var issue = await c.Ready("DH-T-L2", "MUO-01", free - 1); // 29 of the newest lot's 30
 
         var e = await Assert.ThrowsAsync<RuleException>(() => c.Issues.ScanAsync(issue.IssueId, newest.LotCode, c.Staff));
 
@@ -233,8 +191,8 @@ public class IssuingTests
     {
         await using var c = await Setup();
         var (free, newest) = FreeStock(c, "MUO-01");
-        var a = await c.Approved("DH-T-L3", "MUO-01", free - 28); // older lots + 2 of the newest
-        var b = await c.Approved("DH-T-L4", "MUO-01", 28);        // the other 28 of the newest
+        var a = await c.Ready("DH-T-L3", "MUO-01", free - 28); // older lots + 2 of the newest
+        var b = await c.Ready("DH-T-L4", "MUO-01", 28);        // the other 28 of the newest
         Assert.All(c.ItemsOf(b), i => Assert.Equal(newest.ReceiptDetailId, i.ReceiptDetailId));
 
         var e = await Assert.ThrowsAsync<RuleException>(() => c.Issues.ScanAsync(b.IssueId, newest.LotCode, c.Staff));
@@ -251,7 +209,6 @@ public class IssuingTests
         var onHand = lot.QuantityOnHand;
         var a = await c.Issues.CreateAsync((await c.Order("DH-T-05", ("MUO-03", 2))).OrderId, c.Staff);
         var b = await c.Issues.CreateAsync((await c.Order("DH-T-06", ("MUO-03", 2))).OrderId, c.Staff);
-        await c.Issues.ApproveAsync(a.IssueId, c.Manager);
         var aItems = c.ItemsOf(a);
         var bItems = c.ItemsOf(b).Select(i => i.ItemId).Order().ToList();
         await c.Issues.ScanAsync(a.IssueId, aItems[1].SerialCode, c.Staff);
@@ -297,7 +254,6 @@ public class IssuingTests
         var lot = c.FifoLots("MUO-03")[0];
         var a = await c.Issues.CreateAsync((await c.Order("DH-T-05", ("MUO-03", 2))).OrderId, c.Staff);
         var b = await c.Issues.CreateAsync((await c.Order("DH-T-06", ("MUO-03", 2))).OrderId, c.Staff);
-        await c.Issues.ApproveAsync(a.IssueId, c.Manager);
         await c.Issues.ReportDefectAsync(a.IssueId, [c.ItemsOf(a)[0].SerialCode], "Mốc đáy muỗng", c.Staff);
         var report = await c.Db.AbnormalReports.SingleAsync(r => r.IssueId == a.IssueId);
         Assert.Contains(c.ItemsOf(b), i => i.ReceiptDetailId == lot.ReceiptDetailId);
@@ -319,7 +275,6 @@ public class IssuingTests
         Assert.True(free >= 4);
         var a = await c.Issues.CreateAsync((await c.Order("DH-T-05", ("MUO-03", 2))).OrderId, c.Staff);
         var b = await c.Issues.CreateAsync((await c.Order("DH-T-06", ("MUO-03", 2))).OrderId, c.Staff);
-        await c.Issues.ApproveAsync(a.IssueId, c.Manager);
         var aItems = c.ItemsOf(a);
         Assert.All(aItems.Concat(c.ItemsOf(b)), i => Assert.Equal(lot.ReceiptDetailId, i.ReceiptDetailId));
         await c.Issues.ScanAsync(a.IssueId, aItems[1].SerialCode, c.Staff);
@@ -344,7 +299,6 @@ public class IssuingTests
             Assert.All(now, i => Assert.Null(i.PickedAt));
         }
         Assert.Equal(4, c.ItemsOf(a).Concat(c.ItemsOf(b)).Select(i => i.ItemId).Distinct().Count());
-        Assert.Contains(c.Db.Notifications, n => n.Title.Contains(b.Code) && n.Title.Contains("đổi"));
     }
 
     [Fact]
@@ -356,15 +310,16 @@ public class IssuingTests
             && i.ReceiptDetail.Status == LotStatus.Normal);
         var order = await c.Order("DH-T-07", ("KHA-03", all));
         var issue = await c.Issues.CreateAsync(order.OrderId, c.Staff);
-        await c.Issues.ApproveAsync(issue.IssueId, c.Manager);
         var item = c.ItemsOf(issue)[0];
+        var picked = c.ItemsOf(issue)[1];
+        await c.Issues.ScanAsync(issue.IssueId, picked.SerialCode, c.Staff);
 
         var result = await c.Issues.ReportDefectAsync(issue.IssueId, [item.SerialCode], "Hộp gia vị bong keo", c.Staff);
 
         Assert.True(result.OnHold);
         Assert.Equal(IssueStatus.Cancelled, issue.Status);
         Assert.Equal(OrderStatus.OnHold, order.Status);
-        Assert.NotNull(issue.HoldReason);
+        Assert.NotNull(issue.CancelReason);
         Assert.Empty(c.ItemsOf(issue));
         Assert.False(await c.Db.StockItems.AnyAsync(i => i.Status == ItemStatus.Reserved));
         Assert.Equal(ItemStatus.Defective, item.Status);
@@ -392,7 +347,6 @@ public class IssuingTests
         await using var c = await Setup();
         var order = await c.Order("DH-X1-01", ("DUA-02", 3));
         var issue = await c.Issues.CreateAsync(order.OrderId, c.Staff);
-        await c.Issues.ApproveAsync(issue.IssueId, c.Manager);
         var reserved = c.ItemsOf(issue);
         var lotId = reserved[0].ReceiptDetailId;
         var free = await c.Db.StockItems.FirstAsync(i => i.ReceiptDetailId == lotId && i.Status == ItemStatus.InStock && i.IssueDetailId == null);
@@ -414,7 +368,6 @@ public class IssuingTests
         await using var c = await Setup();
         var a = await c.Issues.CreateAsync((await c.Order("DH-X1-02", ("DUA-02", 2))).OrderId, c.Staff);
         var b = await c.Issues.CreateAsync((await c.Order("DH-X1-03", ("DUA-02", 2))).OrderId, c.Staff);
-        await c.Issues.ApproveAsync(a.IssueId, c.Manager);
         var fromB = c.ItemsOf(b);
         var sameLot = fromB.First(i => c.ItemsOf(a).Any(x => x.ReceiptDetailId == i.ReceiptDetailId));
 
@@ -427,7 +380,6 @@ public class IssuingTests
         Assert.Contains(bNow, i => i.SerialCode == r.ReplacedSerial && i.Status == ItemStatus.Reserved && i.PickedAt == null);
 
         // Once scanned for A it cannot be taken again by B.
-        await c.Issues.ApproveAsync(b.IssueId, c.Manager);
         var e = await Assert.ThrowsAsync<RuleException>(() => c.Issues.ScanAsync(b.IssueId, sameLot.SerialCode, c.Staff));
         Assert.Contains("phiếu xuất khác", e.Message);
     }
@@ -438,7 +390,7 @@ public class IssuingTests
     public async Task Only_the_staff_member_who_claimed_an_issue_can_pick_it()
     {
         await using var c = await Setup();
-        var issue = await c.Approved("DH-P-01", "DUA-02", 3);
+        var issue = await c.Ready("DH-P-01", "DUA-02", 3);
         var items = c.ItemsOf(issue);
 
         await c.Issues.ClaimAsync(issue.IssueId, c.Staff);
@@ -460,7 +412,7 @@ public class IssuingTests
     public async Task Scanning_a_free_issue_claims_it()
     {
         await using var c = await Setup();
-        var issue = await c.Approved("DH-P-02", "DUA-02", 2);
+        var issue = await c.Ready("DH-P-02", "DUA-02", 2);
         Assert.Null(issue.PickerId);
         await c.Issues.ScanAsync(issue.IssueId, c.ItemsOf(issue)[0].SerialCode, c.Staff2);
         Assert.Equal(c.Staff2, issue.PickerId);
@@ -471,7 +423,7 @@ public class IssuingTests
     public async Task An_issue_is_held_for_three_days_from_the_claim()
     {
         await using var c = await Setup();
-        var issue = await c.Approved("DH-P-03", "DUA-02", 2);
+        var issue = await c.Ready("DH-P-03", "DUA-02", 2);
         var items = c.ItemsOf(issue);
         await c.Issues.ScanAsync(issue.IssueId, items[0].SerialCode, c.Staff);
 
@@ -488,7 +440,6 @@ public class IssuingTests
         await c.Issues.ClaimAsync(issue.IssueId, c.Staff2);
         Assert.Equal(c.Staff2, issue.PickerId);
         Assert.Equal(Now.AddDays(3).AddMinutes(1), issue.PickStartedAt);
-        Assert.True(await c.Db.Notifications.AnyAsync(n => n.UserId == c.Staff && n.Title.Contains("nhận lại")));
 
         await Assert.ThrowsAsync<RuleException>(() => c.Issues.ScanAsync(issue.IssueId, items[1].SerialCode, c.Staff));
         var r = await c.Issues.ScanAsync(issue.IssueId, items[1].SerialCode, c.Staff2);
@@ -499,7 +450,7 @@ public class IssuingTests
     public async Task Releasing_keeps_the_scanned_items_and_a_manager_can_release_anyone()
     {
         await using var c = await Setup();
-        var issue = await c.Approved("DH-P-04", "DUA-02", 2);
+        var issue = await c.Ready("DH-P-04", "DUA-02", 2);
         var items = c.ItemsOf(issue);
         await c.Issues.ScanAsync(issue.IssueId, items[0].SerialCode, c.Staff);
 
@@ -511,27 +462,13 @@ public class IssuingTests
         await c.Issues.ClaimAsync(issue.IssueId, c.Staff2);
         await c.Issues.ReleaseAsync(issue.IssueId, c.Manager, isManager: true);
         Assert.Null(issue.PickerId);
-        Assert.True(await c.Db.Notifications.AnyAsync(n => n.UserId == c.Staff2 && n.Title.Contains("gỡ")));
-    }
-
-    [Fact]
-    public async Task Rejecting_clears_the_picker_and_revoking_keeps_them()
-    {
-        await using var c = await Setup();
-        var issue = await c.Approved("DH-P-05", "DUA-02", 2);
-        await c.Issues.ClaimAsync(issue.IssueId, c.Staff);
-        await c.Issues.RevokeAsync(issue.IssueId, "Khách đổi địa chỉ", c.Manager);
-        Assert.Equal(c.Staff, issue.PickerId);
-        await Assert.ThrowsAsync<RuleException>(() => c.Issues.ClaimAsync(issue.IssueId, c.Staff)); // pending again
-        await c.Issues.RejectAsync(issue.IssueId, "Khách hủy đơn hàng", c.Manager);
-        Assert.Null(issue.PickerId);
     }
 
     [Fact]
     public async Task Two_simultaneous_claims_only_one_wins()
     {
         await using var c = await Setup();
-        var issue = await c.Approved("DH-P-06", "DUA-02", 2);
+        var issue = await c.Ready("DH-P-06", "DUA-02", 2);
         var (db1, first) = c.OtherRequest();
         var (db2, second) = c.OtherRequest();
         await using (db1)
@@ -579,9 +516,9 @@ public class IssuingTests
         Assert.Equal(["customerPhone"], e.Errors.Keys);
     }
 
-    // ---------------- Hủy đơn hàng, báo đơn đủ hàng ----------------
+    // ---------------- Hủy đơn hàng ----------------
 
-    private static ReplenishmentService Replenish(Ctx c) => new(c.Db, new Notifier(c.Db, c.Clock), c.Clock);
+    private static ReplenishmentService Replenish(Ctx c) => new(c.Db, c.Clock);
 
     [Fact]
     public async Task Cancelling_an_order_without_an_issue_stops_it_counting_as_ordered()
@@ -600,16 +537,15 @@ public class IssuingTests
         Assert.Equal(c.Manager, order.CancelledBy);
         Assert.Null(r.IssueCode);
         Assert.Equal(before - 5, (await Replenish(c).StockAsync([pid]))[pid].Ordered); // Q8: no longer ordered
-        Assert.Contains(c.Db.Notifications, n => n.UserId == c.Staff && n.Title == "Đơn DH-H-01 đã hủy");
         await Assert.ThrowsAsync<RuleException>(() => c.Issues.CancelOrderAsync(order.OrderId, "Hủy lần nữa", c.Manager));
         await Assert.ThrowsAsync<RuleException>(() => c.Issues.CreateAsync(order.OrderId, c.Staff));
     }
 
     [Fact]
-    public async Task Cancelling_an_order_cancels_its_open_issue_and_lists_the_picked_items()
+    public async Task Cancelling_an_order_cancels_its_open_issue_and_releases_the_picked_items()
     {
         await using var c = await Setup();
-        var issue = await c.Approved("DH-H-02", "MUO-01", 4);
+        var issue = await c.Ready("DH-H-02", "MUO-01", 4);
         var items = c.ItemsOf(issue).OrderBy(i => i.SerialCode).ToList();
         await c.Issues.ScanAsync(issue.IssueId, items[0].SerialCode, c.Staff);
         await c.Issues.ScanAsync(issue.IssueId, items[1].SerialCode, c.Staff);
@@ -617,57 +553,16 @@ public class IssuingTests
         var r = await c.Issues.CancelOrderAsync(issue.OrderId, "Khách hủy đơn qua điện thoại", c.Manager);
 
         Assert.Equal(issue.Code, r.IssueCode);
-        Assert.Equal([items[0].SerialCode, items[1].SerialCode], r.ReturnToShelf);
         Assert.Equal(IssueStatus.Cancelled, issue.Status);
-        Assert.StartsWith("Đơn bị hủy", issue.HoldReason);
+        Assert.StartsWith("Đơn bị hủy", issue.CancelReason);
         Assert.Null(issue.PickerId);
         Assert.Equal(OrderStatus.Cancelled, issue.Order.Status);
         Assert.All(items, i => { Assert.Equal(ItemStatus.InStock, i.Status); Assert.Null(i.IssueDetailId); Assert.Null(i.PickedAt); });
-        Assert.Contains(c.Db.Notifications, n => n.UserId == c.Staff && n.Title.StartsWith($"Phiếu xuất {issue.Code} đã hủy") && n.Message!.Contains(items[0].SerialCode));
 
         // Delivered: too late to cancel.
-        var done = await c.Approved("DH-H-03", "MUO-01", 2);
+        var done = await c.Ready("DH-H-03", "MUO-01", 2);
         foreach (var i in c.ItemsOf(done)) await c.Issues.ScanAsync(done.IssueId, i.SerialCode, c.Staff);
         await c.Issues.DeliverAsync(done.IssueId, "Anh Bình", c.Staff);
         await Assert.ThrowsAsync<RuleException>(() => c.Issues.CancelOrderAsync(done.OrderId, "Khách trả hàng", c.Manager));
-    }
-
-    [Fact]
-    public async Task Staff_are_told_once_when_an_order_short_of_stock_can_be_issued_oldest_first()
-    {
-        await using var c = await Setup();
-        const string sku = "MUO-03";
-        // Demo orders already waiting for this product would take their share first: out of the way.
-        foreach (var o in c.Db.Orders.Where(o => o.Status == OrderStatus.OnHold && o.Details.Any(d => d.Product.SKU == sku)).ToList())
-            await c.Issues.CancelOrderAsync(o.OrderId, "Dọn đơn mẫu cho bài kiểm tra", c.Manager);
-        var free = c.Db.StockItems.Count(i => i.ReceiptDetail.Product.SKU == sku && i.Status == ItemStatus.InStock && i.IssueDetailId == null
-            && i.ReceiptDetail.Status == LotStatus.Normal && i.ReceiptDetail.Receipt.Status == ReceiptStatus.Approved);
-        Assert.True(free > 10);
-        var a = await c.Order("DH-H-04", (sku, free + 10));
-        c.Clock.UtcNow = Now.AddMinutes(5);
-        var b = await c.Order("DH-H-05", (sku, free + 10));
-        await Assert.ThrowsAsync<RuleException>(() => c.Issues.CreateAsync(a.OrderId, c.Staff));
-        await Assert.ThrowsAsync<RuleException>(() => c.Issues.CreateAsync(b.OrderId, c.Staff));
-        var staff = c.Db.Users.Count(u => u.Role == UserRole.Staff && u.IsActive);
-        int Told(Order o) => c.Db.Notifications.Count(n => n.Title == $"Đơn {o.ExternalCode} đã đủ hàng");
-
-        // 30 more: enough for the older order only (free + 30 − (free + 10) = 20 left, short of free + 10).
-        await TestStock.AddLotsAsync(c.Db, c.Clock, sku);
-        Assert.Equal(staff, Told(a));
-        Assert.Equal(0, Told(b));
-
-        // More deliveries until both fit: then the newer one is told too, and the older one is not told again.
-        for (var stock = free + 30; stock < 2 * (free + 10); stock += 30)
-        {
-            Assert.Equal(0, Told(b));
-            await TestStock.AddLotsAsync(c.Db, c.Clock, sku);
-        }
-        Assert.Equal(staff, Told(a));
-        Assert.Equal(staff, Told(b));
-
-        // Staff open the older order: the issue is made now.
-        Assert.NotNull(a.ReadyNotifiedAt);
-        await c.Issues.CreateAsync(a.OrderId, c.Staff);
-        Assert.Equal(OrderStatus.InProgress, a.Status);
     }
 }

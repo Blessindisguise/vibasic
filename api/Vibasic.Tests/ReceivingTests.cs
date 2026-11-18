@@ -32,13 +32,12 @@ public class ReceivingTests
         var db = new VibasicDbContext(new DbContextOptionsBuilder<VibasicDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         await DbSeeder.SeedAsync(db, Now.AddDays(-1));
         var clock = new FixedClock(Now);
-        var notifier = new Notifier(db, clock);
         return new Ctx
         {
             Db = db,
-            Receipts = new ReceiptService(db, new CodeGenerator(db), notifier, clock, new ReplenishmentService(db, notifier, clock)),
-            Reports = new AbnormalReportService(db, notifier, clock, new ReplenishmentService(db, notifier, clock),
-                new IssueService(db, new CodeGenerator(db), notifier, clock, new ReplenishmentService(db, notifier, clock))),
+            Receipts = new ReceiptService(db, new CodeGenerator(db), clock, new ReplenishmentService(db, clock)),
+            Reports = new AbnormalReportService(db, clock, new ReplenishmentService(db, clock),
+                new IssueService(db, new CodeGenerator(db), clock, new ReplenishmentService(db, clock))),
             Staff = db.Users.First(u => u.Username == "nhanvien1").UserId,
             Manager = db.Users.First(u => u.Username == "quanly").UserId,
             Board = db.Products.First(p => p.SKU == "THT-01"),
@@ -115,7 +114,6 @@ public class ReceivingTests
         Assert.Equal(ApprovalStatus.Pending, report.Status);
         Assert.Equal(ReportScope.Lot, report.Scope);
         Assert.Equal(4, await c.Db.AbnormalReportItems.CountAsync(x => x.ReportId == report.ReportId)); // every item of the failed lot
-        Assert.Contains(c.Db.Notifications, n => n.UserId == c.Manager && n.Title.Contains(r.Code));
 
         // UC_05 step 7 comes after step 6.
         await Assert.ThrowsAsync<RuleException>(() => c.Reports.ApproveAsync(report.ReportId, c.Manager));
@@ -127,7 +125,6 @@ public class ReceivingTests
         Assert.All(r.Details, d => Assert.Equal(d.Quantity, d.QuantityOnHand));
         Assert.All(r.Details.SelectMany(d => d.Items), i => Assert.Equal(ItemStatus.InStock, i.Status));
         Assert.Equal(before + 36, Available(c, c.Board)); // the quarantined 4 are not available
-        Assert.Contains(c.Db.Notifications, n => n.UserId == c.Staff && n.Title.Contains("đã được duyệt"));
 
         await c.Reports.ApproveAsync(report.ReportId, c.Manager);
         Assert.Equal(LotStatus.Locked, report.ReceiptDetail.Status);
@@ -172,7 +169,6 @@ public class ReceivingTests
         Assert.Equal(ApprovalStatus.Pending, report.Status);
         Assert.Equal(LotStatus.Quarantined, report.ReceiptDetail.Status);
         Assert.Equal(before, Available(c, c.Board));
-        Assert.Contains(c.Db.Notifications, n => n.UserId == c.Staff && n.Title.Contains("hủy duyệt"));
 
         // Back to "Chờ duyệt": the manager can reject it for the staff to edit.
         await c.Receipts.RejectAsync(r.ReceiptId, "Đếm lại số thực nhận", c.Manager);

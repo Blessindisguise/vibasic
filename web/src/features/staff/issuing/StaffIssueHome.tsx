@@ -24,7 +24,7 @@ export function StaffIssueHome() {
   const [params, setParams] = useSearchParams();
   const tab = (params.get('tab') as Tab) || 'don';
   const orders = useOrders();
-  const approved = useIssues({ status: 'approved' });
+  const toPick = useIssues({ status: 'ready' });
   const waiting = (orders.data ?? []).filter(o => o.status === 'open' || o.status === 'onHold');
   const nav = useNavigate();
   const [search, setSearch] = useState('');
@@ -32,7 +32,7 @@ export function StaffIssueHome() {
   const inRange = (iso?: string) => inVnDateRange(iso, range.from, range.to);
   const suggestions: Suggestion<unknown>[] = tab === 'don'
     ? suggestFrom(waiting, search, orderFields, o => ({ key: `/kho/xuat-kho/don/${o.id}`, label: o.externalCode, hint: `${o.customerName ?? 'Khách lẻ'} · ${o.lines.length} mặt hàng` }))
-    : suggestFrom(approved.data, search, pickFields, i => ({ key: `/kho/xuat-kho/${i.id}`, label: i.code, hint: `Đơn ${i.orderCode}${i.customerName ? ` · ${i.customerName}` : ''}` }));
+    : suggestFrom(toPick.data, search, pickFields, i => ({ key: `/kho/xuat-kho/${i.id}`, label: i.code, hint: `Đơn ${i.orderCode}${i.customerName ? ` · ${i.customerName}` : ''}` }));
 
   return (
     <div className="vb-stack">
@@ -41,7 +41,7 @@ export function StaffIssueHome() {
           label="Xuất kho" size="lg" value={tab} onChange={t => { setParams({ tab: t }, { replace: true }); setSearch(''); setRange(ANY_DATE); }}
           options={[
             { value: 'don', label: 'Đơn chờ xuất', count: orders.data ? waiting.length : undefined },
-            { value: 'lay-hang', label: 'Cần lấy hàng', count: approved.data?.length },
+            { value: 'lay-hang', label: 'Cần lấy hàng', count: toPick.data?.length },
             { value: 'phieu', label: 'Tất cả phiếu xuất' },
           ]}
         />
@@ -53,7 +53,7 @@ export function StaffIssueHome() {
           />
         )}
       </div>
-      {tab !== 'phieu' && <DateRangeFilter size="lg" label={tab === 'don' ? 'Ngày đặt hàng' : 'Ngày duyệt phiếu'} value={range} onChange={setRange} />}
+      {tab !== 'phieu' && <DateRangeFilter size="lg" label={tab === 'don' ? 'Ngày đặt hàng' : 'Ngày lập phiếu'} value={range} onChange={setRange} />}
       {tab === 'don' && (orders.isPending ? <Loading /> : orders.isError ? <ListError onRetry={() => orders.refetch()} />
         : <OrderCards orders={waiting.filter(o => matches(search, ...orderFields(o)) && inRange(o.orderDate))} filtered={!!search}
             outOfRange={!search && !!(range.from || range.to) && waiting.length > 0} onClearRange={() => setRange(ANY_DATE)} />)}
@@ -116,7 +116,7 @@ function Contact({ phone, address }: { phone?: string; address?: string }) {
 }
 
 function PickQueue({ search, inRange, ranged, onClearRange }: { search: string; inRange: (iso?: string) => boolean; ranged: boolean; onClearRange: () => void }) {
-  const issues = useIssues({ status: 'approved' });
+  const issues = useIssues({ status: 'ready' });
   const picker = usePicker();
   const { user } = useAuth();
   const toast = useToast();
@@ -125,7 +125,7 @@ function PickQueue({ search, inRange, ranged, onClearRange }: { search: string; 
   if (issues.isError) return <ListError onRetry={() => issues.refetch()} />;
   // Mine first, then free ones, then those someone else is picking.
   const rank = (i: IssueRow) => (i.pickerId === user?.id ? 0 : !i.pickerId ? 1 : 2);
-  const list = issues.data.filter(i => matches(search, ...pickFields(i)) && inRange(i.approvedAt)).sort((a, b) => rank(a) - rank(b));
+  const list = issues.data.filter(i => matches(search, ...pickFields(i)) && inRange(i.issueDate)).sort((a, b) => rank(a) - rank(b));
   if (list.length === 0 && search && issues.data.length > 0) return NOT_FOUND;
   if (list.length === 0 && ranged && issues.data.length > 0) return <div className="vb-panel"><NoneInRange what="phiếu cần lấy hàng" onClear={onClearRange} /></div>;
   const open = (i: IssueRow) => {
@@ -146,7 +146,7 @@ function PickQueue({ search, inRange, ranged, onClearRange }: { search: string; 
           <div className="vb-row" style={{ justifyContent: 'space-between' }}><Code>{i.code}</Code><IssueStatusBadge status={i.status} /></div>
           <div style={{ font: 'var(--type-touch-body)', fontWeight: 600 }}>{i.customerName ?? i.orderCode}</div>
           <Contact address={i.shippingAddress} />
-          <div className="vb-muted" style={{ fontSize: 14 }}>Đơn {i.orderCode} · duyệt {fmtDateTime(i.approvedAt)}</div>
+          <div className="vb-muted" style={{ fontSize: 14 }}>Đơn {i.orderCode} · lập {fmtDateTime(i.issueDate)}</div>
           {i.pickerId && i.pickerId !== user?.id && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 600, color: pickHoldExpired(i) ? 'var(--text-secondary)' : 'var(--amber-700)' }}>
               <Icon name="user" size={16} />

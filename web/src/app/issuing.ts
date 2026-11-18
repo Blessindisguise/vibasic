@@ -3,8 +3,11 @@ import { api } from './api';
 import type { LotStatus, ReportRow } from './receiving';
 
 export type OrderStatus = 'open' | 'onHold' | 'inProgress' | 'issued' | 'cancelled';
-/** cancelled: ended without delivery, items released (holdReason says why: order cancelled, or no replacement left). */
-export type IssueStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'issued';
+/**
+ * No approval step: an issue is "ready" (Chờ lấy hàng) as soon as staff create it.
+ * cancelled: ended without delivery, items released (cancelReason says why: order cancelled, or no replacement left).
+ */
+export type IssueStatus = 'ready' | 'cancelled' | 'issued';
 export type ItemStatus = 'incoming' | 'inStock' | 'reserved' | 'issued' | 'lost' | 'defective';
 
 export interface OrderLine { productId: number; sku: string; productName: string; unit: string; quantity: number; free: number }
@@ -15,16 +18,16 @@ export interface OrderRow {
   customerPhone?: string; shippingAddress?: string; note?: string;
   cancelReason?: string; cancelledAt?: string;
 }
-/** returnToShelf: items already picked for the cancelled issue, to put back on the shelf. */
-export interface CancelResponse { order: OrderRow; issueCode?: string; returnToShelf: string[] }
+export interface CancelResponse { order: OrderRow; issueCode?: string }
 export interface AllocLot { receiptDetailId: number; lotCode: string; receivedDate: string; take: number; serials: string[] }
 export interface AllocLine { productId: number; sku: string; productName: string; unit: string; ordered: number; free: number; shortage: number; lots: AllocLot[] }
 export interface Allocation { orderId: number; sufficient: boolean; lines: AllocLine[] }
 
 export interface IssueRow {
   id: number; code: string; issueDate: string; orderId: number; orderCode: string; customerName?: string;
-  createdBy: number; creatorName: string; approverName?: string; approvedAt?: string; status: IssueStatus;
-  productCount: number; totalQuantity: number; picked: number; rejectReason?: string; holdReason?: string;
+  createdBy: number; creatorName: string; status: IssueStatus;
+  productCount: number; totalQuantity: number; picked: number; cancelReason?: string;
+  /** Cancelled issue: items that had been picked, to put back on the shelf. */
   receiverName?: string; deliveredAt?: string; delivererName?: string;
   customerPhone?: string; shippingAddress?: string; orderNote?: string;
   /** Staff member picking the issue; only they may scan, report defects and deliver. */
@@ -59,24 +62,24 @@ export function useCancelOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, reason }: { id: number; reason: string }) => api<CancelResponse>(`/orders/${id}/cancel`, { method: 'POST', json: { reason } }),
-    onSuccess: () => ['orders', 'issues', 'issue', 'decision', 'dashboard', 'notifications'].forEach(k => qc.invalidateQueries({ queryKey: [k] })),
+    onSuccess: () => ['orders', 'issues', 'issue', 'decision', 'dashboard'].forEach(k => qc.invalidateQueries({ queryKey: [k] })),
   });
 }
 export const useAllocation = (orderId: number) =>
   useQuery({ queryKey: ['orders', orderId, 'allocation'], queryFn: () => api<Allocation>(`/orders/${orderId}/allocation`) });
 /** The pick queue refreshes on its own so everyone sees who has taken which issue. */
 export const useIssues = (f: { status?: string; from?: string; to?: string } = {}) =>
-  useQuery({ queryKey: ['issues', f], queryFn: () => api<IssueRow[]>(`/issues${qs(f)}`), refetchInterval: f.status === 'approved' ? 15_000 : false });
-/** Refreshes every 15 s while the issue is approved (being picked), so everyone sees who holds it. */
+  useQuery({ queryKey: ['issues', f], queryFn: () => api<IssueRow[]>(`/issues${qs(f)}`), refetchInterval: f.status === 'ready' ? 15_000 : false });
+/** Refreshes every 15 s while the issue is being picked, so everyone sees who holds it. */
 export const useIssue = (id: number) => useQuery({
   queryKey: ['issue', id], queryFn: () => api<IssueView>(`/issues/${id}`),
-  refetchInterval: q => (q.state.data?.header.status === 'approved' ? 15_000 : false),
+  refetchInterval: q => (q.state.data?.header.status === 'ready' ? 15_000 : false),
 });
 
-/** Issue changes move orders, stock, approvals, abnormal reports and notifications. */
+/** Issue changes move orders, stock, approvals (abnormal reports) and decision support. */
 function useRefresh() {
   const qc = useQueryClient();
-  return () => ['orders', 'issues', 'issue', 'approvals', 'abnormal-reports', 'products', 'notifications', 'receipt', 'decision']
+  return () => ['orders', 'issues', 'issue', 'approvals', 'abnormal-reports', 'products', 'receipt', 'decision']
     .forEach(k => qc.invalidateQueries({ queryKey: [k] }));
 }
 
@@ -85,15 +88,6 @@ export function useCreateIssue() {
   return useMutation({
     mutationFn: (orderId: number) => api<IssueView>('/issues', { method: 'POST', json: { orderId } }),
     onSettled: refresh, // a shortage changes the order to "Chờ xử lý" even though the call fails
-  });
-}
-
-export function useIssueAction() {
-  const refresh = useRefresh();
-  return useMutation({
-    mutationFn: ({ id, action, reason }: { id: number; action: 'approve' | 'reject' | 'revoke'; reason?: string }) =>
-      api<IssueView>(`/issues/${id}/${action}`, { method: 'POST', json: action === 'approve' ? undefined : { reason } }),
-    onSuccess: refresh,
   });
 }
 

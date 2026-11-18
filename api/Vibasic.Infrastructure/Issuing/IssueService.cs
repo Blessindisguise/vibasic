@@ -26,14 +26,13 @@ public record DefectResult(List<string> ReportCodes, int Replaced, List<string> 
 /// <summary>
 /// Goods issue workflow: UC_07 (FIFO allocation, lập phiếu), UC_10 for issues, UC_08 (lấy hàng, quét, báo lỗi, giao hàng).
 /// <list type="bullet">
-/// <item>Order: Chưa xuất | Chờ xử lý → (issue created) Đang xuất → Đã xuất; a rejected issue puts it back to Chưa xuất. Until
-/// delivered the manager may cancel it ("Đã hủy").</item>
-/// <item>Issue: Chờ duyệt → Đã duyệt → Đã xuất; or Từ chối; or Đã hủy (items released) when replacements run out or the order
-/// is cancelled.</item>
+/// <item>Order: Chưa xuất | Chờ xử lý → (issue created) Đang xuất → Đã xuất. Until delivered the manager may cancel it ("Đã hủy").</item>
+/// <item>Issue: Chờ lấy hàng → Đã xuất, with no approval step: the order already decides what leaves and FIFO decides which items.
+/// Or Đã hủy (items released) when replacements run out or the order is cancelled; whatever was already picked goes back on the shelf.</item>
 /// <item>Allocated items are "Đã giữ chỗ" and still counted in their lot's QuantityOnHand until delivery.</item>
 /// </list>
 /// </summary>
-public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier notify, IClock clock, Decision.ReplenishmentService replenish)
+public class IssueService(VibasicDbContext db, CodeGenerator codes, IClock clock, Decision.ReplenishmentService replenish)
 {
     /// <summary>An issue is held for its picker this long from the claim; after that another staff member may take it over.</summary>
     public static readonly TimeSpan PickHold = TimeSpan.FromDays(3);
@@ -115,7 +114,7 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
     }
 
     /// <summary>
-    /// UC_07: reserve FIFO items for every line and send the issue for approval. When any product is short (3.1),
+    /// UC_07: reserve FIFO items for every line; the issue is ready to pick at once. When any product is short (3.1),
     /// the order becomes "Chờ xử lý", nothing is reserved, and a <see cref="RuleException"/> explains the shortage.
     /// </summary>
     public async Task<GoodsIssue> CreateAsync(int orderId, int userId)
@@ -136,9 +135,6 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
         if (shortages.Count > 0)
         {
             order.Status = OrderStatus.OnHold;
-            order.ReadyNotifiedAt = null;
-            await notify.ToRoleAsync(UserRole.Manager, $"Đơn {order.ExternalCode} chờ xử lý vì không đủ hàng", string.Join("; ", shortages) + ".",
-                "/ql/xuat-kho", Notifier.Warning);
             await db.SaveChangesAsync();
             throw new RuleException($"Không đủ hàng tồn kho cho đơn {order.ExternalCode}: {string.Join("; ", shortages)}. Đơn chuyển sang “Chờ xử lý”.");
         }
@@ -146,7 +142,7 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
         var issue = new GoodsIssue
         {
             Code = await codes.NextDocumentAsync(CodeGenerator.Issue, now), OrderId = orderId, IssueDate = now,
-            CreatedBy = userId, Status = IssueStatus.Pending,
+            CreatedBy = userId, Status = IssueStatus.Ready,
         };
         foreach (var (line, items) in picks)
         {
@@ -156,63 +152,6 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
         }
         order.Status = OrderStatus.InProgress;
         db.GoodsIssues.Add(issue);
-        await db.SaveChangesAsync();
-        // The link needs the new id, so the notification is saved second.
-        await notify.ToRoleAsync(UserRole.Manager, $"Phiếu xuất {issue.Code} chờ duyệt",
-            $"Đơn {order.ExternalCode}{(order.CustomerName is null ? "" : $" ({order.CustomerName})")}, {order.Details.Sum(d => d.Quantity)} sản phẩm.",
-            $"/ql/xuat-kho/{issue.IssueId}", Notifier.Warning);
-        await db.SaveChangesAsync();
-        return issue;
-    }
-
-    // ---------------- UC_10: duyệt / từ chối phiếu xuất ----------------
-
-    public async Task<GoodsIssue> ApproveAsync(int id, int managerId)
-    {
-        var issue = await LoadAsync(id);
-        EnsureStatus(issue, IssueStatus.Pending, "không còn chờ duyệt");
-        issue.Status = IssueStatus.Approved;
-        issue.ApprovedBy = managerId;
-        issue.ApprovedAt = clock.UtcNow;
-        notify.ToUser(issue.CreatedBy, $"Phiếu xuất {issue.Code} đã được duyệt", "Lấy hàng theo danh sách lô và quét mã từng sản phẩm.",
-            $"/kho/xuat-kho/{id}", Notifier.Success);
-        await db.SaveChangesAsync();
-        return issue;
-    }
-
-    /// <summary>Releases every reserved item; stock is unchanged and the order can be issued again.</summary>
-    public async Task<GoodsIssue> RejectAsync(int id, string? reason, int managerId)
-    {
-        var issue = await LoadAsync(id);
-        EnsureStatus(issue, IssueStatus.Pending, "không còn chờ duyệt");
-        var text = RequireReason(reason);
-        Release(issue);
-        issue.Status = IssueStatus.Rejected;
-        issue.RejectReason = text;
-        ClearPicker(issue);
-        issue.ApprovedBy = managerId;
-        issue.ApprovedAt = clock.UtcNow;
-        issue.Order.Status = OrderStatus.Open;
-        notify.ToUser(issue.CreatedBy, $"Phiếu xuất {issue.Code} bị từ chối", $"Lý do: {text}. Đơn {issue.Order.ExternalCode} trở về Chưa xuất.",
-            $"/kho/xuat-kho/{id}", Notifier.Danger);
-        await db.SaveChangesAsync();
-        return issue;
-    }
-
-    /// <summary>
-    /// Hủy duyệt before delivery: the issue returns to "Chờ duyệt" and keeps its reserved items (and what was already scanned),
-    /// so the manager can approve it again or reject it to release the items.
-    /// </summary>
-    public async Task<GoodsIssue> RevokeAsync(int id, string? reason, int managerId)
-    {
-        var issue = await LoadAsync(id);
-        EnsureStatus(issue, IssueStatus.Approved, "chưa duyệt hoặc đã giao hàng nên không hủy duyệt được");
-        var text = RequireReason(reason);
-        issue.Status = IssueStatus.Pending;
-        issue.ApprovedBy = null;
-        issue.ApprovedAt = null;
-        notify.ToUser(issue.CreatedBy, $"Phiếu xuất {issue.Code} đã bị hủy duyệt",
-            $"Lý do: {text}. Dừng lấy hàng, giữ nguyên hàng đã quét và chờ quản lý duyệt lại.", $"/kho/xuat-kho/{id}", Notifier.Warning);
         await db.SaveChangesAsync();
         return issue;
     }
@@ -226,14 +165,11 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
     public async Task<GoodsIssue> ClaimAsync(int id, int userId)
     {
         var issue = await LoadAsync(id);
-        EnsureStatus(issue, IssueStatus.Approved, "chưa được duyệt hoặc đã xuất, không lấy hàng được");
+        EnsureStatus(issue, IssueStatus.Ready, "không lấy hàng được");
         var now = clock.UtcNow;
         if (issue.PickerId is { } holder && holder != userId)
         {
             if (!HoldExpired(issue, now)) throw Held(issue);
-            var name = await db.Users.Where(u => u.UserId == userId).Select(u => u.FullName).SingleAsync();
-            notify.ToUser(holder, $"Phiếu xuất {issue.Code} đã được {name} nhận lại",
-                $"Bạn đã giữ phiếu quá {PickHold.TotalDays:0} ngày. Bàn giao cho {name} những sản phẩm đã lấy.", $"/kho/xuat-kho/{id}", Notifier.Warning);
             issue.PickStartedAt = null;
         }
         issue.PickerId = userId;
@@ -252,9 +188,6 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
         var issue = await LoadAsync(id);
         if (issue.PickerId is not { } holder) return issue;
         if (!isManager && holder != userId) throw Held(issue);
-        if (isManager && holder != userId)
-            notify.ToUser(holder, $"Quản lý đã gỡ bạn khỏi phiếu xuất {issue.Code}",
-                "Dừng lấy hàng phiếu này và bàn giao những sản phẩm đã lấy.", $"/kho/xuat-kho/{id}", Notifier.Warning);
         ClearPicker(issue);
         await db.SaveChangesAsync();
         return issue;
@@ -293,7 +226,7 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
     public async Task<ScanResult> ScanAsync(int id, string? code, int userId)
     {
         var issue = await LoadAsync(id);
-        EnsureStatus(issue, IssueStatus.Approved, "chưa được duyệt hoặc đã xuất, không lấy hàng được");
+        EnsureStatus(issue, IssueStatus.Ready, "không lấy hàng được");
         EnsurePicker(issue, userId);
         var serial = CatalogService.Clean(code)?.ToUpperInvariant();
         if (serial is null) throw new RuleException("Quét hoặc nhập mã sản phẩm.");
@@ -386,12 +319,13 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
     /// <summary>
     /// UC_08 3.1 / UC_11 (nguồn: xuất kho): file one abnormal report per affected lot listing the defective items. They are set aside
     /// ("Lỗi") and replaced on this issue by FIFO. With <paramref name="wholeLot"/> (defect suspected in the whole lot) the lot is also
-    /// quarantined and every item of it reserved on open issues is replaced. If a replacement runs out (3.2), that issue goes "Chờ xử lý".
+    /// quarantined and every item of it reserved on open issues is replaced. If a replacement runs out (3.2), that issue is cancelled
+    /// and its order goes "Chờ xử lý".
     /// </summary>
     public async Task<DefectResult> ReportDefectAsync(int id, List<string>? serials, string? description, int userId, bool wholeLot = false)
     {
         var issue = await LoadAsync(id);
-        EnsureStatus(issue, IssueStatus.Approved, "chưa được duyệt hoặc đã xuất");
+        EnsureStatus(issue, IssueStatus.Ready, "không còn chờ lấy hàng");
         EnsurePicker(issue, userId);
         var text = CatalogService.Clean(description);
         var codesIn = (serials ?? []).Select(s => CatalogService.Clean(s)?.ToUpperInvariant()).OfType<string>().Distinct().ToList();
@@ -419,10 +353,6 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
             db.AbnormalReports.Add(report);
             if (wholeLot) group.Key.Status = LotStatus.Quarantined;
             reports.Add(report.Code);
-            await notify.ToRoleAsync(UserRole.Manager, $"Biên bản {report.Code} chờ duyệt",
-                $"Phát hiện khi xuất {issue.Code}: {group.Count()} {group.Key.Product.Unit} lô {group.Key.LotCode} lỗi. "
-                + (wholeLot ? "Nghi lỗi cả lô, lô đã tạm cách ly." : "Đã tách riêng sản phẩm lỗi; phần còn lại của lô vẫn xuất được."),
-                "/ql/cho-duyet?loai=bat-thuong", Notifier.Warning);
         }
 
         var lotIds = defective.Select(i => i.ReceiptDetailId).Distinct().ToList();
@@ -439,7 +369,7 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
             replace = defective.Select(i => i.ItemId).ToList();
             returnPicked = [];
         }
-        var held = await ReplaceReservedAsync(replace, wholeLot ? lotIds : [], issue.IssueId,
+        var held = await ReplaceReservedAsync(replace, wholeLot ? lotIds : [],
             wholeLot ? "Không đủ hàng thay thế cho sản phẩm thuộc lô bị cách ly." : "Không đủ hàng thay thế cho sản phẩm lỗi.");
         foreach (var item in defective) Abnormal.Defects.Mark(item, now);
         await db.SaveChangesAsync();
@@ -451,7 +381,7 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
     public async Task<GoodsIssue> DeliverAsync(int id, string? receiverName, int userId)
     {
         var issue = await LoadAsync(id);
-        EnsureStatus(issue, IssueStatus.Approved, "chưa được duyệt hoặc đã xuất");
+        EnsureStatus(issue, IssueStatus.Ready, "không còn chờ lấy hàng");
         EnsurePicker(issue, userId);
         var receiver = CatalogService.Clean(receiverName);
         new Validator()
@@ -480,12 +410,11 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
 
     // ---------------- Hủy đơn hàng ----------------
 
-    /// <param name="ReturnToShelf">Items already picked for the cancelled issue: to be put back on the shelf.</param>
-    public record CancelResult(Order Order, string? IssueCode, List<string> ReturnToShelf);
+    public record CancelResult(Order Order, string? IssueCode);
 
     /// <summary>
     /// The customer cancelled: the manager (standing in for the sales system) cancels an order not yet delivered, with a reason.
-    /// An open issue of it is cancelled too and its items released; picked ones go back to the shelf. The order no longer counts
+    /// An open issue of it is cancelled too and its items released. The order no longer counts
     /// as ordered (Q8), so net stock rises.
     /// </summary>
     public async Task<CancelResult> CancelOrderAsync(int orderId, string? reason, int managerId)
@@ -495,33 +424,17 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
             throw new RuleException($"Đơn {order.ExternalCode} đang “{Labels<OrderStatus>.ToLabel(order.Status)}”, không hủy được.");
         var text = RequireReason(reason);
         var now = clock.UtcNow;
-        var open = await db.GoodsIssues.Where(i => i.OrderId == orderId && (i.Status == IssueStatus.Pending || i.Status == IssueStatus.Approved))
+        var open = await db.GoodsIssues.Where(i => i.OrderId == orderId && i.Status == IssueStatus.Ready)
             .Select(i => i.IssueId).ToListAsync();
         GoodsIssue? issue = open.Count > 0 ? await LoadAsync(open[0]) : null;
-        var back = new List<string>();
-        if (issue is not null)
-        {
-            back = issue.Details.SelectMany(d => d.Items).Where(i => i.PickedAt != null).Select(i => i.SerialCode).Order().ToList();
-            var tell = issue.PickerId ?? issue.CreatedBy;
-            Release(issue);
-            ClearPicker(issue);
-            issue.Status = IssueStatus.Cancelled;
-            issue.HoldReason = $"Đơn bị hủy: {text}";
-            notify.ToUser(tell, $"Phiếu xuất {issue.Code} đã hủy vì đơn {order.ExternalCode} bị hủy",
-                back.Count > 0 ? $"Lý do: {text}. Trả lại kệ: {string.Join(", ", back)}." : $"Lý do: {text}. Dừng lấy hàng cho phiếu này.",
-                $"/kho/xuat-kho/{issue.IssueId}", Notifier.Warning);
-        }
-        else
-        {
-            await notify.ToRoleAsync(UserRole.Staff, $"Đơn {order.ExternalCode} đã hủy", $"Lý do: {text}. Không cần xuất đơn này.", "/kho/xuat-kho", Notifier.Info);
-        }
+        if (issue is not null) Cancel(issue, $"Đơn bị hủy: {text}");
         order.Status = OrderStatus.Cancelled;
         order.CancelReason = text;
         order.CancelledAt = now;
         order.CancelledBy = managerId;
         await db.SaveChangesAsync();
         await replenish.CheckAsync(order.Details.Select(d => d.ProductId));
-        return new CancelResult(order, issue?.Code, back);
+        return new CancelResult(order, issue?.Code);
     }
 
     // ---------------- helpers ----------------
@@ -531,19 +444,19 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
     /// next free items by FIFO. Returns the issues that could not be refilled and were cancelled, their orders "Chờ xử lý" (UC_08 3.2).
     /// Does not save; the caller commits with its own change.
     /// </summary>
-    public async Task<HashSet<int>> ReplaceFromLotsAsync(List<int> lotIds, int? currentIssueId = null)
+    public async Task<HashSet<int>> ReplaceFromLotsAsync(List<int> lotIds)
     {
         var affected = await db.StockItems
             .Where(i => lotIds.Contains(i.ReceiptDetailId) && i.Status == ItemStatus.Reserved)
             .Select(i => i.ItemId).ToListAsync();
-        return await ReplaceReservedAsync(affected, lotIds, currentIssueId, "Không đủ hàng thay thế cho sản phẩm thuộc lô bị cách ly.");
+        return await ReplaceReservedAsync(affected, lotIds, "Không đủ hàng thay thế cho sản phẩm thuộc lô bị cách ly.");
     }
 
     /// <summary>
     /// Take the given reserved items off their issues and refill each line by FIFO from lots other than <paramref name="excludeLots"/>.
     /// Used when a lot is quarantined and when a stocktake finds reserved items missing. Does not save.
     /// </summary>
-    public async Task<HashSet<int>> ReplaceReservedAsync(List<int> itemIds, List<int> excludeLots, int? currentIssueId, string holdReason)
+    public async Task<HashSet<int>> ReplaceReservedAsync(List<int> itemIds, List<int> excludeLots, string cancelReason)
     {
         var affected = await db.StockItems
             .Include(i => i.IssueDetail!).ThenInclude(d => d.Issue).ThenInclude(i => i.Order)
@@ -577,15 +490,9 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
             {
                 // Only the affected lines may be loaded; release needs every line of the issue.
                 await db.Entry(issue).Collection(i => i.Details).Query().Include(d => d.Items).LoadAsync();
-                Release(issue);
-                ClearPicker(issue);
-                issue.Status = IssueStatus.Cancelled;
-                issue.HoldReason = holdReason;
+                Cancel(issue, cancelReason);
                 issue.Order.Status = OrderStatus.OnHold;
-                issue.Order.ReadyNotifiedAt = null;
                 held.Add(issue.IssueId);
-                notify.ToUser(issue.CreatedBy, $"Phiếu xuất {issue.Code} đã hủy vì không đủ hàng",
-                    $"{issue.HoldReason} Đơn {issue.Order.ExternalCode} chờ lập phiếu mới khi có hàng.", $"/kho/xuat-kho/{issue.IssueId}", Notifier.Danger);
                 continue;
             }
             foreach (var (line, old, replacement) in swaps)
@@ -596,12 +503,19 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, Notifier not
                 line.Items.Add(replacement);
                 taken.Add(replacement.ItemId);
             }
-            if (issue.IssueId != currentIssueId)
-                notify.ToUser(issue.CreatedBy, $"Phiếu xuất {issue.Code} đổi {swaps.Count} sản phẩm",
-                    $"Sản phẩm của lô {string.Join(", ", byIssue.Select(i => i.ReceiptDetail.LotCode).Distinct())} không còn xuất được; danh sách lấy hàng được cập nhật theo FIFO.",
-                    $"/kho/xuat-kho/{issue.IssueId}", Notifier.Warning);
         }
         return held;
+    }
+
+    /// <summary>
+    /// Ends an issue without delivery: its items are released (anything already picked goes back on the shelf).
+    /// </summary>
+    private static void Cancel(GoodsIssue issue, string reason)
+    {
+        Release(issue);
+        ClearPicker(issue);
+        issue.Status = IssueStatus.Cancelled;
+        issue.CancelReason = reason;
     }
 
     private static void Unreserve(StockItem item)

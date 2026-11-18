@@ -24,7 +24,6 @@ builder.Services.AddDbContext<VibasicDbContext>(o =>
     o.UseSqlServer(builder.Configuration.GetConnectionString("Vibasic")));
 builder.Services.AddScoped<CodeGenerator>();
 builder.Services.AddScoped<CatalogService>();
-builder.Services.AddScoped<Notifier>();
 builder.Services.AddScoped<ReceiptService>();
 builder.Services.AddScoped<AbnormalReportService>();
 builder.Services.AddScoped<IssueService>();

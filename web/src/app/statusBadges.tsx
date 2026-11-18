@@ -31,9 +31,7 @@ export function ApprovalBadge({ status, size }: { status: ApprovalStatus; size?:
 
 export function IssueStatusBadge({ status, size }: { status: IssueStatus; size?: Size }) {
   switch (status) {
-    case 'pending': return <StatusBadge status="pending" size={size} />;
-    case 'approved': return <StatusBadge status="approved" size={size} />;
-    case 'rejected': return <StatusBadge status="rejected" size={size} />;
+    case 'ready': return <StatusBadge status="pending" label="Chờ lấy hàng" icon="scan-barcode" size={size} />;
     case 'cancelled': return <StatusBadge status="draft" label="Đã hủy" icon="ban" size={size} />;
     case 'issued': return <StatusBadge status="info" label="Đã xuất" icon="truck" size={size} />;
   }
@@ -77,10 +75,8 @@ export const SOURCE_LABEL: Record<AbnormalSource, string> = { receipt: 'Nhập k
 export const SCOPE_LABEL: Record<ReportScope, string> = { items: 'Chỉ sản phẩm lỗi', lot: 'Cả lô' };
 
 export const ISSUE_STATUS_OPTIONS: { value: IssueStatus; label: string }[] = [
-  { value: 'pending', label: 'Chờ duyệt' },
-  { value: 'approved', label: 'Đã duyệt' },
+  { value: 'ready', label: 'Chờ lấy hàng' },
   { value: 'issued', label: 'Đã xuất' },
-  { value: 'rejected', label: 'Từ chối' },
   { value: 'cancelled', label: 'Đã hủy' },
 ];
 

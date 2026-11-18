@@ -132,8 +132,6 @@ public class Order
     public DateTime? CancelledAt { get; set; }
     public int? CancelledBy { get; set; }
     public User? Canceller { get; set; }
-    /// <summary>A "Chờ xử lý" order whose stock came back: staff were told once; cleared whenever it goes "Chờ xử lý" again. // + ext</summary>
-    public DateTime? ReadyNotifiedAt { get; set; }
 }
 
 public class OrderDetail
@@ -155,12 +153,9 @@ public class GoodsIssue
     public DateTime IssueDate { get; set; }
     public int CreatedBy { get; set; }                     // + ext
     public User Creator { get; set; } = null!;
-    public int? ApprovedBy { get; set; }
-    public User? Approver { get; set; }
-    public DateTime? ApprovedAt { get; set; }              // + ext
     public IssueStatus Status { get; set; }
-    public string? RejectReason { get; set; }              // + ext
-    public string? HoldReason { get; set; }                // + ext
+    /// <summary>Why the issue was cancelled ("Đã hủy"). // + ext</summary>
+    public string? CancelReason { get; set; }
     public string? ReceiverName { get; set; }              // + ext (biên bản giao hàng)
     public DateTime? DeliveredAt { get; set; }             // + ext
     public int? DeliveredBy { get; set; }                  // + ext
@@ -391,16 +386,3 @@ public class ReplenishmentReport
 
 #endregion
 
-/// <summary>In-app notification. // + ext (table not in the report)</summary>
-public class Notification
-{
-    public int NotificationId { get; set; }
-    /// <summary>Recipient. Role-wide notifications are fanned out to one row per active user.</summary>
-    public int UserId { get; set; }
-    public string Title { get; set; } = "";
-    public string? Message { get; set; }
-    public string? Link { get; set; }
-    public string Tone { get; set; } = "info";
-    public DateTime CreatedAt { get; set; }
-    public bool IsRead { get; set; }
-}

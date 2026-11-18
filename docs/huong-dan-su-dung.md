@@ -37,15 +37,12 @@ Tài khoản mẫu (mật khẩu `Vibasic@123`):
 - **Phân tích:** Báo cáo.
 - **Danh mục:** Hàng hóa, Nhà cung cấp, Tài khoản.
 
-### Thông báo
+### Việc cần làm ở đâu
 
-Biểu tượng chuông ở góc trên báo các việc như:
-- phiếu được duyệt hoặc bị từ chối;
-- có cảnh báo tồn kho thấp;
-- có kế hoạch kiểm kê mới;
-- bị gỡ khỏi phiếu đang lấy hàng.
-
-Bấm vào thông báo để mở đúng chứng từ.
+App không gửi thông báo. Mỗi việc hiện ở màn hình riêng, kèm số đếm trên menu:
+- **Quản lý:** Chờ duyệt (phiếu nhập, phiếu kiểm kê, biên bản), Cảnh báo tồn kho, Đề xuất bổ sung.
+- **Nhân viên kho:** Đơn chờ xuất (đơn đủ hàng có dấu **Đủ hàng**), Cần lấy hàng, Kiểm kê (kế hoạch "Chờ thực hiện").
+- Kết quả duyệt hoặc từ chối xem ở trạng thái và lý do ghi trên từng chứng từ.
 
 ---
 
@@ -64,7 +61,7 @@ Bấm vào thông báo để mở đúng chứng từ.
 | Tên | Cách tính |
 |---|---|
 | **Tồn khả dụng** | Số sản phẩm còn trên kệ của các lô "Bình thường" thuộc phiếu nhập đã duyệt. Gồm cả số đang giữ chỗ cho phiếu xuất chưa giao. |
-| **Giữ chỗ** | Sản phẩm đã được gắn vào một phiếu xuất (chờ duyệt hoặc đang lấy hàng). Vẫn nằm trong tồn khả dụng cho tới khi giao. |
+| **Giữ chỗ** | Sản phẩm đã được gắn vào một phiếu xuất chưa giao. Vẫn nằm trong tồn khả dụng cho tới khi giao. |
 | **Tồn ròng** | Tồn khả dụng − tổng số lượng của các đơn hàng đã tiếp nhận nhưng chưa xuất (trạng thái Chưa xuất, Chờ xử lý, Đang xuất). Đây là số dùng cho cảnh báo và đề xuất bổ sung. |
 | **Tồn thực tế** | Khả dụng + tạm cách ly + đã khóa. |
 | **Hàng lỗi** | Sản phẩm đã tách ra theo biên bản bất thường, chờ trả nhà cung cấp hoặc hủy. Không tính vào tồn thực tế. |
@@ -106,8 +103,8 @@ Lô "Tạm cách ly" và "Đã khóa" **không được xuất** và không tín
 | Trạng thái | Ý nghĩa |
 |---|---|
 | Chưa xuất | Chờ nhân viên lập phiếu xuất. |
-| Chờ xử lý | Thiếu hàng. Khi hàng về đủ, nhân viên kho nhận thông báo "Đơn … đã đủ hàng"; lập lại phiếu xuất. |
-| Đang xuất | Đã có phiếu xuất đang chờ duyệt hoặc đang lấy hàng. |
+| Chờ xử lý | Thiếu hàng. Khi hàng về đủ, đơn có dấu **Đủ hàng** ở tab Đơn chờ xuất; lập lại phiếu xuất. |
+| Đang xuất | Đã có phiếu xuất đang chờ lấy hàng. |
 | Đã xuất | Đã giao. |
 | Đã hủy | Khách hủy đơn; Quản lý hủy, có lý do. Đơn không còn tính vào tồn ròng. |
 
@@ -115,11 +112,11 @@ Lô "Tạm cách ly" và "Đã khóa" **không được xuất** và không tín
 
 | Trạng thái | Ý nghĩa |
 |---|---|
-| Chờ duyệt | Sản phẩm trong danh sách đã được giữ chỗ cho phiếu. |
-| Đã duyệt | Nhân viên được lấy hàng theo danh sách lô FIFO. |
-| Từ chối | Sản phẩm đã giữ chỗ trả về tồn kho; đơn trở về "Chưa xuất". |
+| Chờ lấy hàng | Phiếu vừa lập, sản phẩm trong danh sách đã được giữ chỗ. **Không cần quản lý duyệt**: nhân viên lấy hàng ngay theo danh sách lô FIFO. |
 | Đã xuất | Đã giao hàng; tồn kho trừ theo từng lô. |
-| Đã hủy | Phiếu kết thúc mà không giao, sản phẩm đã giữ chỗ trả về tồn kho. Lý do ghi trên phiếu: đơn bị hủy, hoặc không đủ hàng thay thế khi báo lỗi (khi đó đơn chuyển "Chờ xử lý" và lập phiếu mới khi có hàng). |
+| Đã hủy | Phiếu kết thúc mà không giao, sản phẩm đã giữ chỗ trả về tồn kho. Lý do ghi trên phiếu: đơn bị hủy, hoặc không đủ hàng thay thế khi báo lỗi (khi đó đơn chuyển "Chờ xử lý" và lập phiếu mới khi có hàng). Nếu đã lấy một phần hàng, trả toàn bộ hàng đã lấy của phiếu về kệ (xem mã lô trên tem). |
+
+Phiếu xuất không qua bước duyệt vì đơn hàng đã quyết định xuất gì, hệ thống chọn lô theo FIFO, và việc quét từng tem khi lấy hàng đã chặn lấy nhầm. Quản lý vẫn kiểm soát bằng Hủy đơn, Gỡ người lấy hàng và duyệt biên bản bất thường khi có hàng lỗi.
 
 **Kế hoạch kiểm kê:** Chờ thực hiện → Đang kiểm kê (đã gửi phiếu, chờ duyệt) → Hoàn thành (phiếu được duyệt). Phiếu bị từ chối thì kế hoạch trở về "Chờ thực hiện".
 
@@ -171,12 +168,11 @@ Màn hình có ba tab: **Đơn chờ xuất**, **Lấy hàng**, **Phiếu xuất
 
 **Lập phiếu xuất từ đơn hàng**
 1. Ở tab Đơn chờ xuất, chọn đơn. Hệ thống chọn lô theo FIFO; lô bị khóa hoặc tạm cách ly không được tính.
-2. **Đủ hàng:** bấm **Lập phiếu xuất và gửi duyệt**. Hộp xác nhận liệt kê từng mặt hàng, số lượng và các lô sẽ giữ. Kiểm lại rồi bấm **Lập phiếu**. Phiếu gửi quản lý duyệt và các sản phẩm trong danh sách được **giữ chỗ**. Sau khi lập, nhân viên không tự hủy được phiếu; chỉ quản lý từ chối mới gỡ giữ chỗ.
-3. **Thiếu hàng:** chọn **Ghi nhận thiếu hàng**. Hộp xác nhận liệt kê các mặt hàng thiếu. Xác nhận thì đơn chuyển "Chờ xử lý" và quản lý được báo.
-   - Khi hàng về đủ (duyệt phiếu nhập, mở khóa lô…), nhân viên kho nhận thông báo **"Đơn … đã đủ hàng"**; bấm vào để lập phiếu. Nhiều đơn cùng chờ thì đơn đặt trước được báo trước.
-   - Trong tab Đơn chờ xuất, đơn đủ hàng có dấu **Đủ hàng**.
+2. **Đủ hàng:** bấm **Lập phiếu xuất**. Hộp xác nhận liệt kê từng mặt hàng, số lượng và các lô sẽ giữ. Kiểm lại rồi bấm **Lập phiếu**. Các sản phẩm trong danh sách được **giữ chỗ** và phiếu ở trạng thái **Chờ lấy hàng**, lấy được ngay, không chờ duyệt. Sau khi lập, nhân viên không tự hủy được phiếu; chỉ quản lý hủy đơn mới gỡ giữ chỗ.
+3. **Thiếu hàng:** chọn **Ghi nhận thiếu hàng**. Hộp xác nhận liệt kê các mặt hàng thiếu. Xác nhận thì đơn chuyển "Chờ xử lý".
+   - Khi hàng về đủ (duyệt phiếu nhập, mở khóa lô…), đơn có dấu **Đủ hàng** trong tab Đơn chờ xuất; mở đơn để lập phiếu. Nhiều đơn cùng chờ thì lập phiếu cho đơn đặt trước trước.
 
-**Lấy hàng** (phiếu đã duyệt)
+**Lấy hàng** (phiếu Chờ lấy hàng)
 1. Ở tab Lấy hàng, chọn phiếu rồi **Bắt đầu lấy hàng**. Bấm vào phiếu chưa ai nhận cũng tự nhận phiếu.
    - Trong lúc bạn lấy hàng, nhân viên khác chỉ xem được phiếu.
    - Phiếu được **giữ cho bạn 3 ngày** kể từ lúc nhận phiếu. Quá hạn thì người khác có thể **Nhận lại phiếu**, hoặc quản lý gỡ người lấy hàng.
@@ -190,13 +186,13 @@ Màn hình có ba tab: **Đơn chờ xuất**, **Lấy hàng**, **Phiếu xuất
 4. **Báo hàng lỗi** khi lấy hàng:
    - Quét các sản phẩm lỗi và ghi mô tả. Hệ thống lập biên bản bất thường, tách các sản phẩm đó khỏi tồn kho và **thay bằng sản phẩm kế tiếp theo FIFO**.
    - Để sản phẩm lỗi ở khu hàng lỗi, rồi quét sản phẩm thay thế theo danh sách mới.
-   - **Nghi lỗi cả lô** (mốc, ẩm, lỗi sấy…): cả lô chuyển "Tạm cách ly" và không xuất cho tới khi quản lý xử lý. Các sản phẩm đã lấy từ lô đó được đổi sang lô kế tiếp; trả lại kệ các mã hệ thống liệt kê.
-   - Không đủ hàng thay thế thì phiếu chuyển **Đã hủy** và đơn chuyển "Chờ xử lý". Trả hàng đã lấy về kệ; lập phiếu mới khi có hàng.
+   - **Nghi lỗi cả lô** (mốc, ẩm, lỗi sấy…): cả lô chuyển "Tạm cách ly" và không xuất cho tới khi quản lý xử lý. Các sản phẩm đã lấy từ lô đó được đổi sang lô kế tiếp; trả lại kệ các sản phẩm đã lấy từ lô đó.
+   - Không đủ hàng thay thế thì phiếu chuyển **Đã hủy** và đơn chuyển "Chờ xử lý". Trả lại kệ các mã ghi trên phiếu đã hủy; lập phiếu mới khi có hàng.
 5. Quét đủ thì **Giao hàng**: ghi người nhận. Tồn kho trừ theo từng lô.
 
 ### 3.3 Kiểm kê (`Kiểm kê`)
 
-Quản lý lập kế hoạch; bạn nhận thông báo khi có kế hoạch mới.
+Quản lý lập kế hoạch; kế hoạch mới hiện ở màn Kiểm kê với trạng thái "Chờ thực hiện".
 
 1. Mở kế hoạch, đếm thực tế **từng lô**:
    - **Nhập số:** gõ số đếm được.
@@ -236,14 +232,14 @@ Biên bản được lập khi nhập kho (lô không đạt), khi lấy hàng x
 
 - Các ô số liệu:
   - tồn khả dụng;
-  - số chứng từ chờ duyệt (phiếu nhập, xuất, kiểm kê, biên bản);
+  - số chứng từ chờ duyệt (phiếu nhập, kiểm kê, biên bản);
   - cảnh báo tồn kho thấp;
   - số lô tạm cách ly hoặc đã khóa (không được xuất).
 - Panel **Dưới điểm đặt hàng** liệt kê các cảnh báo đang mở: **tồn ròng** / ROP, cùng chuẩn với màn Cảnh báo và Đề xuất.
 
 ### 4.2 Chờ duyệt
 
-Gom mọi chứng từ chờ duyệt theo bốn loại. Lý do của mọi thao tác từ chối hoặc hủy tối thiểu 5 ký tự và được gửi kèm thông báo cho người lập.
+Gom mọi chứng từ chờ duyệt theo ba loại: phiếu nhập, phiếu kiểm kê, biên bản bất thường. Phiếu xuất không cần duyệt. Lý do của mọi thao tác từ chối hoặc hủy tối thiểu 5 ký tự; lý do từ chối ghi trên chứng từ.
 
 **Phiếu nhập kho**
 - **Duyệt:** ghi nhận tồn kho các lô "Bình thường". Lô tạm cách ly vẫn chưa xuất được cho tới khi xử lý biên bản.
@@ -254,14 +250,11 @@ Gom mọi chứng từ chờ duyệt theo bốn loại. Lý do của mọi thao 
   - Chỉ hủy được khi hàng của phiếu **chưa** bị giữ chỗ, xuất kho, đưa vào kiểm kê hoặc lập biên bản sau khi nhập. Nếu không hủy được, màn hình hiện "Không hủy duyệt được"; rê chuột lên để xem lý do.
 - Biên bản của lô không đạt chỉ xét được sau khi phiếu nhập đã duyệt.
 
-**Phiếu xuất kho**
-- **Duyệt:** nhân viên được lấy hàng theo danh sách lô FIFO.
-- **Từ chối:** sản phẩm giữ chỗ trả về tồn kho; đơn trở về "Chưa xuất".
-- **Hủy duyệt:** nhân viên dừng lấy hàng. Sản phẩm vẫn giữ chỗ, các mã đã quét giữ nguyên; phiếu về Chờ duyệt.
-- **Gỡ người lấy hàng:** người đó không quét tiếp được và nhận thông báo. Các mã đã quét giữ nguyên; nhân viên khác nhận phiếu sẽ lấy tiếp.
-- **Hủy đơn** (khách hủy): có ở phiếu Chờ duyệt hoặc Đã duyệt, và ở màn **Đơn hàng chưa giao** (nút trên màn Phiếu xuất kho). Bắt buộc ghi lý do.
+**Phiếu xuất kho** (không cần duyệt; quản lý theo dõi ở màn Phiếu xuất kho)
+- **Gỡ người lấy hàng:** người đó không quét tiếp được. Các mã đã quét giữ nguyên; nhân viên khác nhận phiếu sẽ lấy tiếp. Quản lý báo trực tiếp cho người bị gỡ để bàn giao hàng đã lấy.
+- **Hủy đơn** (khách hủy): có ở phiếu Chờ lấy hàng, và ở màn **Đơn hàng chưa giao** (nút trên màn Phiếu xuất kho). Bắt buộc ghi lý do.
   - Đơn chuyển **Đã hủy**; phiếu đang mở của đơn chuyển **Đã hủy** và sản phẩm giữ chỗ trả về tồn kho.
-  - Người đang lấy hàng nhận thông báo kèm danh sách mã đã quét cần **trả lại kệ**.
+  - Nếu đã lấy một phần hàng, báo người lấy hàng **trả lại kệ** toàn bộ hàng đã lấy của phiếu.
   - Đơn đã giao thì không hủy được.
   - Đơn hủy không còn tính vào tồn ròng và nhu cầu, nên cảnh báo hoặc đề xuất có thể tự đóng.
   - Màn Đơn hàng có tab **Đã hủy** ghi lý do và thời điểm hủy.
@@ -280,7 +273,7 @@ Gom mọi chứng từ chờ duyệt theo bốn loại. Lý do của mọi thao 
 
 ### 4.3 Cảnh báo tồn kho
 
-- Cảnh báo **mở** khi tồn ròng ≤ ROP và **tự đóng** khi tồn ròng vượt ROP. Mỗi lần mở cảnh báo, Quản lý nhận thông báo.
+- Cảnh báo **mở** khi tồn ròng ≤ ROP và **tự đóng** khi tồn ròng vượt ROP. Số cảnh báo đang mở hiện trên menu Cảnh báo tồn kho.
 - Việc kiểm tra chạy sau mọi thay đổi tồn kho hoặc đơn hàng: tiếp nhận đơn, duyệt hoặc hủy duyệt phiếu nhập, giao hàng, báo lỗi, duyệt kiểm kê, xử lý biên bản.
 - Cột **So với ROP** = tồn ròng − ROP (đỏ khi ≤ 0). Cột **Căn cứ** hiện phép tính ROP.
 - Tab **Tất cả mặt hàng** cho biết tình trạng từng mặt hàng:
@@ -376,7 +369,7 @@ Biên bản cũ lập trước khi hệ thống ghi mã từng sản phẩm lỗ
   - ngày dự kiến: không trước hôm nay;
   - phạm vi: **Toàn bộ kho** hoặc **Một số lô**.
 - **Toàn bộ kho:** nhân viên kiểm mọi lô đang có hàng tại lúc kiểm, kể cả lô tạm cách ly và đã khóa. Danh sách lô vì thế thay đổi theo tồn kho.
-- **Sửa kế hoạch:** nhân viên được thông báo; số đã đếm của các lô còn trong kế hoạch được giữ trên máy. Không sửa được khi đã có phiếu chờ duyệt hoặc kế hoạch đã hoàn thành.
+- **Sửa kế hoạch:** nhân viên mở lại kế hoạch để xem danh sách lô mới; số đã đếm của các lô còn trong kế hoạch được giữ trên máy. Không sửa được khi đã có phiếu chờ duyệt hoặc kế hoạch đã hoàn thành.
 - Duyệt hoặc từ chối phiếu kiểm kê: xem [4.2](#42-chờ-duyệt).
 
 ### 4.7 Báo cáo

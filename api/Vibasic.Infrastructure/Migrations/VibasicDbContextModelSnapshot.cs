@@ -128,11 +128,9 @@ namespace Vibasic.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("IssueId"));
 
-                    b.Property<DateTime?>("ApprovedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("ApprovedBy")
-                        .HasColumnType("int");
+                    b.Property<string>("CancelReason")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
                     b.Property<string>("Code")
                         .IsRequired()
@@ -147,10 +145,6 @@ namespace Vibasic.Infrastructure.Migrations
 
                     b.Property<int?>("DeliveredBy")
                         .HasColumnType("int");
-
-                    b.Property<string>("HoldReason")
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
 
                     b.Property<DateTime>("IssueDate")
                         .HasColumnType("datetime2");
@@ -172,18 +166,12 @@ namespace Vibasic.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<string>("RejectReason")
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
-
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
                     b.HasKey("IssueId");
-
-                    b.HasIndex("ApprovedBy");
 
                     b.HasIndex("Code")
                         .IsUnique();
@@ -400,48 +388,6 @@ namespace Vibasic.Infrastructure.Migrations
                     b.ToTable("InventoryPolicy", (string)null);
                 });
 
-            modelBuilder.Entity("Vibasic.Domain.Notification", b =>
-                {
-                    b.Property<int>("NotificationId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("NotificationId"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsRead")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Link")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("Message")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("Tone")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("int");
-
-                    b.HasKey("NotificationId");
-
-                    b.HasIndex("UserId", "IsRead");
-
-                    b.ToTable("Notification", (string)null);
-                });
-
             modelBuilder.Entity("Vibasic.Domain.Order", b =>
                 {
                     b.Property<int>("OrderId")
@@ -478,9 +424,6 @@ namespace Vibasic.Infrastructure.Migrations
                         .HasColumnType("nvarchar(500)");
 
                     b.Property<DateTime>("OrderDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("ReadyNotifiedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("ShippingAddress")
@@ -1110,11 +1053,6 @@ namespace Vibasic.Infrastructure.Migrations
 
             modelBuilder.Entity("Vibasic.Domain.GoodsIssue", b =>
                 {
-                    b.HasOne("Vibasic.Domain.User", "Approver")
-                        .WithMany()
-                        .HasForeignKey("ApprovedBy")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("Vibasic.Domain.User", "Creator")
                         .WithMany()
                         .HasForeignKey("CreatedBy")
@@ -1136,8 +1074,6 @@ namespace Vibasic.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("PickerId")
                         .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("Approver");
 
                     b.Navigation("Creator");
 
@@ -1219,15 +1155,6 @@ namespace Vibasic.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Product");
-                });
-
-            modelBuilder.Entity("Vibasic.Domain.Notification", b =>
-                {
-                    b.HasOne("Vibasic.Domain.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Vibasic.Domain.Order", b =>

@@ -32,7 +32,7 @@ public record SheetLot(int ReceiptDetailId, string LotCode, int ProductId, strin
 /// <item>Approval applies the difference: missing items become "Thất thoát", surplus items get new codes, QuantityOnHand moves by the same amount.</item>
 /// </list>
 /// </summary>
-public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier notify, IClock clock, IssueService issues, Decision.ReplenishmentService replenish)
+public class StocktakeService(VibasicDbContext db, CodeGenerator codes, IClock clock, IssueService issues, Decision.ReplenishmentService replenish)
 {
     public const int MinReason = 5;
 
@@ -55,15 +55,12 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
             foreach (var id in lotIds) plan.Details.Add(new StocktakePlanDetail { ReceiptDetailId = id });
         db.StocktakePlans.Add(plan);
         await db.SaveChangesAsync();
-        await notify.ToRoleAsync(UserRole.Staff, $"Kế hoạch kiểm kê {plan.Code} ngày {plan.PlannedDate:dd/MM/yyyy}",
-            plan.ScopeType == StocktakeScope.Warehouse ? "Phạm vi: toàn bộ kho." : $"Phạm vi: {lotIds.Count} lô.", $"/kho/kiem-ke/{plan.PlanId}");
-        await db.SaveChangesAsync();
         return plan;
     }
 
     /// <summary>
     /// UC_13, sửa kế hoạch: type, date, scope, lots and note can change while the plan waits to be counted. Once a count is
-    /// submitted (Đang kiểm kê) or approved (Hoàn thành) the plan is what was counted and stays as it is. Staff are told what changed.
+    /// submitted (Đang kiểm kê) or approved (Hoàn thành) the plan is what was counted and stays as it is.
     /// </summary>
     public async Task<StocktakePlan> UpdatePlanAsync(int id, PlanInput input, int managerId)
     {
@@ -75,15 +72,6 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
                 : $"Kế hoạch {plan.Code} đã hoàn thành, không sửa được. Lập kế hoạch mới nếu cần kiểm lại.");
         var (note, lotIds) = await ValidatePlanAsync(input, plan);
 
-        var changes = new List<string>();
-        if (plan.PlannedDate != input.PlannedDate) changes.Add($"ngày {plan.PlannedDate:dd/MM} → {input.PlannedDate:dd/MM/yyyy}");
-        var oldLots = plan.ScopeType == StocktakeScope.Warehouse ? null : plan.Details.Select(d => d.ReceiptDetailId).Order().ToList();
-        var newLots = input.ScopeType == StocktakeScope.Warehouse ? null : lotIds.Order().ToList();
-        if (oldLots is null != newLots is null || oldLots is not null && !oldLots.SequenceEqual(newLots!))
-            changes.Add(newLots is null ? "phạm vi: toàn bộ kho" : $"phạm vi: {newLots.Count} lô");
-        if (plan.PlanType != input.PlanType) changes.Add($"loại: {Labels<StocktakePlanType>.ToLabel(input.PlanType!.Value).ToLowerInvariant()}");
-        if (plan.Note != note) changes.Add("ghi chú");
-
         plan.PlanType = input.PlanType!.Value;
         plan.ScopeType = input.ScopeType!.Value;
         plan.PlannedDate = input.PlannedDate!.Value;
@@ -92,9 +80,6 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
         plan.Details.RemoveAll(d => !keep.Contains(d.ReceiptDetailId));
         foreach (var lotId in keep.Where(l => plan.Details.All(d => d.ReceiptDetailId != l)))
             plan.Details.Add(new StocktakePlanDetail { ReceiptDetailId = lotId });
-        if (changes.Count > 0)
-            await notify.ToRoleAsync(UserRole.Staff, $"Kế hoạch kiểm kê {plan.Code} đã thay đổi",
-                $"Đổi {string.Join(", ", changes)}. Mở lại kế hoạch để xem danh sách lô.", $"/kho/kiem-ke/{plan.PlanId}", Notifier.Warning);
         await db.SaveChangesAsync();
         return plan;
     }
@@ -232,10 +217,6 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
         plan.Status = StocktakePlanStatus.InProgress;
         db.Stocktakes.Add(stocktake);
         await db.SaveChangesAsync();
-        var diffs = stocktake.Details.Count(d => d.ActualQuantity != d.SystemQuantity);
-        await notify.ToRoleAsync(UserRole.Manager, $"Phiếu kiểm kê {stocktake.Code} chờ duyệt",
-            $"{plan.Code}: {lots.Count} lô, {diffs} lô chênh lệch.", $"/ql/kiem-ke/phieu/{stocktake.StocktakeId}", Notifier.Warning);
-        await db.SaveChangesAsync();
         return stocktake;
     }
 
@@ -282,14 +263,10 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
         db.AbnormalReports.Add(report);
         var replace = (input.WholeLot ? lot.Items : defective).Where(i => i.Status == ItemStatus.Reserved).Select(i => i.ItemId).ToList();
         if (replace.Count > 0)
-            await issues.ReplaceReservedAsync(replace, input.WholeLot ? [lot.ReceiptDetailId] : [], null,
+            await issues.ReplaceReservedAsync(replace, input.WholeLot ? [lot.ReceiptDetailId] : [],
                 input.WholeLot ? "Không đủ hàng thay thế cho sản phẩm thuộc lô bị cách ly." : "Không đủ hàng thay thế cho sản phẩm lỗi phát hiện khi kiểm kê.");
         foreach (var item in defective) Abnormal.Defects.Mark(item, now);
         if (input.WholeLot) lot.Status = LotStatus.Quarantined;
-        await notify.ToRoleAsync(UserRole.Manager, $"Biên bản {report.Code} chờ duyệt",
-            $"Phát hiện khi kiểm kê {plan.Code}: {report.Quantity} {lot.Product.Unit} lô {lot.LotCode} lỗi. "
-            + (input.WholeLot ? "Nghi lỗi cả lô, lô đã tạm cách ly." : "Đã tách riêng sản phẩm lỗi; phần còn lại của lô vẫn xuất được."),
-            "/ql/cho-duyet?loai=bat-thuong", Notifier.Warning);
         await db.SaveChangesAsync();
         await replenish.CheckLotsAsync([lot.ReceiptDetailId]);
         return report;
@@ -331,7 +308,7 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
 
             var reserved = lost.Where(i => i.Status == ItemStatus.Reserved).ToList();
             if (reserved.Count > 0)
-                await issues.ReplaceReservedAsync(reserved.Select(i => i.ItemId).ToList(), [lot.ReceiptDetailId], null,
+                await issues.ReplaceReservedAsync(reserved.Select(i => i.ItemId).ToList(), [lot.ReceiptDetailId],
                     $"Sản phẩm giữ chỗ bị thất thoát khi kiểm kê lô {lot.LotCode} và không đủ hàng thay thế.");
             foreach (var item in lost) item.Status = ItemStatus.Lost;
             lot.QuantityOnHand -= lost.Count;
@@ -349,8 +326,6 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
         stocktake.ApprovedBy = managerId;
         stocktake.ApprovedAt = now;
         stocktake.Plan.Status = StocktakePlanStatus.Done;
-        notify.ToUser(stocktake.CreatedBy, $"Phiếu kiểm kê {stocktake.Code} đã được duyệt", "Tồn kho đã điều chỉnh theo số lượng thực tế.",
-            $"/kho/kiem-ke", Notifier.Success);
         await db.SaveChangesAsync();
         await replenish.CheckLotsAsync(stocktake.Details.Select(d => d.ReceiptDetailId));
         return stocktake;
@@ -371,8 +346,6 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, Notifier
         stocktake.ApprovedBy = managerId;
         stocktake.ApprovedAt = clock.UtcNow;
         stocktake.Plan.Status = StocktakePlanStatus.Waiting;
-        notify.ToUser(stocktake.CreatedBy, $"Phiếu kiểm kê {stocktake.Code} bị từ chối", $"Lý do: {text}. Kiểm đếm lại theo kế hoạch {stocktake.Plan.Code}.",
-            $"/kho/kiem-ke/{stocktake.PlanId}", Notifier.Danger);
         await db.SaveChangesAsync();
         return stocktake;
     }

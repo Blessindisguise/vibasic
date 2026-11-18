@@ -1,0 +1,261 @@
+classDiagram
+  %% Sơ đồ lớp CSDL Vibasic: 22 bảng, sinh từ CSDL thật (SQL Server). PK khóa chính, FK khóa ngoại, "?" cho phép NULL.
+  class User {
+    int UserId PK
+    string Username
+    string PasswordHash
+    string FullName
+    string Role
+    bool IsActive
+  }
+  class ProductCategory {
+    int CategoryId PK
+    string CategoryName
+    string? Description
+  }
+  class Supplier {
+    int SupplierId PK
+    string SupplierName
+    string? Phone
+    string? Address
+  }
+  class Product {
+    int ProductId PK
+    int SupplierId FK
+    int CategoryId FK
+    string SKU
+    string ProductName
+    string Unit
+  }
+  class GoodsReceipt {
+    int ReceiptId PK
+    string Code
+    int SupplierId FK
+    DateTime ReceiptDate
+    int CreatedBy FK
+    int? ApprovedBy FK
+    DateTime? SubmittedAt
+    DateTime? ApprovedAt
+    string Status
+    string? RejectReason
+    string? Note
+    string? DeliveryNoteNo
+  }
+  class GoodsReceiptDetail {
+    int ReceiptDetailId PK
+    int ReceiptId FK
+    int ProductId FK
+    string LotCode
+    int Quantity
+    int QuantityOnHand
+    string Status
+    int? DocumentQuantity
+    string? Note
+  }
+  class StockItem {
+    int ItemId PK
+    int ReceiptDetailId FK
+    string SerialCode
+    string Status
+    int? IssueDetailId FK
+    DateTime? PickedAt
+    DateTime? DefectiveAt
+  }
+  class Order {
+    int OrderId PK
+    string ExternalCode
+    string? CustomerName
+    DateTime OrderDate
+    string Status
+    string? CustomerPhone
+    string? Note
+    string? ShippingAddress
+    string? CancelReason
+    DateTime? CancelledAt
+    int? CancelledBy FK
+  }
+  class OrderDetail {
+    int OrderDetailId PK
+    int OrderId FK
+    int ProductId FK
+    int Quantity
+  }
+  class GoodsIssue {
+    int IssueId PK
+    string Code
+    int OrderId FK
+    DateTime IssueDate
+    int CreatedBy FK
+    string Status
+    string? CancelReason
+    string? ReceiverName
+    DateTime? DeliveredAt
+    int? DeliveredBy FK
+    DateTime? PickActiveAt
+    DateTime? PickStartedAt
+    int? PickerId FK
+  }
+  class GoodsIssueDetail {
+    int IssueDetailId PK
+    int IssueId FK
+    int ProductId FK
+    int Quantity
+  }
+  class StocktakePlan {
+    int PlanId PK
+    string Code
+    string PlanType
+    string ScopeType
+    Date PlannedDate
+    int CreatedBy FK
+    string Status
+    string? Note
+  }
+  class StocktakePlanDetail {
+    int PlanDetailId PK
+    int PlanId FK
+    int ReceiptDetailId FK
+  }
+  class Stocktake {
+    int StocktakeId PK
+    string Code
+    int PlanId FK
+    DateTime StocktakeDate
+    int CreatedBy FK
+    int? ApprovedBy FK
+    DateTime? ApprovedAt
+    string Status
+    string? RejectReason
+  }
+  class StocktakeDetail {
+    int DetailId PK
+    int StocktakeId FK
+    int ReceiptDetailId FK
+    int SystemQuantity
+    int ActualQuantity
+    string? Reason
+    DateTime? CountedAt
+    string Method
+    int UnlabeledQuantity
+  }
+  class StocktakeItem {
+    int StocktakeItemId PK
+    int DetailId FK
+    int ItemId FK
+  }
+  class AbnormalReport {
+    int ReportId PK
+    string Code
+    int ReceiptDetailId FK
+    string SourceType
+    string Description
+    int Quantity
+    int CreatedBy FK
+    DateTime CreatedAt
+    int? ApprovedBy FK
+    DateTime? ApprovedAt
+    string Status
+    string? RejectReason
+    int? IssueId FK
+    string Scope
+  }
+  class AbnormalReportItem {
+    int ReportItemId PK
+    int ReportId FK
+    int ItemId FK
+  }
+  class InventoryPolicy {
+    int PolicyId PK
+    int ProductId FK
+    int LeadTimeDays
+    decimal? SafetyStock
+    decimal OrderingCost
+    decimal HoldingCost
+    decimal? CurrentROP
+    decimal? CurrentEOQ
+    decimal? AvgDailyDemand
+    DateTime? LastROPCalculatedAt
+    DateTime? LastEOQCalculatedAt
+    string DemandState
+    decimal? DemandStdDev
+  }
+  class StockAlert {
+    int AlertId PK
+    int ProductId FK
+    int CurrentQuantity
+    decimal ROPValue
+    DateTime AlertDate
+    string Status
+    DateTime? ClosedAt
+  }
+  class ReplenishmentProposal {
+    int ProposalId PK
+    int ProductId FK
+    int ProposedQuantity
+    decimal EOQValue
+    DateTime ProposalDate
+    int? ApprovedBy FK
+    DateTime? ApprovedAt
+    string Status
+    int OriginalQuantity
+    string? AdjustReason
+    string? RejectReason
+    int? ReportId FK
+    int AvailableQuantity
+    decimal ROPValue
+    string? AdjustBasis
+    decimal? AvgDailyDemand
+    int BaseQuantity
+    int NetQuantity
+    string Priority
+  }
+  class ReplenishmentReport {
+    int ReportId PK
+    string Code
+    DateTime CreatedAt
+    int CreatedBy FK
+    int ProposalCount
+    int SupplierCount
+    int TotalQuantity
+    string Snapshot
+  }
+  GoodsReceiptDetail "1" -- "0..*" AbnormalReport : ReceiptDetailId
+  User "1" -- "0..*" AbnormalReport : CreatedBy
+  User "0..1" -- "0..*" AbnormalReport : ApprovedBy
+  GoodsIssue "0..1" -- "0..*" AbnormalReport : IssueId
+  AbnormalReport "1" *-- "1..*" AbnormalReportItem : ReportId
+  StockItem "1" -- "0..*" AbnormalReportItem : ItemId
+  Order "1" -- "0..*" GoodsIssue : OrderId
+  User "1" -- "0..*" GoodsIssue : CreatedBy
+  User "0..1" -- "0..*" GoodsIssue : DeliveredBy
+  User "0..1" -- "0..*" GoodsIssue : PickerId
+  GoodsIssue "1" *-- "1..*" GoodsIssueDetail : IssueId
+  Product "1" -- "0..*" GoodsIssueDetail : ProductId
+  Supplier "1" -- "0..*" GoodsReceipt : SupplierId
+  User "1" -- "0..*" GoodsReceipt : CreatedBy
+  User "0..1" -- "0..*" GoodsReceipt : ApprovedBy
+  GoodsReceipt "1" *-- "1..*" GoodsReceiptDetail : ReceiptId
+  Product "1" -- "0..*" GoodsReceiptDetail : ProductId
+  Product "1" -- "0..1" InventoryPolicy : ProductId
+  User "0..1" -- "0..*" Order : CancelledBy
+  Order "1" *-- "1..*" OrderDetail : OrderId
+  Product "1" -- "0..*" OrderDetail : ProductId
+  Supplier "1" -- "0..*" Product : SupplierId
+  ProductCategory "1" -- "0..*" Product : CategoryId
+  Product "1" -- "0..*" ReplenishmentProposal : ProductId
+  User "0..1" -- "0..*" ReplenishmentProposal : ApprovedBy
+  ReplenishmentReport "0..1" o-- "1..*" ReplenishmentProposal : ReportId
+  User "1" -- "0..*" ReplenishmentReport : CreatedBy
+  Product "1" -- "0..*" StockAlert : ProductId
+  GoodsReceiptDetail "1" *-- "1..*" StockItem : ReceiptDetailId
+  GoodsIssueDetail "0..1" -- "0..*" StockItem : IssueDetailId
+  StocktakePlan "1" -- "0..*" Stocktake : PlanId
+  User "1" -- "0..*" Stocktake : CreatedBy
+  User "0..1" -- "0..*" Stocktake : ApprovedBy
+  Stocktake "1" *-- "1..*" StocktakeDetail : StocktakeId
+  GoodsReceiptDetail "1" -- "0..*" StocktakeDetail : ReceiptDetailId
+  StocktakeDetail "1" *-- "0..*" StocktakeItem : DetailId
+  StockItem "1" -- "0..*" StocktakeItem : ItemId
+  User "1" -- "0..*" StocktakePlan : CreatedBy
+  StocktakePlan "1" *-- "0..*" StocktakePlanDetail : PlanId
+  GoodsReceiptDetail "1" -- "0..*" StocktakePlanDetail : ReceiptDetailId

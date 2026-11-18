@@ -1,0 +1,292 @@
+@startuml VibasicClassDiagram
+' Sơ đồ lớp CSDL Vibasic: 22 bảng, sinh từ CSDL thật (SQL Server).
+' {PK} khóa chính, {FK} khóa ngoại, "?" cột cho phép NULL.
+hide circle
+hide methods
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam shadowing false
+skinparam class {
+  BackgroundColor White
+  BorderColor Black
+  ArrowColor Black
+}
+
+package "Danh mục" {
+  class User {
+    UserId : int {PK}
+    Username : string
+    PasswordHash : string
+    FullName : string
+    Role : string
+    IsActive : bool
+  }
+  class ProductCategory {
+    CategoryId : int {PK}
+    CategoryName : string
+    Description : string?
+  }
+  class Supplier {
+    SupplierId : int {PK}
+    SupplierName : string
+    Phone : string?
+    Address : string?
+  }
+  class Product {
+    ProductId : int {PK}
+    SupplierId : int {FK}
+    CategoryId : int {FK}
+    SKU : string
+    ProductName : string
+    Unit : string
+  }
+}
+
+package "Nhập kho" {
+  class GoodsReceipt {
+    ReceiptId : int {PK}
+    Code : string
+    SupplierId : int {FK}
+    ReceiptDate : DateTime
+    CreatedBy : int {FK}
+    ApprovedBy : int? {FK}
+    SubmittedAt : DateTime?
+    ApprovedAt : DateTime?
+    Status : string
+    RejectReason : string?
+    Note : string?
+    DeliveryNoteNo : string?
+  }
+  class GoodsReceiptDetail {
+    ReceiptDetailId : int {PK}
+    ReceiptId : int {FK}
+    ProductId : int {FK}
+    LotCode : string
+    Quantity : int
+    QuantityOnHand : int
+    Status : string
+    DocumentQuantity : int?
+    Note : string?
+  }
+  class StockItem {
+    ItemId : int {PK}
+    ReceiptDetailId : int {FK}
+    SerialCode : string
+    Status : string
+    IssueDetailId : int? {FK}
+    PickedAt : DateTime?
+    DefectiveAt : DateTime?
+  }
+}
+
+package "Xuất kho" {
+  class Order {
+    OrderId : int {PK}
+    ExternalCode : string
+    CustomerName : string?
+    OrderDate : DateTime
+    Status : string
+    CustomerPhone : string?
+    Note : string?
+    ShippingAddress : string?
+    CancelReason : string?
+    CancelledAt : DateTime?
+    CancelledBy : int? {FK}
+  }
+  class OrderDetail {
+    OrderDetailId : int {PK}
+    OrderId : int {FK}
+    ProductId : int {FK}
+    Quantity : int
+  }
+  class GoodsIssue {
+    IssueId : int {PK}
+    Code : string
+    OrderId : int {FK}
+    IssueDate : DateTime
+    CreatedBy : int {FK}
+    Status : string
+    CancelReason : string?
+    ReceiverName : string?
+    DeliveredAt : DateTime?
+    DeliveredBy : int? {FK}
+    PickActiveAt : DateTime?
+    PickStartedAt : DateTime?
+    PickerId : int? {FK}
+  }
+  class GoodsIssueDetail {
+    IssueDetailId : int {PK}
+    IssueId : int {FK}
+    ProductId : int {FK}
+    Quantity : int
+  }
+}
+
+package "Kiểm kê" {
+  class StocktakePlan {
+    PlanId : int {PK}
+    Code : string
+    PlanType : string
+    ScopeType : string
+    PlannedDate : Date
+    CreatedBy : int {FK}
+    Status : string
+    Note : string?
+  }
+  class StocktakePlanDetail {
+    PlanDetailId : int {PK}
+    PlanId : int {FK}
+    ReceiptDetailId : int {FK}
+  }
+  class Stocktake {
+    StocktakeId : int {PK}
+    Code : string
+    PlanId : int {FK}
+    StocktakeDate : DateTime
+    CreatedBy : int {FK}
+    ApprovedBy : int? {FK}
+    ApprovedAt : DateTime?
+    Status : string
+    RejectReason : string?
+  }
+  class StocktakeDetail {
+    DetailId : int {PK}
+    StocktakeId : int {FK}
+    ReceiptDetailId : int {FK}
+    SystemQuantity : int
+    ActualQuantity : int
+    Reason : string?
+    CountedAt : DateTime?
+    Method : string
+    UnlabeledQuantity : int
+  }
+  class StocktakeItem {
+    StocktakeItemId : int {PK}
+    DetailId : int {FK}
+    ItemId : int {FK}
+  }
+}
+
+package "Biên bản bất thường" {
+  class AbnormalReport {
+    ReportId : int {PK}
+    Code : string
+    ReceiptDetailId : int {FK}
+    SourceType : string
+    Description : string
+    Quantity : int
+    CreatedBy : int {FK}
+    CreatedAt : DateTime
+    ApprovedBy : int? {FK}
+    ApprovedAt : DateTime?
+    Status : string
+    RejectReason : string?
+    IssueId : int? {FK}
+    Scope : string
+  }
+  class AbnormalReportItem {
+    ReportItemId : int {PK}
+    ReportId : int {FK}
+    ItemId : int {FK}
+  }
+}
+
+package "Hỗ trợ ra quyết định" {
+  class InventoryPolicy {
+    PolicyId : int {PK}
+    ProductId : int {FK}
+    LeadTimeDays : int
+    SafetyStock : decimal?
+    OrderingCost : decimal
+    HoldingCost : decimal
+    CurrentROP : decimal?
+    CurrentEOQ : decimal?
+    AvgDailyDemand : decimal?
+    LastROPCalculatedAt : DateTime?
+    LastEOQCalculatedAt : DateTime?
+    DemandState : string
+    DemandStdDev : decimal?
+  }
+  class StockAlert {
+    AlertId : int {PK}
+    ProductId : int {FK}
+    CurrentQuantity : int
+    ROPValue : decimal
+    AlertDate : DateTime
+    Status : string
+    ClosedAt : DateTime?
+  }
+  class ReplenishmentProposal {
+    ProposalId : int {PK}
+    ProductId : int {FK}
+    ProposedQuantity : int
+    EOQValue : decimal
+    ProposalDate : DateTime
+    ApprovedBy : int? {FK}
+    ApprovedAt : DateTime?
+    Status : string
+    OriginalQuantity : int
+    AdjustReason : string?
+    RejectReason : string?
+    ReportId : int? {FK}
+    AvailableQuantity : int
+    ROPValue : decimal
+    AdjustBasis : string?
+    AvgDailyDemand : decimal?
+    BaseQuantity : int
+    NetQuantity : int
+    Priority : string
+  }
+  class ReplenishmentReport {
+    ReportId : int {PK}
+    Code : string
+    CreatedAt : DateTime
+    CreatedBy : int {FK}
+    ProposalCount : int
+    SupplierCount : int
+    TotalQuantity : int
+    Snapshot : string
+  }
+}
+
+GoodsReceiptDetail "1" -- "0..*" AbnormalReport : ReceiptDetailId
+User "1" -- "0..*" AbnormalReport : CreatedBy
+User "0..1" -- "0..*" AbnormalReport : ApprovedBy
+GoodsIssue "0..1" -- "0..*" AbnormalReport : IssueId
+AbnormalReport "1" *-- "1..*" AbnormalReportItem : ReportId
+StockItem "1" -- "0..*" AbnormalReportItem : ItemId
+Order "1" -- "0..*" GoodsIssue : OrderId
+User "1" -- "0..*" GoodsIssue : CreatedBy
+User "0..1" -- "0..*" GoodsIssue : DeliveredBy
+User "0..1" -- "0..*" GoodsIssue : PickerId
+GoodsIssue "1" *-- "1..*" GoodsIssueDetail : IssueId
+Product "1" -- "0..*" GoodsIssueDetail : ProductId
+Supplier "1" -- "0..*" GoodsReceipt : SupplierId
+User "1" -- "0..*" GoodsReceipt : CreatedBy
+User "0..1" -- "0..*" GoodsReceipt : ApprovedBy
+GoodsReceipt "1" *-- "1..*" GoodsReceiptDetail : ReceiptId
+Product "1" -- "0..*" GoodsReceiptDetail : ProductId
+Product "1" -- "0..1" InventoryPolicy : ProductId
+User "0..1" -- "0..*" Order : CancelledBy
+Order "1" *-- "1..*" OrderDetail : OrderId
+Product "1" -- "0..*" OrderDetail : ProductId
+Supplier "1" -- "0..*" Product : SupplierId
+ProductCategory "1" -- "0..*" Product : CategoryId
+Product "1" -- "0..*" ReplenishmentProposal : ProductId
+User "0..1" -- "0..*" ReplenishmentProposal : ApprovedBy
+ReplenishmentReport "0..1" o-- "1..*" ReplenishmentProposal : ReportId
+User "1" -- "0..*" ReplenishmentReport : CreatedBy
+Product "1" -- "0..*" StockAlert : ProductId
+GoodsReceiptDetail "1" *-- "1..*" StockItem : ReceiptDetailId
+GoodsIssueDetail "0..1" -- "0..*" StockItem : IssueDetailId
+StocktakePlan "1" -- "0..*" Stocktake : PlanId
+User "1" -- "0..*" Stocktake : CreatedBy
+User "0..1" -- "0..*" Stocktake : ApprovedBy
+Stocktake "1" *-- "1..*" StocktakeDetail : StocktakeId
+GoodsReceiptDetail "1" -- "0..*" StocktakeDetail : ReceiptDetailId
+StocktakeDetail "1" *-- "0..*" StocktakeItem : DetailId
+StockItem "1" -- "0..*" StocktakeItem : ItemId
+User "1" -- "0..*" StocktakePlan : CreatedBy
+StocktakePlan "1" *-- "0..*" StocktakePlanDetail : PlanId
+GoodsReceiptDetail "1" -- "0..*" StocktakePlanDetail : ReceiptDetailId
+@enduml

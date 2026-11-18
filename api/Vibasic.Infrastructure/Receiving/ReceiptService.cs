@@ -20,7 +20,7 @@ public record ReceiptInput(int? SupplierId, string? Note, List<ReceiptLineInput>
 /// <item>Lots hold no stock (QuantityOnHand = 0, items "Chờ nhập") until the receipt is approved.</item>
 /// </list>
 /// </summary>
-public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier notify, IClock clock, Decision.ReplenishmentService replenish)
+public class ReceiptService(VibasicDbContext db, CodeGenerator codes, IClock clock, Decision.ReplenishmentService replenish)
 {
     /// <summary>Upper bound per line; item serials are 4 digits per SKU per month.</summary>
     public const int MaxLineQuantity = 2_000;
@@ -92,7 +92,6 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
         var now = clock.UtcNow;
 
         var reports = await db.AbnormalReports.Include(a => a.Items).Where(a => a.ReceiptDetail.ReceiptId == id).ToListAsync();
-        var filed = 0;
         foreach (var lot in receipt.Details.Where(d => d.Status == LotStatus.Quarantined))
         {
             var report = reports.SingleOrDefault(a => a.ReceiptDetailId == lot.ReceiptDetailId);
@@ -109,18 +108,12 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
             }
             report.Description = lot.Note ?? "Không đạt kiểm định khi nhập kho.";
             report.Quantity = lot.Quantity;
-            filed++;
         }
 
         receipt.Status = ReceiptStatus.Pending;
         receipt.SubmittedAt = now;
         receipt.ApprovedBy = null;
         receipt.ApprovedAt = null;
-        var supplier = await db.Suppliers.Where(s => s.SupplierId == receipt.SupplierId).Select(s => s.SupplierName).SingleAsync();
-        await notify.ToRoleAsync(UserRole.Manager, $"Phiếu nhập {receipt.Code} chờ duyệt",
-            $"{supplier}, {receipt.Details.Select(d => d.ProductId).Distinct().Count()} mặt hàng"
-            + (filed > 0 ? $", kèm {filed} biên bản bất thường." : "."),
-            $"/ql/nhap-kho/{id}", Notifier.Warning);
         await db.SaveChangesAsync();
         return receipt;
     }
@@ -140,9 +133,6 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
         receipt.Status = ReceiptStatus.Approved;
         receipt.ApprovedBy = managerId;
         receipt.ApprovedAt = clock.UtcNow;
-        notify.ToUser(receipt.CreatedBy, $"Phiếu nhập {receipt.Code} đã được duyệt",
-            $"Đã ghi nhận tồn kho {receipt.Details.Where(d => d.Status == LotStatus.Normal).Sum(d => d.Quantity)} sản phẩm.",
-            $"/kho/nhap-kho/{id}", Notifier.Success);
         await db.SaveChangesAsync();
         await replenish.CheckAsync(receipt.Details.Select(d => d.ProductId));
         return receipt;
@@ -157,8 +147,6 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
         receipt.RejectReason = text;
         receipt.ApprovedBy = managerId;
         receipt.ApprovedAt = clock.UtcNow;
-        notify.ToUser(receipt.CreatedBy, $"Phiếu nhập {receipt.Code} bị từ chối", $"Lý do: {text}. Sửa phiếu rồi gửi duyệt lại.",
-            $"/kho/nhap-kho/{id}", Notifier.Danger);
         await db.SaveChangesAsync();
         return receipt;
     }
@@ -173,7 +161,7 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
         var receipt = await LoadAsync(id);
         if (receipt.Status != ReceiptStatus.Approved)
             throw new RuleException($"Phiếu {receipt.Code} đang ở trạng thái “{Labels<ReceiptStatus>.ToLabel(receipt.Status)}”, chưa duyệt nên không có gì để hủy.");
-        var text = RequireReason(reason);
+        RequireReason(reason);
         if (await RevokeBlockAsync(receipt) is { } block) throw new RuleException(block);
         var lotIds = receipt.Details.Select(d => d.ReceiptDetailId).ToList();
         var reports = await db.AbnormalReports.Where(a => lotIds.Contains(a.ReceiptDetailId)).ToListAsync();
@@ -194,8 +182,6 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, Notifier n
         receipt.Status = ReceiptStatus.Pending;
         receipt.ApprovedBy = null;
         receipt.ApprovedAt = null;
-        notify.ToUser(receipt.CreatedBy, $"Phiếu nhập {receipt.Code} đã bị hủy duyệt",
-            $"Lý do: {text}. Tồn kho của phiếu chưa được tính; phiếu chờ quản lý duyệt lại.", $"/kho/nhap-kho/{id}", Notifier.Warning);
         await db.SaveChangesAsync();
         await replenish.CheckAsync(receipt.Details.Select(d => d.ProductId));
         return receipt;

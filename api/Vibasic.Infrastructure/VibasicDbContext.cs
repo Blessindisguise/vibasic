@@ -27,7 +27,6 @@ public class VibasicDbContext(DbContextOptions<VibasicDbContext> options) : DbCo
     public DbSet<StockAlert> StockAlerts => Set<StockAlert>();
     public DbSet<ReplenishmentProposal> ReplenishmentProposals => Set<ReplenishmentProposal>();
     public DbSet<ReplenishmentReport> ReplenishmentReports => Set<ReplenishmentReport>();
-    public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder b)
     {
@@ -137,12 +136,10 @@ public class VibasicDbContext(DbContextOptions<VibasicDbContext> options) : DbCo
             e.ToTable("GoodsIssue").HasKey(x => x.IssueId);
             e.Property(x => x.Code).HasMaxLength(20).IsRequired();
             e.HasIndex(x => x.Code).IsUnique();
-            e.Property(x => x.RejectReason).HasMaxLength(255);
-            e.Property(x => x.HoldReason).HasMaxLength(255);
+            e.Property(x => x.CancelReason).HasMaxLength(255);
             e.Property(x => x.ReceiverName).HasMaxLength(100);
             e.HasOne(x => x.Order).WithMany().HasForeignKey(x => x.OrderId);
             e.HasOne(x => x.Creator).WithMany().HasForeignKey(x => x.CreatedBy);
-            e.HasOne(x => x.Approver).WithMany().HasForeignKey(x => x.ApprovedBy);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.DeliveredBy);
             e.HasOne(x => x.Picker).WithMany().HasForeignKey(x => x.PickerId);
             // Two staff claiming the same issue at once: the second save fails instead of silently taking it.
@@ -245,16 +242,6 @@ public class VibasicDbContext(DbContextOptions<VibasicDbContext> options) : DbCo
             e.HasIndex(x => x.Code).IsUnique();
             e.Property(x => x.Code).HasMaxLength(20);
             e.HasOne(x => x.Creator).WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
-        });
-        m.Entity<Notification>(e =>
-        {
-            e.ToTable("Notification").HasKey(x => x.NotificationId);
-            e.Property(x => x.Title).HasMaxLength(200).IsRequired();
-            e.Property(x => x.Message).HasMaxLength(500);
-            e.Property(x => x.Link).HasMaxLength(200);
-            e.Property(x => x.Tone).HasMaxLength(10);
-            e.HasIndex(x => new { x.UserId, x.IsRead });
-            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId);
         });
 
         // Documents reference users and lots (receipt detail lines) many times; never cascade-delete through them.

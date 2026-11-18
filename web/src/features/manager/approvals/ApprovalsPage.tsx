@@ -8,26 +8,23 @@ import { matches } from '../../../app/text';
 import { suggestFrom } from '../../../app/suggest';
 import { ReceiptStatusBadge, SCOPE_LABEL } from '../../../app/statusBadges';
 import { reportHref, useApprovalSummary, useReceipts, useReports, type ReceiptRow, type ReportRow } from '../../../app/receiving';
-import { useIssues, type IssueRow } from '../../../app/issuing';
 import { useStocktakes, type StocktakeRow } from '../../../app/stock';
 import { stocktakeFields } from '../../stocktake/columns';
 import { ReportDecision } from '../../abnormal/ReportDecision';
 
-type Tab = 'nhap-kho' | 'xuat-kho' | 'kiem-ke' | 'bat-thuong';
+type Tab = 'nhap-kho' | 'kiem-ke' | 'bat-thuong';
 
 // What the search box matches, per document type.
 const receiptFields = (r: ReceiptRow) => [r.code, r.supplierName, r.creatorName, r.deliveryNoteNo];
-const issueFields = (i: IssueRow) => [i.code, i.orderCode, i.customerName, i.creatorName];
 const reportFields = (r: ReportRow) => [r.code, r.lotCode, r.sku, r.productName, r.description, r.receiptCode, r.creatorName];
 const NOT_FOUND = <EmptyState icon="search" title="Không tìm thấy chứng từ phù hợp" description="Thử từ khóa khác." />;
 const PLACEHOLDER: Record<Tab, string> = {
   'nhap-kho': 'Mã phiếu, NCC, số chứng từ, người lập…',
-  'xuat-kho': 'Mã phiếu, đơn hàng, khách, người lập…',
   'kiem-ke': 'Mã phiếu, kế hoạch, người kiểm…',
   'bat-thuong': 'Mã biên bản, lô, mặt hàng, mô tả…',
 };
 
-/** UC_10 / UC_12 step 1: everything waiting for the manager, grouped by document type. */
+/** UC_10 / UC_12 step 1: everything waiting for the manager, grouped by document type. Goods issues need no approval. */
 export function ApprovalsPage() {
   const [params, setParams] = useSearchParams();
   const tab = (params.get('loai') as Tab) || 'nhap-kho';
@@ -36,12 +33,10 @@ export function ApprovalsPage() {
   const [search, setSearch] = useState('');
   // The same (cached) queries as the tabs below, for the type-ahead of the open tab. A suggestion's key is the page it opens.
   const receipts = useReceipts({ status: 'pending' });
-  const issues = useIssues({ status: 'pending' });
   const stocktakes = useStocktakes('pending');
   const reports = useReports('pending');
   const suggestions: Suggestion<unknown>[] = {
     'nhap-kho': () => suggestFrom(receipts.data, search, receiptFields, r => ({ key: `/ql/nhap-kho/${r.id}`, label: r.code, hint: `${r.supplierName} · ${r.creatorName}` })),
-    'xuat-kho': () => suggestFrom(issues.data, search, issueFields, i => ({ key: `/ql/xuat-kho/${i.id}`, label: i.code, hint: `Đơn ${i.orderCode}${i.customerName ? ` · ${i.customerName}` : ''}` })),
     'kiem-ke': () => suggestFrom(stocktakes.data, search, stocktakeFields, t => ({ key: `/ql/kiem-ke/phieu/${t.id}`, label: t.code, hint: `Kế hoạch ${t.planCode} · ${t.creatorName}` })),
     'bat-thuong': () => suggestFrom(reports.data, search, reportFields, r => ({ key: reportHref('manager', r.id), label: r.code, hint: `${r.lotCode} · ${r.sku} ${r.productName}` })),
   }[tab]();
@@ -53,7 +48,6 @@ export function ApprovalsPage() {
           label="Loại chứng từ" value={tab} onChange={t => { setParams({ loai: t }, { replace: true }); setSearch(''); }}
           options={[
             { value: 'nhap-kho', label: 'Phiếu nhập kho', count: summary.data?.receipts },
-            { value: 'xuat-kho', label: 'Phiếu xuất kho', count: summary.data?.issues },
             { value: 'kiem-ke', label: 'Phiếu kiểm kê', count: summary.data?.stocktakes },
             { value: 'bat-thuong', label: 'Biên bản bất thường', count: summary.data?.abnormalReports },
           ]}
@@ -64,7 +58,6 @@ export function ApprovalsPage() {
         />
       </div>
       {tab === 'nhap-kho' && <PendingReceipts search={search} />}
-      {tab === 'xuat-kho' && <PendingIssues search={search} />}
       {tab === 'kiem-ke' && <PendingStocktakes search={search} />}
       {tab === 'bat-thuong' && <PendingReports search={search} />}
     </div>
@@ -92,26 +85,6 @@ function PendingReceipts({ search }: { search: string }) {
     <DataTable
       columns={columns} rows={receipts.data.filter(r => matches(search, ...receiptFields(r)))} onRowClick={r => nav(`/ql/nhap-kho/${r.id}`)} caption="Phiếu nhập chờ duyệt"
       empty={search ? NOT_FOUND : <EmptyState icon="clipboard-check" title="Không có phiếu nhập chờ duyệt" />}
-    />
-  );
-}
-
-function PendingIssues({ search }: { search: string }) {
-  const issues = useIssues({ status: 'pending' });
-  const nav = useNavigate();
-  const columns: DataTableColumn<IssueRow>[] = [
-    { key: 'code', header: 'Mã phiếu', width: 130, render: i => <Code>{i.code}</Code> },
-    { key: 'issueDate', header: 'Lập lúc', width: 120, render: i => fmtShort(i.issueDate) },
-    { key: 'order', header: 'Đơn hàng', render: i => <span><Code>{i.orderCode}</Code> <span className="vb-muted">{i.customerName}</span></span> },
-    { key: 'creatorName', header: 'Người lập', width: 160 },
-    { key: 'quantity', header: 'Số lượng', numeric: true, width: 160, render: i => <>{fmt(i.totalQuantity)} <span className="vb-muted">· {i.productCount} mặt hàng</span></> },
-  ];
-  if (issues.isPending) return <Loading />;
-  if (issues.isError) return <ListError onRetry={() => issues.refetch()} />;
-  return (
-    <DataTable
-      columns={columns} rows={issues.data.filter(i => matches(search, ...issueFields(i)))} onRowClick={i => nav(`/ql/xuat-kho/${i.id}`)} caption="Phiếu xuất chờ duyệt"
-      empty={search ? NOT_FOUND : <EmptyState icon="clipboard-check" title="Không có phiếu xuất chờ duyệt" />}
     />
   );
 }
