@@ -12,28 +12,65 @@
 | `web/` | React 18, Vite, TypeScript, React Router, TanStack Query; style bằng tokens và class `vb-*` của design system |
 | `docs/` | Ghi chú thiết kế, các thay đổi so với CSDL trong báo cáo; [hướng dẫn sử dụng](docs/huong-dan-su-dung.md) (quy tắc, trạng thái, cách thao tác) |
 
-## Chạy local
+## Chạy trên một máy mới
 
-Cần có: .NET 8 SDK, Node 20+, SQL Server LocalDB (cài kèm Visual Studio hoặc SQL Server Express).
+### 1. Cài phần mềm (một lần)
+
+| Phần mềm | Tải ở đâu | Kiểm tra bằng lệnh |
+|---|---|---|
+| Git | git-scm.com | `git --version` |
+| .NET 8 SDK | dotnet.microsoft.com/download/dotnet/8.0 (chọn **SDK**, không phải Runtime) | `dotnet --version` ra `8.x` |
+| Node.js 20 trở lên | nodejs.org (bản LTS) | `node -v` |
+| SQL Server LocalDB | Trình cài SQL Server Express, chọn **Download Media**, chọn **LocalDB**. Nếu máy có Visual Studio thì thường đã có sẵn. | `sqllocaldb info` có dòng `MSSQLLocalDB` |
+
+### 2. Tải code về
 
 ```powershell
-# 1. API: lần chạy đầu tự tạo DB "Vibasic" trên (localdb)\MSSQLLocalDB và nạp dữ liệu mẫu
+git clone https://github.com/Blessindisguise/vibasic.git
+cd vibasic
+```
+
+### 3. Chạy API (cửa sổ PowerShell thứ nhất)
+
+```powershell
 cd api
-dotnet run --project Vibasic.Api --launch-profile http     # http://localhost:5030, Swagger ở /swagger
-
-# 2. Web (một cửa sổ khác)
-cd web
-npm install
-npm run dev                                                # http://localhost:5173
+dotnet run --project Vibasic.Api --launch-profile http
 ```
 
-Muốn dùng SQL Server khác thì sửa `ConnectionStrings:Vibasic` trong `api/Vibasic.Api/appsettings.json`.
+Lần chạy đầu, lệnh này tự tải thư viện, tạo DB `Vibasic` trên `(localdb)\MSSQLLocalDB` và nạp dữ liệu mẫu. Việc này mất khoảng một phút.
 
-Muốn nạp lại dữ liệu mẫu từ đầu thì xoá DB rồi chạy lại API:
+API sẵn sàng khi thấy dòng `Now listening on: http://localhost:5030`. Swagger ở `http://localhost:5030/swagger`. Giữ cửa sổ này mở.
+
+### 4. Chạy web (cửa sổ PowerShell thứ hai)
 
 ```powershell
-cd api; dotnet tool restore; dotnet ef database drop -f -p Vibasic.Infrastructure -s Vibasic.Api
+cd web
+npm install      # chỉ cần lần đầu, hoặc khi package.json thay đổi
+npm run dev
 ```
+
+Mở `http://localhost:5173` rồi đăng nhập bằng một tài khoản mẫu ở dưới.
+
+### Dùng trên tablet hoặc điện thoại
+
+Thiết bị phải cùng mạng wifi với máy chạy app. `npm run dev` in ra một dòng `Network: http://192.168.x.x:5173`; mở địa chỉ đó trên thiết bị. Nếu Windows hỏi về tường lửa cho Node.js, chọn cho phép trên mạng riêng (Private).
+
+### Lấy code mới về máy đã cài
+
+```powershell
+git pull
+```
+
+Sau đó chạy lại API: nếu CSDL có thay đổi, API tự áp migration mới và giữ nguyên dữ liệu. Nếu `package.json` thay đổi thì chạy lại `npm install`.
+
+### Tùy chọn
+
+- **Dùng SQL Server khác:** sửa `ConnectionStrings:Vibasic` trong `api/Vibasic.Api/appsettings.json`, hoặc đặt biến môi trường `ConnectionStrings__Vibasic`.
+- **Nạp lại dữ liệu mẫu từ đầu:** xóa DB rồi chạy lại API. Lệnh này **xóa hết dữ liệu** trong DB.
+
+  ```powershell
+  cd api; dotnet tool restore; dotnet ef database drop -f -p Vibasic.Infrastructure -s Vibasic.Api
+  ```
 
 ### Tài khoản mẫu (mật khẩu `Vibasic@123`)
 
@@ -103,8 +140,8 @@ Mỗi thay đổi tồn kho đều đi qua cùng một luồng: controller gọi
 ## Kiểm thử
 
 ```powershell
-cd api; dotnet test Vibasic.Tests
-cd web; npx tsc -b
+cd api; dotnet test Vibasic.Tests      # 80 test quy tắc nghiệp vụ
+cd web; npm run build; npm run lint    # kiểm tra kiểu TypeScript, build, lint
 ```
 
 ## Tiến độ
