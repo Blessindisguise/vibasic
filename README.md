@@ -100,6 +100,15 @@ Sau đó chạy lại API: nếu CSDL có thay đổi, API tự áp migration m�
 
 Lịch sử được sinh lùi từ ngày chạy seed nên luôn còn mới.
 
+Sau lịch sử, `Seed/DemoScenarios.cs` dựng thêm các việc đang dở của hôm nay. Phần này đi qua đúng các service nghiệp vụ nên theo cùng quy tắc với app, và giúp mỗi trạng thái đều có mẫu để demo:
+
+- **Nhập kho:** phiếu "Đang nhập kho"; phiếu "Chờ duyệt" có lô tạm cách ly và một dòng lệch chứng từ; phiếu "Từ chối"; phiếu đã duyệt có lô "Tạm cách ly" chờ xử lý biên bản; biên bản lô cách ly bị từ chối (lô về "Bình thường"); lô không đạt "Đã khóa".
+- **Xuất kho:** phiếu "Chờ lấy hàng" chưa ai nhận; phiếu đang lấy dở (đã quét một phần); phiếu đã quét đủ chờ giao; phiếu đã giao hôm nay; đơn bị hủy khi đang lấy hàng (phiếu "Đã hủy"); đơn "Chờ xử lý" vì không đủ hàng.
+- **Biên bản bất thường:** đủ ba nguồn (nhập kho, xuất kho, kiểm kê), mỗi nguồn có đủ chờ duyệt, đã duyệt và từ chối; có một biên bản "Cả lô" làm lô tạm cách ly.
+- **Kiểm kê:** kế hoạch định kỳ toàn kho chờ thực hiện; phiếu chờ duyệt có lô dư; phiếu đã duyệt có sản phẩm "Thất thoát" (một lô đếm bằng quét tem); phiếu bị từ chối (kế hoạch quay về "Chờ thực hiện"); kế hoạch có biên bản lỗi phát hiện khi kiểm kê.
+
+Phần này chỉ chạy khi API vừa tạo DB mới (không chạy trong test). Bước nào lỗi thì ghi cảnh báo `[demo seed]` vào log rồi bỏ qua.
+
 ## Cấu trúc và cách hoạt động
 
 Trình duyệt chạy web React. Web gọi API qua đường dẫn `/api/...`: khi chạy dev, Vite chuyển các lời gọi này sang API ở cổng 5030. API kiểm tra quyền bằng JWT, xử lý nghiệp vụ rồi đọc ghi SQL Server qua EF Core.

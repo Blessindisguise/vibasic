@@ -91,7 +91,10 @@ if (app.Environment.IsDevelopment())
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<VibasicDbContext>();
     await db.Database.MigrateAsync();
-    await DbSeeder.SeedAsync(db, DateTime.UtcNow);
+    var fresh = !await db.Users.AnyAsync();
+    var seededAt = DateTime.UtcNow;
+    await DbSeeder.SeedAsync(db, seededAt);
+    if (fresh) await DemoScenarios.RunAsync(db, seededAt, m => app.Logger.LogWarning("{Message}", m));
 
     app.UseSwagger();
     app.UseSwaggerUI();
