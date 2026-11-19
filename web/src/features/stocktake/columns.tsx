@@ -20,6 +20,6 @@ export const STOCKTAKE_COLUMNS: DataTableColumn<StocktakeRow>[] = [
 ];
 
 /** What a search box matches on a plan / a stocktake (manager and staff lists). */
-export const planFields = (p: PlanRow) => [p.code, p.note, p.creatorName, p.lastStocktakeCode, PLAN_TYPE_LABEL[p.planType],
+export const planFields = (p: PlanRow) => [p.code, p.creatorName, p.lastStocktakeCode, PLAN_TYPE_LABEL[p.planType],
   p.scopeType === 'warehouse' ? 'Toàn bộ kho' : 'Một số lô', PLAN_STATUS_LABEL[p.status]];
 export const stocktakeFields = (s: StocktakeRow) => [s.code, s.planCode, s.creatorName, s.approverName];

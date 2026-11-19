@@ -34,6 +34,28 @@ public enum ItemStatus
     [Label("Thất thoát")] Lost,
     /// <summary>Listed on an abnormal report: set aside, out of stock on hand, never allocated. Back to "Trong kho" if the report is rejected. // + ext</summary>
     [Label("Lỗi")] Defective,
+    /// <summary>Left the warehouse when its abnormal report was handled (returned to the supplier, scrapped or cleared). Final. // + ext</summary>
+    [Label("Đã loại bỏ")] Disposed,
+}
+
+/// <summary>
+/// Hướng xử lý of an approved abnormal report, chosen by the manager. Each one has a fixed effect on stock when the handling is
+/// done: the goods leave the warehouse, or (Repair) come back into stock. // + ext
+/// </summary>
+public enum HandlingMethod
+{
+    [Label("Trả nhà cung cấp")] ReturnToSupplier,
+    [Label("Tiêu hủy")] Scrap,
+    [Label("Thanh lý giảm giá")] Clearance,
+    [Label("Sửa chữa, tân trang")] Repair,
+}
+
+/// <summary>Handling of an approved abnormal report by a warehouse staff member. // + ext</summary>
+public enum HandlingStatus
+{
+    [Label("Chờ xử lý")] Waiting,
+    [Label("Đang xử lý")] InProgress,
+    [Label("Đã xử lý")] Done,
 }
 
 /// <summary>What an abnormal report takes out of stock. // + ext</summary>

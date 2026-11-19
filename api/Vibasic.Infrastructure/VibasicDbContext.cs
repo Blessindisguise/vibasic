@@ -201,7 +201,9 @@ public class VibasicDbContext(DbContextOptions<VibasicDbContext> options) : DbCo
             e.HasOne(x => x.ReceiptDetail).WithMany().HasForeignKey(x => x.ReceiptDetailId);
             e.HasOne(x => x.Creator).WithMany().HasForeignKey(x => x.CreatedBy);
             e.HasOne(x => x.Approver).WithMany().HasForeignKey(x => x.ApprovedBy);
+            e.HasOne(x => x.Handler).WithMany().HasForeignKey(x => x.HandledBy);
             e.HasOne<GoodsIssue>().WithMany().HasForeignKey(x => x.IssueId);
+            e.Property(x => x.HandlingPlan).HasMaxLength(500);
         });
         m.Entity<AbnormalReportItem>(e =>
         {

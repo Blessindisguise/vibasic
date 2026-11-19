@@ -59,8 +59,10 @@ public class StockItem
     public GoodsIssueDetail? IssueDetail { get; set; }
     /// <summary>Scanned during picking (UC_08 step 2). // + ext</summary>
     public DateTime? PickedAt { get; set; }
-    /// <summary>When the item was set aside as defective (status "Lỗi"). // + ext</summary>
+    /// <summary>When the item was set aside as defective (status "Lỗi"). Kept after a repair, so stock movements show both steps. // + ext</summary>
     public DateTime? DefectiveAt { get; set; }
+    /// <summary>When its abnormal report was handled for this item: it left the warehouse ("Đã loại bỏ") or came back repaired. // + ext</summary>
+    public DateTime? HandledAt { get; set; }
 }
 
 #endregion
@@ -280,6 +282,18 @@ public class AbnormalReport
     public ReportScope Scope { get; set; } = ReportScope.Lot;
     /// <summary>The defective items (for a report raised at receiving: every item of the failed lot). // + ext</summary>
     public List<AbnormalReportItem> Items { get; set; } = [];
+    /// <summary>Hướng xử lý chosen by the manager on approval. // + ext</summary>
+    public HandlingMethod? HandlingMethod { get; set; }
+    /// <summary>Mô tả hướng xử lý: proposed by staff when filing (optional), settled by the manager on approval. // + ext</summary>
+    public string? HandlingPlan { get; set; }
+    /// <summary>Set once approved: Chờ xử lý → Đang xử lý (a staff member took it) → Đã xử lý. // + ext</summary>
+    public HandlingStatus? HandlingStatus { get; set; }
+    /// <summary>Staff member handling the report. // + ext</summary>
+    public int? HandledBy { get; set; }
+    public User? Handler { get; set; }
+    public DateTime? HandlingStartedAt { get; set; }       // + ext
+    /// <summary>When the handling was done and stock updated. // + ext</summary>
+    public DateTime? HandledAt { get; set; }
 }
 
 /// <summary>An item listed on an abnormal report. // + ext table</summary>

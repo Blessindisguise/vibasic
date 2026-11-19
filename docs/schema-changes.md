@@ -51,6 +51,9 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
 | StocktakeDetail | `Method`, `UnlabeledQuantity` | nvarchar(20) DEFAULT 'Nhập số', int DEFAULT 0 | Cách đếm (Nhập số / Quét tem); số sản phẩm không có tem khi đếm bằng quét |
 | StockItem | `DefectiveAt` | datetime2 NULL | Thời điểm sản phẩm bị tách ra vì lỗi; kiểm kê dùng để biết lúc đếm sản phẩm còn trên kệ hay chưa |
 | AbnormalReport | `Scope` | nvarchar(20) DEFAULT 'Cả lô' | Phạm vi xử lý: "Sản phẩm lỗi" (chỉ các mã ghi trên biên bản) hoặc "Cả lô" (cách ly / khóa cả lô như Chương 3) |
+| AbnormalReport | `HandlingMethod`, `HandlingPlan` | nvarchar(20) NULL, nvarchar(500) NULL | Hướng xử lý Quản lý chọn khi duyệt (Trả nhà cung cấp / Tiêu hủy / Thanh lý giảm giá / Sửa chữa, tân trang) và mô tả. Nhân viên có thể ghi đề xuất vào `HandlingPlan` khi biên bản còn chờ duyệt (migration `AbnormalHandling`) |
+| AbnormalReport | `HandlingStatus`, `HandledBy` FK(User), `HandlingStartedAt`, `HandledAt` | nvarchar(20) NULL, int NULL, datetime2 NULL ×2 | Xử lý biên bản đã duyệt: Chờ xử lý → Đang xử lý (nhân viên nhận) → Đã xử lý; ai xử lý, nhận lúc nào, xong lúc nào. Migration đặt "Chờ xử lý" cho các biên bản đã duyệt có sẵn |
+| StockItem | `HandledAt` | datetime2 NULL | Thời điểm biên bản xử lý xong sản phẩm: rời kho ("Đã loại bỏ") hoặc sửa xong trở về kho. Báo cáo nhập–xuất–tồn dùng để ghi điều chỉnh đúng ngày |
 
 ## Bảng thêm
 
@@ -64,7 +67,8 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
 
 | Cột | Giá trị gốc | Thêm | Lý do |
 |---|---|---|---|
-| StockItem.Status | Trong kho / Đã xuất | **Chờ nhập**, **Đã giữ chỗ**, **Thất thoát**, **Lỗi** | Sản phẩm được tạo khi lập phiếu nhập nhưng chỉ vào tồn khi phiếu được duyệt. Sản phẩm được giữ chỗ theo FIFO khi lập phiếu xuất. Phần thiếu khi kiểm kê được đánh dấu thất thoát (UC_15 bước 7). Sản phẩm ghi trên biên bản bất thường được tách ra ở trạng thái "Lỗi". |
+| StockItem.Status | Trong kho / Đã xuất | **Chờ nhập**, **Đã giữ chỗ**, **Thất thoát**, **Lỗi**, **Đã loại bỏ** | Sản phẩm được tạo khi lập phiếu nhập nhưng chỉ vào tồn khi phiếu được duyệt. Sản phẩm được giữ chỗ theo FIFO khi lập phiếu xuất. Phần thiếu khi kiểm kê được đánh dấu thất thoát (UC_15 bước 7). Sản phẩm ghi trên biên bản bất thường được tách ra ở trạng thái "Lỗi". "Đã loại bỏ": rời kho khi biên bản được xử lý xong theo hướng trả nhà cung cấp, tiêu hủy hoặc thanh lý. |
+| AbnormalReport.HandlingStatus (mới) | — | **Chờ xử lý**, **Đang xử lý**, **Đã xử lý** | Theo dõi việc xử lý hàng lỗi sau khi duyệt. Trên màn hình gộp với trạng thái duyệt: Chờ duyệt / Chờ xử lý / Đang xử lý / Đã xử lý / Từ chối |
 | Order.Status | Chưa xuất / Chờ xử lý / Đã xuất | **Đang xuất**, **Đã hủy** | Đang xuất: đơn đã có phiếu xuất nhưng chưa giao. Đã hủy: khách hủy, không còn tính vào tồn ròng (Q8) và nhu cầu (Q1) |
 | GoodsIssue.Status | Chờ duyệt / Đã duyệt / Từ chối / Chờ xử lý / Đã xuất | **Đổi thành** Chờ lấy hàng / Đã hủy / Đã xuất | Phiếu không cần duyệt: lập xong là "Chờ lấy hàng". "Đã hủy" (thay cho Chờ xử lý, migration `OrderCancel`): phiếu kết thúc không giao, hàng đã nhả, vì đơn bị hủy hoặc không đủ hàng thay thế (UC_08 3.2). Lý do ở `CancelReason` |
 | StocktakePlan.Status | Chờ thực hiện / Hoàn thành | **Đang kiểm kê** | Đã có phiếu kiểm kê đang chờ duyệt |
@@ -108,6 +112,12 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
   - Hủy quyết định đưa biên bản về "Chờ duyệt" cùng trạng thái lúc chờ: sản phẩm lại "Lỗi", lô "Cả lô" lại "Tạm cách ly". Sản phẩm đã được giữ chỗ sau khi từ chối được thay theo FIFO. Sản phẩm ghi trên biên bản đã quét lấy, đã xuất hoặc thất thoát thì không hủy được.
   - Một lô có thể có nhiều biên bản "Sản phẩm lỗi" cùng lúc. Khi lô đang có biên bản "Cả lô" chờ duyệt thì không lập thêm được.
   - Báo cáo tồn kho có thêm cột "Hàng lỗi", không tính vào tồn thực tế. Báo cáo biến động tính sản phẩm bị tách ra là điều chỉnh âm tại thời điểm lập biên bản.
+- **Xử lý biên bản sau khi duyệt:**
+  - Khi duyệt, Quản lý chọn **hướng xử lý** (bắt buộc) và ghi mô tả. Nhân viên có thể đề xuất hướng xử lý lúc báo lỗi hoặc trên biên bản còn chờ duyệt. Mỗi hướng gắn với một kết quả tồn kho cố định, nên không có lựa chọn "Khác".
+  - Biên bản đã duyệt đi qua **Chờ xử lý → Đang xử lý → Đã xử lý**. Mỗi lúc chỉ một nhân viên xử lý ("Nhận xử lý"). Người đó có thể "Trả lại việc"; Quản lý có thể "Gỡ người xử lý" và sửa hướng xử lý cho tới khi xong.
+  - **Hoàn thành xử lý cập nhật tồn kho:** trả nhà cung cấp, tiêu hủy, thanh lý thì sản phẩm chuyển "Đã loại bỏ"; với "Cả lô" mọi sản phẩm còn trong lô cũng vậy và lô về tồn 0 (vẫn "Đã khóa"). Sửa chữa thì sản phẩm "Lỗi" về "Trong kho"; với "Cả lô" lô được mở khóa. Một biên bản chỉ có một kết quả cho mọi sản phẩm.
+  - Báo cáo biến động: sản phẩm sửa xong có điều chỉnh +1 lúc xong (giữ −1 lúc tách ra); sản phẩm của lô khóa bị loại bỏ có điều chỉnh −1 lúc xong.
+  - Hủy quyết định và hủy duyệt phiếu nhập không làm được khi biên bản đã có người nhận xử lý.
 - **Báo hàng lỗi khi xuất (UC_08 3.1, UC_11):**
   - Mỗi lô có hàng lỗi được lập một biên bản (`IssueId` ghi phiếu xuất). Sản phẩm lỗi được gỡ khỏi phiếu và thay ngay bằng sản phẩm kế tiếp theo FIFO, có thể cùng lô. Hàng đã quét khác của lô vẫn giữ nguyên.
   - Chọn "Nghi lỗi cả lô" thì cả lô chuyển "Tạm cách ly". Mọi sản phẩm của lô đang giữ chỗ trên các phiếu chưa xuất được đổi sang lô khác theo FIFO, hàng đã quét phải trả lại kệ; danh sách lấy hàng của các phiếu khác tự cập nhật.
@@ -245,6 +255,7 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
   - Biên bản ghi mã từng sản phẩm lỗi (thêm bảng AbnormalReportItem) và phạm vi xử lý (bảng 3.36 thêm `Scope`).
   - Mặc định chỉ tách các sản phẩm lỗi (trạng thái mới "Lỗi" của StockItem, bảng 3.25 thêm `DefectiveAt`), không khóa cả lô. Khóa cả lô khi nhân viên báo nghi lỗi cả lô hoặc Quản lý chọn khi duyệt.
   - UC_14 3.1: nhân viên quét tem sản phẩm lỗi thay vì nhập số lượng.
+  - UC_12 thêm bước sau duyệt: chọn hướng xử lý; nhân viên nhận xử lý và hoàn thành; tồn kho cập nhật theo hướng xử lý (bảng 3.36 thêm `HandlingMethod`, `HandlingPlan`, `HandlingStatus`, `HandledBy`, `HandlingStartedAt`, `HandledAt`; bảng 3.25 thêm `HandledAt`, trạng thái "Đã loại bỏ").
 - **UC_04, UC_18:**
   - Phiếu nhập có thêm số chứng từ giao hàng (bảng 3.26 thêm `DeliveryNoteNo`).
   - UC_04 bước 4 (chọn mặt hàng): chỉ chọn được mặt hàng của nhà cung cấp đã chọn, hoặc chọn mặt hàng trước để hệ thống chọn nhà cung cấp.

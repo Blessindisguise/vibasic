@@ -242,7 +242,7 @@ public class IssuingTests
         Assert.Equal(ApprovalStatus.Pending, report.Status);
         Assert.Equal(ItemStatus.Defective, aItems[0].Status);
         Assert.Equal(onHand - 1, lot.QuantityOnHand);
-        await c.Reports.ApproveAsync(report.ReportId, c.Manager);
+        await c.Reports.ApproveAsync(report.ReportId, c.Manager, handling: TestStock.Scrap);
         Assert.Equal(LotStatus.Normal, lot.Status);
         Assert.Equal(ItemStatus.Defective, aItems[0].Status);
     }
@@ -258,7 +258,7 @@ public class IssuingTests
         var report = await c.Db.AbnormalReports.SingleAsync(r => r.IssueId == a.IssueId);
         Assert.Contains(c.ItemsOf(b), i => i.ReceiptDetailId == lot.ReceiptDetailId);
 
-        await c.Reports.ApproveAsync(report.ReportId, c.Manager, wholeLot: true);
+        await c.Reports.ApproveAsync(report.ReportId, c.Manager, wholeLot: true, handling: TestStock.Scrap);
 
         Assert.Equal(ReportScope.Lot, report.Scope);
         Assert.Equal(LotStatus.Locked, lot.Status);

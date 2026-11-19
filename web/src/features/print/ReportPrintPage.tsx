@@ -1,10 +1,10 @@
 import { useParams } from 'react-router-dom';
 import { fmt, fmtDate, fmtDateTime, fmtDocDate, fmtTime } from '../../app/format';
 import { ListError, Loading } from '../../app/ui';
-import { ITEM_STATUS_LABEL, LOT_STATUS_LABEL, SCOPE_LABEL, SOURCE_LABEL } from '../../app/statusBadges';
+import { HANDLING_METHOD_LABEL, ITEM_STATUS_LABEL, LOT_STATUS_LABEL, REPORT_STATE_LABEL, SCOPE_LABEL, SOURCE_LABEL } from '../../app/statusBadges';
 import { toRanges } from '../../app/SerialRanges';
 import type { ItemStatus } from '../../app/issuing';
-import { useReport, type ApprovalStatus } from '../../app/receiving';
+import { reportState, useReport, type ApprovalStatus } from '../../app/receiving';
 import { reportEffect, reportSourceText } from '../abnormal/reportEffect';
 import { Codes, DocFoot, DocSheet, DocSigns, DocTop, PrintToolbar } from './doc';
 
@@ -94,7 +94,19 @@ export function ReportPrintPage() {
           <tbody>
             <tr><th>Kết quả</th><td><b>{DECISION[r.status]}</b></td><th>Thời điểm</th><td>{decided ? fmtDateTime(r.approvedAt) : '…………………………'}</td></tr>
             {r.status === 'rejected' && <tr><th>Lý do từ chối</th><td colSpan={3}>{r.rejectReason}</td></tr>}
-            <tr><th>Hướng xử lý</th><td colSpan={3}><Codes text={effect.text} /></td></tr>
+            {r.status === 'approved' && (
+              <tr><th>Hướng xử lý</th><td colSpan={3}>
+                {r.handlingMethod && <b>{HANDLING_METHOD_LABEL[r.handlingMethod]}. </b>}{r.handlingPlan}
+              </td></tr>
+            )}
+            {r.status === 'pending' && r.handlingPlan && <tr><th>Nhân viên đề xuất</th><td colSpan={3}>{r.handlingPlan}</td></tr>}
+            <tr><th>Tác động tồn kho</th><td colSpan={3}><Codes text={effect.text} /></td></tr>
+            {r.status === 'approved' && (
+              <tr>
+                <th>Xử lý</th><td>{REPORT_STATE_LABEL[reportState(r)]}{r.handlerName ? ` · ${r.handlerName}` : ''}</td>
+                <th>Hoàn thành</th><td>{r.handledAt ? fmtDateTime(r.handledAt) : '…………………………'}</td>
+              </tr>
+            )}
           </tbody>
         </table>
         {!decided && <div className="vb-doc__blank" aria-hidden="true">Ý kiến bổ sung: ……………………………………………………………………………………………………………………………</div>}

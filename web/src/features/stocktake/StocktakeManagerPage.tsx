@@ -70,7 +70,7 @@ export function StocktakeManagerPage() {
           ]}
         />
         <SearchField
-          placeholder={tab === 'ke-hoach' ? 'Mã kế hoạch, ghi chú, người lập…' : 'Mã phiếu, kế hoạch, người kiểm…'} value={search} onChange={setSearch}
+          placeholder={tab === 'ke-hoach' ? 'Mã kế hoạch, loại, người lập, phiếu kiểm kê…' : 'Mã phiếu, kế hoạch, người kiểm, người duyệt…'} value={search} onChange={setSearch}
           style={{ width: 280 }} aria-label={tab === 'ke-hoach' ? 'Tìm kế hoạch kiểm kê' : 'Tìm phiếu kiểm kê'}
           suggestions={suggestions} onPickSuggestion={s => s.value && open(s.value)}
         />

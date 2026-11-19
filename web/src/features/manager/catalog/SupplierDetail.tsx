@@ -84,7 +84,7 @@ export function SupplierDetail({ id, back }: { id: number; back: string }) {
       <section className="vb-panel">
         <div className="vb-panel__head">
           <h3 className="vb-panel__title">Phiếu nhập kho <span className="vb-muted">({list.length})</span></h3>
-          <PanelSearch value={receiptSearch} onChange={setReceiptSearch} placeholder="Mã phiếu, số chứng từ, người lập…" label="Lọc phiếu nhập" />
+          <PanelSearch value={receiptSearch} onChange={setReceiptSearch} placeholder="Mã phiếu, số chứng từ, người lập / duyệt…" label="Lọc phiếu nhập" />
         </div>
         {receipts.isPending ? <Loading rows={3} /> : receipts.isError ? <ListError onRetry={() => receipts.refetch()} /> : (
           <DataTable

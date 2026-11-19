@@ -103,16 +103,18 @@ Mỗi dòng chi tiết là một **lô**; không có bảng Lô riêng. Hàng đ
 | ItemId | int | Không | PK | Mã sản phẩm |
 | ReceiptDetailId | int | Không | FK → GoodsReceiptDetail | Lô chứa sản phẩm |
 | SerialCode | nvarchar(50) | Không | UQ | Mã tem sản phẩm, SP-{SKU}-yymm-nnnn |
-| Status | nvarchar(20) | Không | | Chờ nhập / Trong kho / Đã giữ chỗ / Đã xuất / Thất thoát / Lỗi★ |
+| Status | nvarchar(20) | Không | | Chờ nhập / Trong kho / Đã giữ chỗ / Đã xuất / Thất thoát / Lỗi★ / Đã loại bỏ★ |
 | IssueDetailId | int | Có | FK → GoodsIssueDetail | Dòng phiếu xuất đang giữ hoặc đã xuất sản phẩm |
 | PickedAt ★ | datetime2 | Có | | Thời điểm quét khi lấy hàng |
-| DefectiveAt ★ | datetime2 | Có | | Thời điểm bị tách ra là hàng lỗi |
+| DefectiveAt ★ | datetime2 | Có | | Thời điểm bị tách ra là hàng lỗi. Giữ lại sau khi sửa xong để báo cáo nhập–xuất–tồn thấy cả lúc tách ra và lúc trở về |
+| HandledAt ★ | datetime2 | Có | | Thời điểm biên bản xử lý xong sản phẩm này: rời kho (Đã loại bỏ) hoặc sửa xong trở về kho |
 
 Ý nghĩa trạng thái:
 - **Chờ nhập:** phiếu nhập chưa duyệt.
 - **Đã giữ chỗ:** đã phân cho một phiếu xuất theo FIFO.
 - **Thất thoát:** thiếu khi kiểm kê.
 - **Lỗi:** nằm trên biên bản bất thường; không tính tồn, không được xuất.
+- **Đã loại bỏ:** đã rời kho khi biên bản được xử lý xong theo hướng trả nhà cung cấp, tiêu hủy hoặc thanh lý. Không tính tồn, không xuất, không kiểm kê.
 
 ---
 
@@ -250,6 +252,12 @@ Sản phẩm của lô không có trong bảng này bị xem là thiếu. Khi du
 | RejectReason ★ | nvarchar(255) | Có | | Lý do từ chối (khi đó sản phẩm trở lại "Trong kho") |
 | IssueId ★ | int | Có | FK → GoodsIssue | Phiếu xuất đang lấy hàng khi phát hiện lỗi |
 | Scope ★ | nvarchar(20) | Không | | Phạm vi, quản lý có thể đổi khi duyệt. **Sản phẩm lỗi:** chỉ tách các mã ghi trên biên bản. **Cả lô:** lô bị cách ly, khi duyệt thì khóa |
+| HandlingMethod ★ | nvarchar(20) | Có | | Hướng xử lý quản lý chọn khi duyệt: Trả nhà cung cấp / Tiêu hủy / Thanh lý giảm giá (hàng rời kho khi xong) hoặc Sửa chữa, tân trang (hàng trở về kho) |
+| HandlingPlan ★ | nvarchar(500) | Có | | Mô tả hướng xử lý. Nhân viên có thể đề xuất khi lập biên bản; quản lý chốt khi duyệt |
+| HandlingStatus ★ | nvarchar(20) | Có | | Có từ khi duyệt: Chờ xử lý / Đang xử lý / Đã xử lý |
+| HandledBy ★ | int | Có | FK → User | Nhân viên đang hoặc đã xử lý |
+| HandlingStartedAt ★ | datetime2 | Có | | Thời điểm nhân viên nhận xử lý |
+| HandledAt ★ | datetime2 | Có | | Thời điểm hoàn thành xử lý (tồn kho cập nhật theo hướng xử lý) |
 
 ### AbnormalReportItem ★ — Sản phẩm ghi trên biên bản
 | Thuộc tính | Kiểu dữ liệu | Null | Khóa | Ý nghĩa |
@@ -560,9 +568,11 @@ Biên bản lập khi nhập kho chỉ được xử lý sau khi phiếu nhập 
 ![](anh-giao-dien/quy-trinh/q08-ql-bien-ban-da-duyet.png)
 ![](anh-giao-dien/quy-trinh/q09-ql-chi-tiet-bien-ban-da-duyet.png)
 *Dữ liệu:*
-- AbnormalReport: Status = Đã duyệt;
+- AbnormalReport: Status = Đã duyệt; HandlingMethod, HandlingPlan; HandlingStatus = Chờ xử lý;
 - GoodsReceiptDetail: Status = Đã khóa;
 - StockItem: Lỗi, DefectiveAt.
+
+**Bước 8. Nhân viên xử lý biên bản** (xem mục 8.3, "Xử lý biên bản đã duyệt")
 
 ### 8.2. Xuất kho theo FIFO (UC_07 – UC_09)
 
@@ -646,6 +656,16 @@ Khi duyệt, quản lý chọn phạm vi: chỉ loại các sản phẩm lỗi, 
 
 Muốn từ chối thì phải ghi lý do. Khi từ chối, các sản phẩm trên biên bản trở lại "Trong kho".
 ![](anh-giao-dien/quy-trinh/b05-ql-tu-choi-bien-ban.png)
+
+Khi duyệt, quản lý còn chọn **hướng xử lý** và ghi mô tả (điền sẵn đề xuất của nhân viên nếu có).
+*Dữ liệu:* AbnormalReport: HandlingMethod, HandlingPlan, HandlingStatus = Chờ xử lý.
+
+**Xử lý biên bản đã duyệt**
+1. Nhân viên bấm "Nhận xử lý". *Dữ liệu:* HandlingStatus = Đang xử lý, HandledBy, HandlingStartedAt.
+2. Người đang xử lý có thể "Trả lại việc"; quản lý có thể "Gỡ người xử lý" hoặc "Sửa hướng xử lý". *Dữ liệu:* về Chờ xử lý, HandledBy = NULL.
+3. Người đang xử lý bấm "Hoàn thành xử lý". *Dữ liệu:* HandlingStatus = Đã xử lý, HandledAt, và tồn kho theo hướng xử lý:
+   - Trả nhà cung cấp / Tiêu hủy / Thanh lý giảm giá: StockItem của biên bản (và với "Cả lô" là mọi sản phẩm còn trong lô) chuyển "Đã loại bỏ", HandledAt; với "Cả lô" GoodsReceiptDetail.QuantityOnHand = 0, lô vẫn "Đã khóa".
+   - Sửa chữa, tân trang: StockItem "Lỗi" của biên bản về "Trong kho", HandledAt, QuantityOnHand tăng; với "Cả lô" lô về "Bình thường".
 
 **In biên bản**
 ![](anh-giao-dien/quy-trinh/b06-in-bien-ban-khi-xuat.png)

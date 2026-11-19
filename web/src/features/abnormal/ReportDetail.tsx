@@ -3,12 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ApprovalStepper, Button, DataTable, EmptyState, type DataTableColumn } from '../../design';
 import { ApiError } from '../../app/api';
 import { fmt, fmtDate, fmtDateTime, fmtShort } from '../../app/format';
-import { ApprovalBadge, ItemStatusBadge, LotStatusBadge, SCOPE_LABEL, SOURCE_LABEL } from '../../app/statusBadges';
+import { HANDLING_METHODS, HANDLING_METHOD_LABEL, ItemStatusBadge, LotStatusBadge, ReportStateBadge, SCOPE_LABEL, SOURCE_LABEL } from '../../app/statusBadges';
 import { SerialRanges } from '../../app/SerialRanges';
 import type { ItemStatus } from '../../app/issuing';
-import { useReport, type ReportRow } from '../../app/receiving';
+import { reportState, useReport, type ReportRow } from '../../app/receiving';
 import { Code, Fact, ListError, Loading } from '../../app/ui';
-import { ReportDecision } from './ReportDecision';
+import { HandlingActions, ReportDecision } from './ReportDecision';
 
 /** UC_11 / UC_12: one abnormal report — what was found, on which lot, where, and the manager's decision. */
 export function ReportDetail({ id, role, basePath }: { id: number; role: 'manager' | 'staff'; basePath: string }) {
@@ -29,7 +29,9 @@ export function ReportDetail({ id, role, basePath }: { id: number; role: 'manage
     );
   }
   if (view.isError) return <ListError onRetry={() => view.refetch()} />;
-  const { report: r, lot, items, others, defective } = view.data;
+  const { report: r, lot, items, others, defective, completeLeave, completeReturn } = view.data;
+  const state = reportState(r);
+  const method = HANDLING_METHODS.find(m => m.value === r.handlingMethod);
   const byStatus = defective.reduce<Partial<Record<ItemStatus, string[]>>>((m, i) => ({ ...m, [i.status]: [...(m[i.status] ?? []), i.serial] }), {});
 
   const source: ReactNode = r.sourceType === 'issue' && r.issueId
@@ -47,7 +49,7 @@ export function ReportDetail({ id, role, basePath }: { id: number; role: 'manage
     { key: 'source', header: 'Phát hiện khi', width: 110, render: o => SOURCE_LABEL[o.sourceType] },
     { key: 'description', header: 'Mô tả lỗi', render: o => <span style={{ whiteSpace: 'normal' }}>{o.description}</span> },
     { key: 'quantity', header: 'SL lỗi', numeric: true, width: 80, render: o => fmt(o.quantity) },
-    { key: 'status', header: 'Trạng thái', width: 120, render: o => <ApprovalBadge status={o.status} /> },
+    { key: 'status', header: 'Trạng thái', width: 120, render: o => <ReportStateBadge state={reportState(o)} /> },
   ];
 
   return (
@@ -59,7 +61,7 @@ export function ReportDetail({ id, role, basePath }: { id: number; role: 'manage
           <div style={{ flex: 1, minWidth: 240 }}>
             <div className="vb-row" style={{ gap: 10 }}>
               <h2 className="vb-panel__title" style={{ fontSize: touch ? 20 : 18, letterSpacing: 'var(--tracking-code)' }}>{r.code}</h2>
-              <ApprovalBadge status={r.status} size={size} />
+              <ReportStateBadge state={state} size={size} />
             </div>
             <div className="vb-muted" style={{ marginTop: 2, fontSize: touch ? 14 : undefined }}>
               Phát hiện khi {SOURCE_LABEL[r.sourceType].toLowerCase()} · lập {fmtDateTime(r.createdAt)} bởi {r.creatorName}
@@ -83,6 +85,13 @@ export function ReportDetail({ id, role, basePath }: { id: number; role: 'manage
           <div>
             <div className="vb-muted">Mô tả lỗi</div>
             <p style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap', fontSize: touch ? 16 : undefined }}>{r.description}</p>
+          </div>
+          <div>
+            <div className="vb-muted">{r.status === 'pending' ? 'Hướng xử lý đề xuất' : 'Hướng xử lý'}</div>
+            {method && <p style={{ margin: '4px 0 0', fontSize: touch ? 16 : undefined }}><b>{method.label}</b> <span className="vb-muted">· {method.effect.toLowerCase()} khi hoàn thành</span></p>}
+            <p style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap', fontSize: touch ? 16 : undefined }}>
+              {r.handlingPlan ?? <span className="vb-muted">{r.status === 'rejected' ? '—' : 'Chưa có. Quản lý chọn hướng xử lý khi duyệt.'}</span>}
+            </p>
           </div>
           <div>
             <div className="vb-muted">{r.sourceType === 'receipt' ? 'Sản phẩm không đạt' : 'Sản phẩm lỗi'}</div>
@@ -120,6 +129,19 @@ export function ReportDetail({ id, role, basePath }: { id: number; role: 'manage
               [r.status === 'rejected' ? 'rejected' : 'approved']: r.approvedAt ? { by: r.approverName, at: fmtDateTime(r.approvedAt), note: r.rejectReason } : undefined,
             }}
           />
+          {r.status === 'approved' && (
+            <div className="vb-row" style={{ gap: 16, alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 16, flex: 1, minWidth: 260 }}>
+                <Fact label="Trạng thái xử lý" value={<ReportStateBadge state={state} size={size} />} />
+                <Fact label="Hướng xử lý" value={r.handlingMethod ? HANDLING_METHOD_LABEL[r.handlingMethod] : <span className="vb-muted">Chưa chọn</span>} />
+                <Fact label="Người xử lý" value={r.handlerName ?? <span className="vb-muted">Chưa có người nhận</span>} />
+                <Fact label="Nhận xử lý lúc" value={r.handlingStartedAt ? fmtDateTime(r.handlingStartedAt) : '—'} />
+                <Fact label="Hoàn thành lúc" value={r.handledAt ? fmtDateTime(r.handledAt) : '—'} />
+              </div>
+              <HandlingActions report={r} role={role} completeLeave={completeLeave} completeReturn={completeReturn} size={touch ? 'lg' : 'sm'} />
+            </div>
+          )}
+          {r.status === 'pending' && role === 'staff' && <HandlingActions report={r} role={role} size="lg" />}
         </div>
       </section>
 

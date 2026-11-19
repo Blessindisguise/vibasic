@@ -64,12 +64,17 @@ public class StocktakeTests
         Assert.True(e.Errors.ContainsKey("plannedDate"));
         Assert.True(e.Errors.ContainsKey("lotIds"));
 
+        var locked = c.Lot("THT-02");
+        locked.Status = LotStatus.Locked;
+        await c.Db.SaveChangesAsync();
         var whole = await c.Stocktakes.CreatePlanAsync(new PlanInput(StocktakePlanType.Periodic, StocktakeScope.Warehouse, Today, null, "Cuối tháng"), c.Manager);
         Assert.StartsWith("KH-2611-", whole.Code);
         Assert.Equal(StocktakePlanStatus.Waiting, whole.Status);
         var sheet = await c.Stocktakes.SheetAsync(whole.PlanId);
         Assert.Equal(await c.Stocktakes.CountableLots().CountAsync(), sheet.Count);
-        Assert.Contains(sheet, s => s.Status == LotStatus.Locked); // locked lots are physically there and are counted too
+        Assert.Contains(sheet, s => s.ReceiptDetailId == locked.ReceiptDetailId); // locked lots are physically there and are counted too
+        // The history's locked lot went back to the supplier: it holds nothing and is not counted.
+        Assert.DoesNotContain(sheet, s => s.SystemQuantity == 0);
     }
 
     [Fact]

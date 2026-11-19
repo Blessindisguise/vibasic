@@ -13,7 +13,8 @@ public record CountInput(int? ReceiptDetailId, int? ActualQuantity, string? Reas
 public record StocktakeInput(List<CountInput>? Counts);
 /// <param name="Serials">The defective items, scanned from their labels.</param>
 /// <param name="WholeLot">Defect suspected in the whole lot (mould, damp…): quarantine it, not only the listed items.</param>
-public record StockDefectInput(int? ReceiptDetailId, List<string>? Serials, string? Description, bool WholeLot = false);
+/// <param name="HandlingProposal">Hướng xử lý đề xuất (optional); the manager settles it when approving.</param>
+public record StockDefectInput(int? ReceiptDetailId, List<string>? Serials, string? Description, bool WholeLot = false, string? HandlingProposal = null);
 
 /// <summary>
 /// One lot to count (UC_14 step 2). <paramref name="SystemQuantity"/> is the stock on hand; <paramref name="Picking"/> of it was
@@ -237,7 +238,9 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, IClock c
         var foreign = wanted.Where(s => !bySerial.ContainsKey(s)).ToList();
         var defective = wanted.Where(bySerial.ContainsKey).Select(s => bySerial[s]).ToList();
         var refused = defective.Select(Abnormal.Defects.WhyNot).OfType<string>().ToList();
-        new Validator()
+        var v = new Validator();
+        var proposal = Abnormal.AbnormalReportService.CleanProposal(input.HandlingProposal, v, "handlingProposal");
+        v
             .Check(lot is not null, "receiptDetailId", "Chọn lô thuộc kế hoạch kiểm kê.")
             .Check(lot is null || wanted.Count > 0, "serials", "Quét tem các sản phẩm lỗi.")
             .Check(lot is null || foreign.Count == 0, "serials", $"Không thuộc lô {lot?.LotCode}: {string.Join(", ", foreign.Take(5))}.")
@@ -257,7 +260,7 @@ public class StocktakeService(VibasicDbContext db, CodeGenerator codes, IClock c
         {
             Code = await codes.NextDocumentAsync(CodeGenerator.Abnormal, now), ReceiptDetail = lot, SourceType = AbnormalSource.Stocktake,
             Description = text!, Quantity = defective.Count, CreatedBy = staffId, CreatedAt = now, Status = ApprovalStatus.Pending,
-            Scope = input.WholeLot ? ReportScope.Lot : ReportScope.Items,
+            Scope = input.WholeLot ? ReportScope.Lot : ReportScope.Items, HandlingPlan = proposal,
         };
         report.Items.AddRange(defective.Select(i => new AbnormalReportItem { Item = i }));
         db.AbnormalReports.Add(report);

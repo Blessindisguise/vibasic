@@ -102,9 +102,9 @@ Lịch sử được sinh lùi từ ngày chạy seed nên luôn còn mới.
 
 Sau lịch sử, `Seed/DemoScenarios.cs` dựng thêm các việc đang dở của hôm nay. Phần này đi qua đúng các service nghiệp vụ nên theo cùng quy tắc với app, và giúp mỗi trạng thái đều có mẫu để demo:
 
-- **Nhập kho:** phiếu "Đang nhập kho"; phiếu "Chờ duyệt" có lô tạm cách ly và một dòng lệch chứng từ; phiếu "Từ chối"; phiếu đã duyệt có lô "Tạm cách ly" chờ xử lý biên bản; biên bản lô cách ly bị từ chối (lô về "Bình thường"); lô không đạt "Đã khóa".
+- **Nhập kho:** phiếu "Đang nhập kho"; phiếu "Chờ duyệt" có lô tạm cách ly và một dòng lệch chứng từ; phiếu "Từ chối"; phiếu đã duyệt có lô "Tạm cách ly" chờ xử lý biên bản; biên bản lô cách ly bị từ chối (lô về "Bình thường"); lô không đạt đã khóa rồi trả nhà cung cấp (lô về tồn 0); lô không đạt đã khóa, chờ tiêu hủy.
 - **Xuất kho:** phiếu "Chờ lấy hàng" chưa ai nhận; phiếu đang lấy dở (đã quét một phần); phiếu đã quét đủ chờ giao; phiếu đã giao hôm nay; đơn bị hủy khi đang lấy hàng (phiếu "Đã hủy"); đơn "Chờ xử lý" vì không đủ hàng.
-- **Biên bản bất thường:** đủ ba nguồn (nhập kho, xuất kho, kiểm kê), mỗi nguồn có đủ chờ duyệt, đã duyệt và từ chối; có một biên bản "Cả lô" làm lô tạm cách ly.
+- **Biên bản bất thường:** đủ ba nguồn (nhập kho, xuất kho, kiểm kê). Có đủ các trạng thái Chờ duyệt, Chờ xử lý, Đang xử lý, Đã xử lý (cả rời kho và sửa xong trở về kho) và Từ chối; có một biên bản "Cả lô" làm lô tạm cách ly. Vài biên bản chờ duyệt có sẵn hướng xử lý do nhân viên đề xuất. Biên bản lô bị khóa trong lịch sử đã xử lý xong (trả nhà cung cấp).
 - **Kiểm kê:** kế hoạch định kỳ toàn kho chờ thực hiện; phiếu chờ duyệt có lô dư; phiếu đã duyệt có sản phẩm "Thất thoát" (một lô đếm bằng quét tem); phiếu bị từ chối (kế hoạch quay về "Chờ thực hiện"); kế hoạch có biên bản lỗi phát hiện khi kiểm kê.
 
 Phần này chỉ chạy khi API vừa tạo DB mới (không chạy trong test). Bước nào lỗi thì ghi cảnh báo `[demo seed]` vào log rồi bỏ qua.

@@ -8,7 +8,7 @@ import { matches } from '../../app/text';
 import { suggestFrom } from '../../app/suggest';
 import { useSuppliers } from '../../app/catalog';
 import { ReceiptStatusBadge, RECEIPT_STATUS_OPTIONS } from '../../app/statusBadges';
-import { useReceipts, type ReceiptRow, type ReceiptStatus } from '../../app/receiving';
+import { receiptSearchFields, useReceipts, type ReceiptRow, type ReceiptStatus } from '../../app/receiving';
 
 /** UC_06 Quản lý phiếu nhập kho: filter by date, supplier and status, open a receipt. Staff can also create one (UC_04). */
 export function ReceiptListPage({ role, basePath }: { role: 'manager' | 'staff'; basePath: string }) {
@@ -23,10 +23,10 @@ export function ReceiptListPage({ role, basePath }: { role: 'manager' | 'staff';
   const suppliers = useSuppliers();
   const all = useReceipts({ supplierId, from, to });
   const filtered = useMemo(() => (all.data ?? []).filter(r => !status || r.status === status), [all.data, status]);
-  const rows = useMemo(() => filtered.filter(r => matches(search, r.code, r.supplierName, r.creatorName, r.deliveryNoteNo)), [filtered, search]);
+  const rows = useMemo(() => filtered.filter(r => matches(search, ...receiptSearchFields(r))), [filtered, search]);
   const count = (s: ReceiptStatus) => (all.data ?? []).filter(r => r.status === s).length;
   const hasFilter = !!(supplierId || from || to || search || status);
-  const suggestions = suggestFrom(all.data, search, r => [r.code, r.supplierName, r.creatorName, r.deliveryNoteNo], r => ({
+  const suggestions = suggestFrom(all.data, search, receiptSearchFields, r => ({
     key: String(r.id), label: r.code,
     hint: [r.supplierName, r.deliveryNoteNo && `CT ${r.deliveryNoteNo}`, fmtDateTime(r.receiptDate)].filter(Boolean).join(' · '),
     meta: <ReceiptStatusBadge status={r.status} />,
@@ -65,7 +65,7 @@ export function ReceiptListPage({ role, basePath }: { role: 'manager' | 'staff';
 
       <div className="vb-row" style={{ alignItems: 'flex-end', gap: 12 }}>
         <SearchField
-          size={size} label="Tìm phiếu" placeholder="Mã phiếu, số chứng từ, NCC…" value={search} onChange={setSearch} style={{ width: 260 }}
+          size={size} label="Tìm phiếu" placeholder="Mã phiếu, số chứng từ, NCC, người lập / duyệt…" value={search} onChange={setSearch} style={{ width: 260 }}
           suggestions={suggestions} onPickSuggestion={s => s.value && nav(`${basePath}/${(s.value as ReceiptRow).id}`)}
         />
         <SelectField

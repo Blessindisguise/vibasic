@@ -172,6 +172,11 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, IClock clo
             report.RejectReason = null;
             report.ApprovedBy = null;
             report.ApprovedAt = null;
+            report.HandlingMethod = null;
+            report.HandlingStatus = null;
+            report.HandledBy = null;
+            report.HandlingStartedAt = null;
+            report.HandledAt = null;
             receipt.Details.Single(d => d.ReceiptDetailId == report.ReceiptDetailId).Status = LotStatus.Quarantined;
         }
         foreach (var lot in receipt.Details)
@@ -211,6 +216,11 @@ public class ReceiptService(VibasicDbContext db, CodeGenerator codes, IClock clo
             .Select(a => a.Code).FirstOrDefaultAsync();
         if (report is not null)
             return $"Lô của phiếu {receipt.Code} đã có biên bản {report} lập sau khi nhập kho, không hủy duyệt được nữa.";
+        var handled = await db.AbnormalReports.Where(a => lotIds.Contains(a.ReceiptDetailId)
+                && (a.HandlingStatus == HandlingStatus.InProgress || a.HandlingStatus == HandlingStatus.Done))
+            .Select(a => a.Code).FirstOrDefaultAsync();
+        if (handled is not null)
+            return $"Biên bản {handled} của phiếu {receipt.Code} đã có nhân viên nhận xử lý, không hủy duyệt được nữa.";
         return null;
     }
 

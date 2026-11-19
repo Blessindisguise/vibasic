@@ -7,7 +7,7 @@ import { Code, ListError, Loading } from '../../app/ui';
 import { matches } from '../../app/text';
 import { suggestFrom } from '../../app/suggest';
 import { IssueStatusBadge, ISSUE_STATUS_OPTIONS } from '../../app/statusBadges';
-import { useIssues, useOrders, type IssueRow, type IssueStatus } from '../../app/issuing';
+import { issueSearchFields, useIssues, useOrders, type IssueRow, type IssueStatus } from '../../app/issuing';
 
 /** UC_09 Quản lý phiếu xuất kho: filter by date, order and status; open an issue. */
 export function IssueListPage({ role, basePath }: { role: 'manager' | 'staff'; basePath: string }) {
@@ -22,12 +22,12 @@ export function IssueListPage({ role, basePath }: { role: 'manager' | 'staff'; b
   const orders = useOrders();
   const openOrders = (orders.data ?? []).filter(o => o.status === 'open' || o.status === 'onHold' || o.status === 'inProgress').length;
   const rows = useMemo(
-    () => (all.data ?? []).filter(i => (!status || i.status === status) && matches(search, i.code, i.orderCode, i.customerName, i.creatorName)),
+    () => (all.data ?? []).filter(i => (!status || i.status === status) && matches(search, ...issueSearchFields(i))),
     [all.data, status, search],
   );
   const count = (s: IssueStatus) => (all.data ?? []).filter(i => i.status === s).length;
   const hasFilter = !!(status || from || to || search);
-  const suggestions = suggestFrom(all.data, search, i => [i.code, i.orderCode, i.customerName, i.creatorName], i => ({
+  const suggestions = suggestFrom(all.data, search, issueSearchFields, i => ({
     key: String(i.id), label: i.code, hint: [`Đơn ${i.orderCode}`, i.customerName].filter(Boolean).join(' · '), meta: <IssueStatusBadge status={i.status} />,
   }));
 
@@ -72,7 +72,7 @@ export function IssueListPage({ role, basePath }: { role: 'manager' | 'staff'; b
       </div>
       <div className="vb-row" style={{ alignItems: 'flex-end', gap: 12 }}>
         <SearchField
-          size={size} label="Tìm phiếu" placeholder="Mã phiếu, đơn hàng, khách…" value={search} onChange={setSearch} style={{ width: 260 }}
+          size={size} label="Tìm phiếu" placeholder="Mã phiếu, đơn hàng, khách, người lập / lấy hàng…" value={search} onChange={setSearch} style={{ width: 260 }}
           suggestions={suggestions} onPickSuggestion={s => s.value && nav(`${basePath}/${(s.value as IssueRow).id}`)}
         />
         <TextField size={size} label="Từ ngày" type="date" value={from} max={to || undefined} onChange={e => setFrom(e.target.value)} style={{ width: 170 }} />

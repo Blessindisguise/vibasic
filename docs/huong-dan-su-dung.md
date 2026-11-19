@@ -41,8 +41,12 @@ Tài khoản mẫu (mật khẩu `Vibasic@123`):
 
 App không gửi thông báo. Mỗi việc hiện ở màn hình riêng, kèm số đếm trên menu:
 - **Quản lý:** Chờ duyệt (phiếu nhập, phiếu kiểm kê, biên bản), Cảnh báo tồn kho, Đề xuất bổ sung.
-- **Nhân viên kho:** Đơn chờ xuất (đơn đủ hàng có dấu **Đủ hàng**), Cần lấy hàng, Kiểm kê (kế hoạch "Chờ thực hiện").
+- **Nhân viên kho:** Đơn chờ xuất (đơn đủ hàng có dấu **Đủ hàng**), Cần lấy hàng, Kiểm kê (kế hoạch "Chờ thực hiện"), Báo lỗi (biên bản "Chờ xử lý").
 - Kết quả duyệt hoặc từ chối xem ở trạng thái và lý do ghi trên từng chứng từ.
+
+### Ô tìm kiếm
+
+Ô tìm kiếm ở mọi danh sách chỉ tìm theo **thuộc tính xác định**: mã chứng từ, mã lô, SKU, tên hàng, nhà cung cấp, khách hàng, số điện thoại, và người liên quan (người lập, người duyệt, người lấy hàng, người xử lý). Không tìm trong các ô văn bản tự do như mô tả lỗi, ghi chú, lý do hay địa chỉ. Gợi ý dưới ô ghi rõ tìm được những gì.
 
 ---
 
@@ -64,7 +68,7 @@ App không gửi thông báo. Mỗi việc hiện ở màn hình riêng, kèm s�
 | **Giữ chỗ** | Sản phẩm đã được gắn vào một phiếu xuất chưa giao. Vẫn nằm trong tồn khả dụng cho tới khi giao. |
 | **Tồn ròng** | Tồn khả dụng − tổng số lượng của các đơn hàng đã tiếp nhận nhưng chưa xuất (trạng thái Chưa xuất, Chờ xử lý, Đang xuất). Đây là số dùng cho cảnh báo và đề xuất bổ sung. |
 | **Tồn thực tế** | Khả dụng + tạm cách ly + đã khóa. |
-| **Hàng lỗi** | Sản phẩm đã tách ra theo biên bản bất thường, chờ trả nhà cung cấp hoặc hủy. Không tính vào tồn thực tế. |
+| **Hàng lỗi** | Sản phẩm đã tách ra theo biên bản bất thường, chờ xử lý theo hướng quản lý đã chọn. Không tính vào tồn thực tế. Xử lý xong thì rời kho ("Đã loại bỏ") hoặc, nếu sửa được, trở về "Trong kho". |
 
 Lô "Tạm cách ly" và "Đã khóa" **không được xuất** và không tính vào tồn khả dụng.
 
@@ -85,7 +89,7 @@ Lô "Tạm cách ly" và "Đã khóa" **không được xuất** và không tín
 |---|---|
 | Bình thường | Được xuất, tính vào tồn khả dụng. |
 | Tạm cách ly | Đang chờ quản lý xử lý biên bản bất thường. Không được xuất. |
-| Đã khóa | Biên bản "cả lô" đã được duyệt. Không được xuất. |
+| Đã khóa | Biên bản "cả lô" đã được duyệt. Không được xuất. Xử lý xong theo hướng rời kho thì lô về tồn 0; sửa xong thì lô trở về Bình thường. |
 
 **Sản phẩm (mã định danh)**
 
@@ -96,7 +100,8 @@ Lô "Tạm cách ly" và "Đã khóa" **không được xuất** và không tín
 | Đã giữ chỗ | Đã gắn vào phiếu xuất. |
 | Đã xuất | Đã giao cho khách. |
 | Thất thoát | Kiểm kê không tìm thấy. Nếu sau đó quét lại được thì được khôi phục khi duyệt phiếu kiểm kê. |
-| Lỗi | Đã tách ra theo biên bản bất thường. |
+| Lỗi | Đã tách ra theo biên bản bất thường, chờ xử lý. |
+| Đã loại bỏ | Đã rời kho khi biên bản được xử lý xong (trả nhà cung cấp, tiêu hủy hoặc thanh lý). |
 
 **Đơn hàng** (nhận từ hệ thống bán hàng)
 
@@ -120,7 +125,17 @@ Phiếu xuất không qua bước duyệt vì đơn hàng đã quyết định x
 
 **Kế hoạch kiểm kê:** Chờ thực hiện → Đang kiểm kê (đã gửi phiếu, chờ duyệt) → Hoàn thành (phiếu được duyệt). Phiếu bị từ chối thì kế hoạch trở về "Chờ thực hiện".
 
-**Biên bản bất thường:** Chờ duyệt / Đã duyệt / Từ chối. Quản lý có thể "Hủy quyết định" để đưa biên bản về Chờ duyệt.
+**Biên bản bất thường**
+
+| Trạng thái | Ý nghĩa |
+|---|---|
+| Chờ duyệt | Nhân viên đã lập, chờ quản lý quyết định. Nhân viên có thể ghi hướng xử lý đề xuất. |
+| Chờ xử lý | Quản lý đã duyệt và chọn hướng xử lý; chưa có nhân viên nhận. |
+| Đang xử lý | Một nhân viên đã bấm "Nhận xử lý". Chỉ người đó hoàn thành được. |
+| Đã xử lý | Đã hoàn thành; tồn kho đã cập nhật theo hướng xử lý. |
+| Từ chối | Hàng được xem là đạt, trở lại kho. |
+
+Quản lý có thể "Hủy quyết định" để đưa biên bản về Chờ duyệt, nhưng chỉ khi biên bản còn Chờ xử lý (chưa ai nhận).
 
 **Cảnh báo tồn kho:** Đang mở / Đã đóng. Cảnh báo tự đóng khi tồn ròng vượt ROP.
 
@@ -216,7 +231,16 @@ Phiếu bị từ chối thì kiểm đếm lại theo cùng kế hoạch.
 
 ### 3.4 Biên bản bất thường (`Báo lỗi`)
 
-Biên bản được lập khi nhập kho (lô không đạt), khi lấy hàng xuất kho hoặc khi kiểm kê (báo hàng lỗi). Màn này liệt kê các biên bản bạn lập và kết quả xử lý.
+Biên bản được lập khi nhập kho (lô không đạt), khi lấy hàng xuất kho hoặc khi kiểm kê (báo hàng lỗi). Màn này liệt kê mọi biên bản và trạng thái của chúng.
+
+- **Đề xuất hướng xử lý:** khi báo lỗi (xuất kho, kiểm kê) có ô "Hướng xử lý đề xuất", không bắt buộc. Biên bản còn Chờ duyệt thì mở biên bản, bấm "Đề xuất hướng xử lý" (dùng cho cả biên bản lập khi nhập kho).
+- **Xử lý biên bản đã duyệt:**
+  1. Lọc "Chờ xử lý", mở biên bản, đọc hướng xử lý quản lý đã chọn, bấm **Nhận xử lý**.
+  2. Làm theo hướng xử lý (trả nhà cung cấp, tiêu hủy, thanh lý, hoặc sửa chữa).
+  3. Bấm **Hoàn thành xử lý**. Hộp xác nhận ghi rõ bao nhiêu sản phẩm rời kho hoặc trở về kho. Không hoàn tác được.
+  - Không làm tiếp được thì bấm **Trả lại việc** để người khác nhận.
+  - Lọc **Việc của tôi** để xem các biên bản bạn đang xử lý.
+- **Tìm kiếm:** theo mã biên bản, mã lô, SKU, tên hàng, phiếu nhập, nhà cung cấp, người lập, người duyệt hoặc người xử lý. Không tìm theo nội dung mô tả lỗi. Lọc thêm theo người lập, hướng xử lý, nguồn phát hiện và ngày lập.
 
 ### 3.5 Tra cứu lô (`Tra cứu`)
 
@@ -348,13 +372,25 @@ Nhân viên đề xuất phạm vi; khi duyệt, Quản lý có thể đổi. Bi
 
 **Duyệt**
 - Cả lô: lô bị **khóa**, không được xuất và không tính vào tồn khả dụng. Sản phẩm của lô đang giữ chỗ cho phiếu xuất được thay theo FIFO.
-- Chỉ sản phẩm lỗi: các sản phẩm đó chuyển trạng thái **Lỗi**, chờ trả nhà cung cấp hoặc hủy. Phần còn lại của lô xuất bình thường.
+- Chỉ sản phẩm lỗi: các sản phẩm đó chuyển trạng thái **Lỗi**, chờ xử lý. Phần còn lại của lô xuất bình thường.
+- Bắt buộc chọn **hướng xử lý** và ghi mô tả (ô mô tả điền sẵn đề xuất của nhân viên nếu có). Biên bản chuyển **Chờ xử lý**.
+
+**Hướng xử lý và kết quả khi nhân viên hoàn thành**
+
+| Hướng | Chỉ sản phẩm lỗi | Cả lô |
+|---|---|---|
+| Trả nhà cung cấp / Tiêu hủy / Thanh lý giảm giá | Sản phẩm lỗi chuyển **Đã loại bỏ** (đã bị trừ tồn lúc báo lỗi, tồn không đổi thêm). | Mọi sản phẩm còn trong lô chuyển **Đã loại bỏ**, lô về tồn 0 (vẫn Đã khóa). |
+| Sửa chữa, tân trang | Sản phẩm lỗi trở về **Trong kho**, xuất được. | Lô được mở khóa, trở về **Bình thường**. |
+
+- Một biên bản chỉ có một kết quả cho mọi sản phẩm. Nếu thực tế khác hướng đã chọn (ví dụ không sửa được), bấm **Sửa hướng xử lý** trước khi nhân viên hoàn thành.
+- **Gỡ người xử lý:** đưa biên bản đang xử lý về Chờ xử lý để nhân viên khác nhận.
+- Báo cáo nhập–xuất–tồn ghi các thay đổi này vào cột Điều chỉnh đúng ngày hoàn thành.
 
 **Từ chối**
 - Cả lô: lô trở về **Bình thường** và được tính vào tồn khả dụng.
 - Chỉ sản phẩm lỗi: các sản phẩm được xem là hàng đạt, trở về **Trong kho**. Nhân viên đưa lại lên kệ.
 
-**Hủy quyết định:** biên bản trở về Chờ duyệt để quyết định lại.
+**Hủy quyết định:** biên bản trở về Chờ duyệt để quyết định lại. Chỉ làm được khi chưa có nhân viên nhận xử lý.
 - Hủy "Đã duyệt" cả lô: lô được mở khóa, trở về Tạm cách ly (vẫn chưa xuất được).
 - Hủy "Từ chối" cả lô: lô trở về Tạm cách ly, không còn tính vào tồn khả dụng.
 - Hủy "Đã duyệt" chỉ sản phẩm lỗi: sản phẩm lỗi vẫn để riêng, không xuất được.

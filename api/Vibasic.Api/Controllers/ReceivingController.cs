@@ -11,18 +11,25 @@ namespace Vibasic.Api.Controllers;
 
 public record ReasonInput(string? Reason);
 
+/// <param name="HandlingPlan">Mô tả hướng xử lý: the staff proposal while pending, the manager's once approved.</param>
+/// <param name="HandlingStatus">Set once approved: Chờ xử lý / Đang xử lý / Đã xử lý.</param>
 public record ReportRow(int Id, string Code, int ReceiptDetailId, string LotCode, string Sku, string ProductName, string Unit,
-    AbnormalSource SourceType, string Description, int Quantity, ApprovalStatus Status, string CreatorName, DateTime CreatedAt,
+    AbnormalSource SourceType, string Description, int Quantity, ApprovalStatus Status, int CreatedBy, string CreatorName, DateTime CreatedAt,
     string? ApproverName, DateTime? ApprovedAt, string? RejectReason, int ReceiptId, string ReceiptCode, ReceiptStatus ReceiptStatus,
-    int? IssueId, ReportScope Scope);
+    int? IssueId, ReportScope Scope, string SupplierName,
+    HandlingMethod? HandlingMethod, string? HandlingPlan, HandlingStatus? HandlingStatus,
+    int? HandlerId, string? HandlerName, DateTime? HandlingStartedAt, DateTime? HandledAt);
 
 public static class ReportQueries
 {
     public static IQueryable<ReportRow> Rows(this IQueryable<AbnormalReport> source) => source.Select(a => new ReportRow(
         a.ReportId, a.Code, a.ReceiptDetailId, a.ReceiptDetail.LotCode, a.ReceiptDetail.Product.SKU, a.ReceiptDetail.Product.ProductName,
-        a.ReceiptDetail.Product.Unit, a.SourceType, a.Description, a.Quantity, a.Status, a.Creator.FullName, a.CreatedAt,
+        a.ReceiptDetail.Product.Unit, a.SourceType, a.Description, a.Quantity, a.Status, a.CreatedBy, a.Creator.FullName, a.CreatedAt,
         a.Approver != null ? a.Approver.FullName : null, a.ApprovedAt, a.RejectReason,
-        a.ReceiptDetail.ReceiptId, a.ReceiptDetail.Receipt.Code, a.ReceiptDetail.Receipt.Status, a.IssueId, a.Scope));
+        a.ReceiptDetail.ReceiptId, a.ReceiptDetail.Receipt.Code, a.ReceiptDetail.Receipt.Status, a.IssueId, a.Scope,
+        a.ReceiptDetail.Receipt.Supplier.SupplierName,
+        a.HandlingMethod, a.HandlingPlan, a.HandlingStatus, a.HandledBy, a.Handler != null ? a.Handler.FullName : null,
+        a.HandlingStartedAt, a.HandledAt));
 }
 
 /// <summary>UC_04–06 (staff) and UC_10 for receipts (manager).</summary>
@@ -135,12 +142,17 @@ public class AbnormalReportsController(VibasicDbContext db, AbnormalReportServic
     /// <param name="StocktakeId">Stocktake the report is attached to (source "Kiểm kê"), once the count was submitted.</param>
     /// <param name="Others">Other reports of the same lot, newest first.</param>
     /// <param name="Defective">The items listed on the report and how they stand now. Empty for reports filed before items were recorded.</param>
+    /// <param name="CompleteLeave">Items that would leave the warehouse when the handling is completed now.</param>
+    /// <param name="CompleteReturn">Items that would come back into stock when the handling is completed now (repair).</param>
     public record ReportView(ReportRow Report, LotsController.LotRow Lot, string? IssueCode, int? StocktakeId, string? StocktakeCode,
-        List<ItemCount> Items, List<ReportRow> Others, List<DefectItem> Defective);
+        List<ItemCount> Items, List<ReportRow> Others, List<DefectItem> Defective, int CompleteLeave, int CompleteReturn);
     public record ItemCount(ItemStatus Status, int Count);
     public record DefectItem(int Id, string Serial, ItemStatus Status, string? IssueCode);
     /// <param name="WholeLot">Lock the whole lot (true) or only take the listed items out of stock (false). Null keeps the filed scope.</param>
-    public record ApproveInput(bool? WholeLot);
+    /// <param name="Method">Hướng xử lý (required).</param>
+    /// <param name="Plan">Mô tả hướng xử lý (required, 5–500 characters).</param>
+    public record ApproveInput(bool? WholeLot, HandlingMethod? Method, string? Plan);
+    public record ProposalInput(string? Plan);
 
     /// <summary>One report with its lot, where it was found and the lot's other reports.</summary>
     [HttpGet("{id:int}")]
@@ -162,15 +174,56 @@ public class AbnormalReportsController(VibasicDbContext db, AbnormalReportServic
         var defective = await db.AbnormalReportItems.Where(x => x.ReportId == id).OrderBy(x => x.Item.SerialCode)
             .Select(x => new DefectItem(x.ItemId, x.Item.SerialCode, x.Item.Status, x.Item.IssueDetail != null ? x.Item.IssueDetail.Issue.Code : null))
             .ToListAsync();
-        return new ReportView(report, lot, issueCode, stocktake?.StocktakeId, stocktake?.Code, items, others, defective);
+        var (leave, back) = await reports.CompletionEffectAsync(id);
+        return new ReportView(report, lot, issueCode, stocktake?.StocktakeId, stocktake?.Code, items, others, defective, leave, back);
     }
 
     [HttpPost("{id:int}/approve"), Authorize(Policy = Policies.Manager)]
     public async Task<ReportRow> Approve(int id, ApproveInput? input)
     {
-        await reports.ApproveAsync(id, User.UserId(), input?.WholeLot);
-        return await db.AbnormalReports.Where(a => a.ReportId == id).Rows().SingleAsync();
+        await reports.ApproveAsync(id, User.UserId(), input?.WholeLot, new HandlingInput(input?.Method, input?.Plan));
+        return await Row(id);
     }
+
+    /// <summary>Hướng xử lý đề xuất by staff while the report waits for approval.</summary>
+    [HttpPut("{id:int}/proposal"), Authorize(Policy = Policies.Staff)]
+    public async Task<ReportRow> Propose(int id, ProposalInput input)
+    {
+        await reports.ProposeAsync(id, input.Plan);
+        return await Row(id);
+    }
+
+    /// <summary>The manager changes the hướng xử lý of an approved report not handled yet.</summary>
+    [HttpPut("{id:int}/handling"), Authorize(Policy = Policies.Manager)]
+    public async Task<ReportRow> UpdateHandling(int id, HandlingInput input)
+    {
+        await reports.UpdateHandlingAsync(id, input, User.UserId());
+        return await Row(id);
+    }
+
+    [HttpPost("{id:int}/claim"), Authorize(Policy = Policies.Staff)]
+    public async Task<ReportRow> Claim(int id)
+    {
+        await reports.ClaimAsync(id, User.UserId());
+        return await Row(id);
+    }
+
+    /// <summary>"Trả lại việc" (the handler) or "Gỡ người xử lý" (a manager).</summary>
+    [HttpPost("{id:int}/release")]
+    public async Task<ReportRow> Release(int id)
+    {
+        await reports.ReleaseAsync(id, User.UserId(), User.IsInRole(nameof(UserRole.Manager)));
+        return await Row(id);
+    }
+
+    [HttpPost("{id:int}/complete"), Authorize(Policy = Policies.Staff)]
+    public async Task<ReportRow> Complete(int id)
+    {
+        await reports.CompleteAsync(id, User.UserId());
+        return await Row(id);
+    }
+
+    private Task<ReportRow> Row(int id) => db.AbnormalReports.Where(a => a.ReportId == id).Rows().SingleAsync();
 
     [HttpPost("{id:int}/reject"), Authorize(Policy = Policies.Manager)]
     public async Task<ReportRow> Reject(int id, ReasonInput input)

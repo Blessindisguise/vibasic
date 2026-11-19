@@ -1,5 +1,5 @@
 import { StatusBadge } from '../design';
-import type { AbnormalSource, ApprovalStatus, LotStatus, ReceiptStatus, ReportScope } from './receiving';
+import type { AbnormalSource, ApprovalStatus, HandlingMethod, LotStatus, ReceiptStatus, ReportScope, ReportState } from './receiving';
 import type { IssueStatus, ItemStatus, OrderStatus } from './issuing';
 import type { PlanStatus } from './stock';
 
@@ -64,6 +64,7 @@ const ITEM_STATUS: Record<ItemStatus, { status: 'draft' | 'pending' | 'approved'
   issued: { status: 'info', label: 'Đã xuất', icon: 'truck' },
   lost: { status: 'rejected', label: 'Thất thoát', icon: 'circle-x' },
   defective: { status: 'rejected', label: 'Lỗi', icon: 'shield-alert' },
+  disposed: { status: 'draft', label: 'Đã loại bỏ', icon: 'trash-2' },
 };
 export function ItemStatusBadge({ status, size }: { status: ItemStatus; size?: Size }) {
   const m = ITEM_STATUS[status];
@@ -73,6 +74,29 @@ export const ITEM_STATUS_LABEL = Object.fromEntries(Object.entries(ITEM_STATUS).
 
 export const SOURCE_LABEL: Record<AbnormalSource, string> = { receipt: 'Nhập kho', issue: 'Xuất kho', stocktake: 'Kiểm kê' };
 export const SCOPE_LABEL: Record<ReportScope, string> = { items: 'Chỉ sản phẩm lỗi', lot: 'Cả lô' };
+
+/** Hướng xử lý, with what completing it does to stock. */
+export const HANDLING_METHODS: { value: HandlingMethod; label: string; effect: string; leaves: boolean }[] = [
+  { value: 'returnToSupplier', label: 'Trả nhà cung cấp', effect: 'Hàng rời kho', leaves: true },
+  { value: 'scrap', label: 'Tiêu hủy', effect: 'Hàng rời kho', leaves: true },
+  { value: 'clearance', label: 'Thanh lý giảm giá', effect: 'Hàng rời kho (bán ngoài hệ thống)', leaves: true },
+  { value: 'repair', label: 'Sửa chữa, tân trang', effect: 'Hàng trở về kho, xuất được', leaves: false },
+];
+export const HANDLING_METHOD_LABEL = Object.fromEntries(HANDLING_METHODS.map(m => [m.value, m.label])) as Record<HandlingMethod, string>;
+
+const REPORT_STATE: Record<ReportState, { status: 'draft' | 'pending' | 'approved' | 'rejected' | 'hold' | 'info'; label: string; icon?: string }> = {
+  pending: { status: 'pending', label: 'Chờ duyệt' },
+  waiting: { status: 'hold', label: 'Chờ xử lý', icon: 'clock' },
+  inProgress: { status: 'info', label: 'Đang xử lý', icon: 'refresh-cw' },
+  done: { status: 'approved', label: 'Đã xử lý', icon: 'circle-check' },
+  rejected: { status: 'rejected', label: 'Từ chối' },
+};
+export const REPORT_STATE_LABEL = Object.fromEntries(Object.entries(REPORT_STATE).map(([k, v]) => [k, v.label])) as Record<ReportState, string>;
+/** One badge for an abnormal report: Chờ duyệt / Chờ xử lý / Đang xử lý / Đã xử lý / Từ chối. */
+export function ReportStateBadge({ state, size }: { state: ReportState; size?: Size }) {
+  const m = REPORT_STATE[state];
+  return <StatusBadge status={m.status} label={m.label} icon={m.icon} size={size} />;
+}
 
 export const ISSUE_STATUS_OPTIONS: { value: IssueStatus; label: string }[] = [
   { value: 'ready', label: 'Chờ lấy hàng' },

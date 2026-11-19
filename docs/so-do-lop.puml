@@ -76,6 +76,7 @@ package "Nhập kho" {
     IssueDetailId : int? {FK}
     PickedAt : DateTime?
     DefectiveAt : DateTime?
+    HandledAt : DateTime?
   }
 }
 
@@ -183,6 +184,12 @@ package "Biên bản bất thường" {
     RejectReason : string?
     IssueId : int? {FK}
     Scope : string
+    HandlingMethod : string?
+    HandlingPlan : string?
+    HandlingStatus : string?
+    HandledBy : int? {FK}
+    HandlingStartedAt : DateTime?
+    HandledAt : DateTime?
   }
   class AbnormalReportItem {
     ReportItemId : int {PK}
@@ -252,6 +259,7 @@ package "Hỗ trợ ra quyết định" {
 GoodsReceiptDetail "1" -- "0..*" AbnormalReport : ReceiptDetailId
 User "1" -- "0..*" AbnormalReport : CreatedBy
 User "0..1" -- "0..*" AbnormalReport : ApprovedBy
+User "0..1" -- "0..*" AbnormalReport : HandledBy
 GoodsIssue "0..1" -- "0..*" AbnormalReport : IssueId
 AbnormalReport "1" *-- "1..*" AbnormalReportItem : ReportId
 StockItem "1" -- "0..*" AbnormalReportItem : ItemId

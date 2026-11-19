@@ -122,7 +122,7 @@ export function useSubmitCount(planId: number) {
 export function useStockDefect(planId: number) {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: (input: { receiptDetailId: number; serials: string[]; description: string; wholeLot: boolean }) =>
+    mutationFn: (input: { receiptDetailId: number; serials: string[]; description: string; wholeLot: boolean; handlingProposal?: string }) =>
       api<ReportRow>(`/stocktake-plans/${planId}/defects`, { method: 'POST', json: input }),
     onSuccess: refresh,
   });

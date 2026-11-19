@@ -284,6 +284,7 @@ function StockDefectDialog({ planId, lot, onClose }: { planId: number; lot: Shee
   const [serials, setSerials] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<{ state: 'success' | 'error'; message: string; key: number } | null>(null);
   const [description, setDescription] = useState('');
+  const [proposal, setProposal] = useState('');
   const [wholeLot, setWholeLot] = useState(false);
   const errors = fieldErrors(file.error);
   const bySerial = useMemo(() => new Map((items.data?.items ?? []).map(i => [i.serial, i])), [items.data]);
@@ -300,12 +301,13 @@ function StockDefectDialog({ planId, lot, onClose }: { planId: number; lot: Shee
     if (item.status === 'defective') return say('error', `${s} đã có biên bản lỗi${item.reportCode ? ` ${item.reportCode}` : ''}.`);
     if (item.status === 'issued') return say('error', `${s} đã xuất kho.`);
     if (item.status === 'lost') return say('error', `${s} đang ghi Thất thoát. Báo quản lý.`);
+    if (item.status === 'disposed') return say('error', `${s} đã loại bỏ khỏi kho theo biên bản${item.reportCode ? ` ${item.reportCode}` : ''}.`);
     if (item.picked) return say('error', `${s} đang soạn cho phiếu ${item.issueCode ?? 'xuất'}; báo lỗi ở màn lấy hàng.`);
     setSerials(list => [...list, s]);
     say('success', `Ghi nhận ${s} lỗi · ${serials.length + 1} ${lot.unit}`);
   };
 
-  const submit = () => file.mutate({ receiptDetailId: lot.receiptDetailId, serials, description, wholeLot }, {
+  const submit = () => file.mutate({ receiptDetailId: lot.receiptDetailId, serials, description, wholeLot, handlingProposal: proposal }, {
     onSuccess: r => {
       toast({
         tone: 'warning', title: `Đã lập biên bản ${r.code}`,
@@ -341,6 +343,8 @@ function StockDefectDialog({ planId, lot, onClose }: { planId: number; lot: Shee
       </div>
       <TextField size="lg" multiline label="Mô tả lỗi" required value={description} onChange={e => setDescription(e.target.value)}
         error={errors.description} placeholder="Ví dụ: mốc, nứt, mối mọt" />
+      <TextField size="lg" multiline label="Hướng xử lý đề xuất" helper="Không bắt buộc. Quản lý chốt hướng xử lý khi duyệt." value={proposal}
+        onChange={e => setProposal(e.target.value)} error={errors.handlingProposal} placeholder="Ví dụ: trả nhà cung cấp, sửa lại rồi đưa về kệ" />
       <Checkbox size="lg" checked={wholeLot} onChange={e => setWholeLot(e.target.checked)}
         label={<b>Nghi lỗi cả lô</b>} />
     </Modal>

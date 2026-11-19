@@ -15,8 +15,8 @@ import { IssueListPage } from '../../issuing/IssueListPage';
 type Tab = 'don' | 'phieu' | 'lay-hang';
 
 // Orders are found by code, customer or a product they contain; issues to pick by code, order or customer.
-const orderFields = (o: OrderRow) => [o.externalCode, o.customerName, o.customerPhone, o.shippingAddress, o.lastIssueCode, ...o.lines.flatMap(l => [l.sku, l.productName])];
-const pickFields = (i: IssueRow) => [i.code, i.orderCode, i.customerName, i.customerPhone, i.shippingAddress, i.pickerName];
+const orderFields = (o: OrderRow) => [o.externalCode, o.customerName, o.customerPhone, o.lastIssueCode, ...o.lines.flatMap(l => [l.sku, l.productName])];
+const pickFields = (i: IssueRow) => [i.code, i.orderCode, i.customerName, i.customerPhone, i.pickerName];
 const NOT_FOUND = <div className="vb-panel"><EmptyState size="lg" icon="search" title="Không tìm thấy" description="Thử mã đơn, tên khách hoặc mã hàng khác." /></div>;
 
 /** Staff "Xuất kho": orders waiting to be issued (UC_07 step 1), issues to pick (UC_08), and all issues (UC_09). */
@@ -47,7 +47,7 @@ export function StaffIssueHome() {
         />
         {tab !== 'phieu' && (
           <SearchField
-            size="lg" placeholder={tab === 'don' ? 'Mã đơn, khách hàng, mã hàng…' : 'Mã phiếu, đơn hàng, khách…'} value={search} onChange={setSearch}
+            size="lg" placeholder={tab === 'don' ? 'Mã đơn, khách hàng, SĐT, mã hàng…' : 'Mã phiếu, đơn hàng, khách, SĐT, người lấy hàng…'} value={search} onChange={setSearch}
             style={{ width: 320 }} aria-label={tab === 'don' ? 'Tìm đơn chờ xuất' : 'Tìm phiếu cần lấy hàng'}
             suggestions={suggestions} onPickSuggestion={s => nav(s.key)}
           />

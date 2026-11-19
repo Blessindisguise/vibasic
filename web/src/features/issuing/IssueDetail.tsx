@@ -11,7 +11,7 @@ import { Code, Fact, Facts, ListError, Loading } from '../../app/ui';
 import { useAuth } from '../../app/auth';
 import { matches } from '../../app/text';
 import { suggestFrom } from '../../app/suggest';
-import { ApprovalBadge, IssueStatusBadge } from '../../app/statusBadges';
+import { IssueStatusBadge } from '../../app/statusBadges';
 import { fieldErrors, formError } from '../../app/catalog';
 import {
   pickHoldExpired, pickHoldUntil, useDeliver, useIssue, usePicker, useReportDefect, useScan, type IssueLine, type IssueRow, type IssueView,
@@ -21,6 +21,7 @@ import { CancelOrderDialog } from './CancelOrderDialog';
 import { reportHref, type ReportRow } from '../../app/receiving';
 import { ageDays } from '../staff/issuing/OrderAllocationPage';
 import { SerialRanges } from '../../app/SerialRanges';
+import { ReportStatusCell } from '../abnormal/ReportDecision';
 
 type Role = 'manager' | 'staff';
 
@@ -245,7 +246,7 @@ function ReportsPanel({ reports, touch }: { reports: ReportRow[]; touch: boolean
     { key: 'lot', header: 'Lô', width: 130, render: r => <Code>{r.lotCode}</Code> },
     { key: 'description', header: 'Mô tả lỗi', render: r => <span style={{ whiteSpace: 'normal' }}>{r.description}</span> },
     { key: 'quantity', header: 'SL lỗi', numeric: true, width: 80, render: r => fmt(r.quantity) },
-    { key: 'status', header: 'Trạng thái', width: 120, render: r => <ApprovalBadge status={r.status} /> },
+    { key: 'status', header: 'Trạng thái', width: 150, render: r => <ReportStatusCell report={r} /> },
   ];
   return (
     <section className="vb-panel">
@@ -407,11 +408,12 @@ function DefectDialog({ view, preselect, onClose, onDone }: {
   const report = useReportDefect(view.header.id);
   const [selected, setSelected] = useState<string[]>(preselect ? [preselect] : []);
   const [description, setDescription] = useState('');
+  const [proposal, setProposal] = useState('');
   const [wholeLot, setWholeLot] = useState(false);
   const errors = fieldErrors(report.error);
   const toggle = (s: string) => setSelected(sel => (sel.includes(s) ? sel.filter(x => x !== s) : [...sel, s]));
 
-  const submit = () => report.mutate({ serials: selected, description, wholeLot }, {
+  const submit = () => report.mutate({ serials: selected, description, wholeLot, handlingProposal: proposal }, {
     onSuccess: ({ result }) => {
       onDone(result.onHold
         ? { tone: 'danger', title: `Không đủ hàng thay thế, phiếu ${view.header.code} đã hủy`, message: `Đã lập ${result.reportCodes.join(', ')}. Đơn chờ lập phiếu mới khi có hàng.` }
@@ -451,6 +453,8 @@ function DefectDialog({ view, preselect, onClose, onDone }: {
       </div>
       <TextField size="lg" multiline required label="Mô tả lỗi" value={description} onChange={e => setDescription(e.target.value)}
         error={errors.description} placeholder="Ví dụ: nứt cán, mốc đáy, cong vênh" />
+      <TextField size="lg" multiline label="Hướng xử lý đề xuất" helper="Không bắt buộc. Quản lý chốt hướng xử lý khi duyệt." value={proposal}
+        onChange={e => setProposal(e.target.value)} error={errors.handlingProposal} placeholder="Ví dụ: trả nhà cung cấp, sửa lại rồi đưa về kệ" />
       <Checkbox size="lg" checked={wholeLot} onChange={e => setWholeLot(e.target.checked)}
         label={<b>Nghi lỗi cả lô</b>} />
     </FormDialog>

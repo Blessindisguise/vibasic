@@ -39,7 +39,7 @@ export function StaffStocktakeHome() {
   return (
     <div className="vb-stack">
       <SearchField
-        size="lg" placeholder="Mã kế hoạch, phiếu kiểm kê, ghi chú…" value={search} onChange={setSearch} style={{ width: 360, maxWidth: '100%' }}
+        size="lg" placeholder="Mã kế hoạch, phiếu kiểm kê, người lập…" value={search} onChange={setSearch} style={{ width: 360, maxWidth: '100%' }}
         aria-label="Tìm kế hoạch, phiếu kiểm kê" suggestions={suggestions} onPickSuggestion={s => s.value && pick(s.value)}
       />
       <DateRangeFilter size="lg" label="Ngày dự kiến / ngày kiểm" value={range} onChange={setRange} />

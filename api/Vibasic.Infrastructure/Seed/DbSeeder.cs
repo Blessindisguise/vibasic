@@ -587,12 +587,19 @@ public static class DbSeeder
         if (defect is not null)
         {
             var at = receipts.Single(r => r.Details.Contains(defect)).ReceiptDate;
+            // Handled the next day: the boards went back to the supplier, so the locked lot no longer holds anything.
+            var handled = at.AddDays(1).AddHours(3);
+            foreach (var item in defect.Items) { item.Status = ItemStatus.Disposed; item.HandledAt = handled; }
+            defect.QuantityOnHand = 0;
             db.AbnormalReports.Add(new AbnormalReport
             {
                 Code = Next(CodeGenerator.Abnormal, at.AddHours(1)), ReceiptDetail = defect, SourceType = AbnormalSource.Receipt,
                 Description = "Nứt mặt thớt khi sấy, 12 cái không đạt kiểm định", Quantity = 12, Creator = staff1,
                 CreatedAt = at.AddMinutes(20), Approver = manager, ApprovedAt = at.AddMinutes(50), Status = ApprovalStatus.Approved, Scope = ReportScope.Lot,
                 Items = defect.Items.Select(i => new AbnormalReportItem { Item = i }).ToList(),
+                HandlingMethod = HandlingMethod.ReturnToSupplier, HandlingStatus = HandlingStatus.Done,
+                HandlingPlan = "Trả lại 12 thớt cho Xưởng gỗ Minh Long, đề nghị giao bù trong đợt hàng kế tiếp.",
+                Handler = staff1, HandlingStartedAt = at.AddHours(2), HandledAt = handled,
             });
         }
 

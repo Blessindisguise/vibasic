@@ -8,7 +8,7 @@ export type OrderStatus = 'open' | 'onHold' | 'inProgress' | 'issued' | 'cancell
  * cancelled: ended without delivery, items released (cancelReason says why: order cancelled, or no replacement left).
  */
 export type IssueStatus = 'ready' | 'cancelled' | 'issued';
-export type ItemStatus = 'incoming' | 'inStock' | 'reserved' | 'issued' | 'lost' | 'defective';
+export type ItemStatus = 'incoming' | 'inStock' | 'reserved' | 'issued' | 'lost' | 'defective' | 'disposed';
 
 export interface OrderLine { productId: number; sku: string; productName: string; unit: string; quantity: number; free: number }
 export interface OrderRow {
@@ -33,6 +33,9 @@ export interface IssueRow {
   /** Staff member picking the issue; only they may scan, report defects and deliver. */
   pickerId?: number; pickerName?: string; pickStartedAt?: string; pickActiveAt?: string;
 }
+
+/** Search an issue by its codes, customer and the people involved (creator, picker, who delivered). */
+export const issueSearchFields = (i: IssueRow) => [i.code, i.orderCode, i.customerName, i.customerPhone, i.creatorName, i.pickerName, i.delivererName];
 
 /** Same rule as the server (IssueService.PickHold): an issue stays with its picker for 3 days from the claim. */
 export const PICK_HOLD_MS = 3 * 86_400_000;
@@ -112,7 +115,7 @@ export function usePicker() {
 export function useReportDefect(id: number) {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: (input: { serials: string[]; description: string; wholeLot: boolean }) =>
+    mutationFn: (input: { serials: string[]; description: string; wholeLot: boolean; handlingProposal?: string }) =>
       api<{ view: IssueView; result: DefectResult }>(`/issues/${id}/defects`, { method: 'POST', json: input }),
     onSuccess: refresh,
   });

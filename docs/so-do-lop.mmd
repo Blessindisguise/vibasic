@@ -60,6 +60,7 @@ classDiagram
     int? IssueDetailId FK
     DateTime? PickedAt
     DateTime? DefectiveAt
+    DateTime? HandledAt
   }
   class Order {
     int OrderId PK
@@ -158,6 +159,12 @@ classDiagram
     string? RejectReason
     int? IssueId FK
     string Scope
+    string? HandlingMethod
+    string? HandlingPlan
+    string? HandlingStatus
+    int? HandledBy FK
+    DateTime? HandlingStartedAt
+    DateTime? HandledAt
   }
   class AbnormalReportItem {
     int ReportItemId PK
@@ -222,6 +229,7 @@ classDiagram
   GoodsReceiptDetail "1" -- "0..*" AbnormalReport : ReceiptDetailId
   User "1" -- "0..*" AbnormalReport : CreatedBy
   User "0..1" -- "0..*" AbnormalReport : ApprovedBy
+  User "0..1" -- "0..*" AbnormalReport : HandledBy
   GoodsIssue "0..1" -- "0..*" AbnormalReport : IssueId
   AbnormalReport "1" *-- "1..*" AbnormalReportItem : ReportId
   StockItem "1" -- "0..*" AbnormalReportItem : ItemId

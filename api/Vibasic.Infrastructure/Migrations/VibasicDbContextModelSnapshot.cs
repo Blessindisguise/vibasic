@@ -52,6 +52,27 @@ namespace Vibasic.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<DateTime?>("HandledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("HandledBy")
+                        .HasColumnType("int");
+
+                    b.Property<string>("HandlingMethod")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("HandlingPlan")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("HandlingStartedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("HandlingStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<int?>("IssueId")
                         .HasColumnType("int");
 
@@ -88,6 +109,8 @@ namespace Vibasic.Infrastructure.Migrations
                         .IsUnique();
 
                     b.HasIndex("CreatedBy");
+
+                    b.HasIndex("HandledBy");
 
                     b.HasIndex("IssueId");
 
@@ -710,6 +733,9 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Property<DateTime?>("DefectiveAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime?>("HandledAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<int?>("IssueDetailId")
                         .IsConcurrencyToken()
                         .HasColumnType("int");
@@ -1014,6 +1040,11 @@ namespace Vibasic.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Vibasic.Domain.User", "Handler")
+                        .WithMany()
+                        .HasForeignKey("HandledBy")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Vibasic.Domain.GoodsIssue", null)
                         .WithMany()
                         .HasForeignKey("IssueId")
@@ -1028,6 +1059,8 @@ namespace Vibasic.Infrastructure.Migrations
                     b.Navigation("Approver");
 
                     b.Navigation("Creator");
+
+                    b.Navigation("Handler");
 
                     b.Navigation("ReceiptDetail");
                 });

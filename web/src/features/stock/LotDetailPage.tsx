@@ -5,13 +5,14 @@ import { ApiError } from '../../app/api';
 import { fmt, fmtDate, fmtShort } from '../../app/format';
 import { Segmented } from '../../app/Segmented';
 import { Code, Fact, ListError, Loading } from '../../app/ui';
-import { ApprovalBadge, ItemStatusBadge, ITEM_STATUS_LABEL, LotStatusBadge, SOURCE_LABEL } from '../../app/statusBadges';
+import { ItemStatusBadge, ITEM_STATUS_LABEL, LotStatusBadge, SOURCE_LABEL } from '../../app/statusBadges';
 import { useLot, type LotItem } from '../../app/stock';
 import { matches } from '../../app/text';
 import { suggestFrom } from '../../app/suggest';
 import type { ItemStatus } from '../../app/issuing';
 import { reportHref, type ReportRow } from '../../app/receiving';
 import { ReportDecision } from '../abnormal/ReportDecision';
+import { ReportStatusCell } from '../abnormal/ReportDecision';
 
 /**
  * UC_16 step 5: the items (identity codes) of a lot and their status, plus the lot's abnormal reports.
@@ -50,7 +51,7 @@ export function LotDetailPage({ id, role, basePath }: { id: number; role: 'manag
     { key: 'source', header: 'Phát hiện khi', width: 110, render: r => SOURCE_LABEL[r.sourceType] },
     { key: 'description', header: 'Mô tả lỗi', render: r => <span style={{ whiteSpace: 'normal' }}>{r.description}</span> },
     { key: 'quantity', header: 'SL lỗi', numeric: true, width: 80, render: r => fmt(r.quantity) },
-    { key: 'status', header: 'Trạng thái', width: 120, render: r => <ApprovalBadge status={r.status} /> },
+    { key: 'status', header: 'Trạng thái', width: 150, render: r => <ReportStatusCell report={r} /> },
     ...(role === 'manager' ? [{ key: 'actions', header: '', width: 220, align: 'right' as const, render: (r: ReportRow) => <ReportDecision report={r} /> }] : []),
   ];
 

@@ -7,6 +7,10 @@ namespace Vibasic.Tests;
 
 internal static class TestStock
 {
+    /// <summary>A valid hướng xử lý for approving abnormal reports.</summary>
+    public static readonly Infrastructure.Abnormal.HandlingInput Scrap = new(HandlingMethod.Scrap, "Tiêu hủy theo quy định.");
+    public static readonly Infrastructure.Abnormal.HandlingInput Repair = new(HandlingMethod.Repair, "Sửa lại rồi đưa về kệ.");
+
     /// <summary>The SKUs whose FIFO tests need stock in more than one lot.</summary>
     public static readonly string[] MultiLot = ["MUO-01", "MUO-03", "THT-01"];
 

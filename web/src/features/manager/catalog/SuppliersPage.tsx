@@ -16,7 +16,7 @@ export function SuppliersPage() {
   const [editing, setEditing] = useState<Supplier | 'new' | null>(null);
   const nav = useNavigate();
   const rows = useMemo(
-    () => (suppliers.data ?? []).filter(s => matches(search, s.name, s.phone, s.address)),
+    () => (suppliers.data ?? []).filter(s => matches(search, s.name, s.phone)),
     [suppliers.data, search],
   );
 
@@ -34,8 +34,8 @@ export function SuppliersPage() {
   return (
     <div className="vb-stack">
       <FilterBar
-        search={search} onSearchChange={setSearch} searchPlaceholder="Tìm theo tên, số điện thoại, địa chỉ…"
-        suggestions={suggestFrom(suppliers.data, search, s => [s.name, s.phone, s.address], s => ({ key: String(s.id), label: s.name, hint: [s.phone, s.address].filter(Boolean).join(' · ') }))}
+        search={search} onSearchChange={setSearch} searchPlaceholder="Tìm theo tên, số điện thoại…"
+        suggestions={suggestFrom(suppliers.data, search, s => [s.name, s.phone], s => ({ key: String(s.id), label: s.name, hint: [s.phone, s.address].filter(Boolean).join(' · ') }))}
         onPickSuggestion={s => setSearch(s.label)}
         resultCount={suppliers.data ? rows.length : undefined}
         actions={<Button icon="plus" onClick={() => setEditing('new')}>Thêm nhà cung cấp</Button>}

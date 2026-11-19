@@ -152,6 +152,7 @@ public static class DemoScenarios
             ], "PT-HD-08812"), s2);
             Tick();
             await receipts.SubmitAsync(r.ReceiptId, s2);
+            await abnormal.ProposeAsync(await ReceiptReport(r.ReceiptId), "Đề xuất trả lại nhà cung cấp, yêu cầu giao bù 6 cái trong đợt sau.");
         });
 
         await Step("Phiếu nhập bị từ chối", async () =>
@@ -175,6 +176,7 @@ public static class DemoScenarios
             await receipts.SubmitAsync(r.ReceiptId, s2);
             Tick();
             await receipts.ApproveAsync(r.ReceiptId, manager);
+            await abnormal.ProposeAsync(await ReceiptReport(r.ReceiptId), "Lau khô, xử lý mốc rồi kiểm tra lại; không đạt thì trả nhà cung cấp.");
         });
 
         await Step("Phiếu nhập đã duyệt, biên bản lô cách ly bị từ chối", async () =>
@@ -189,7 +191,7 @@ public static class DemoScenarios
             await abnormal.RejectAsync(await ReceiptReport(r.ReceiptId), "Kiểm tra lại: chỉ trầy lớp màng bọc ngoài, sản phẩm vẫn đạt.", manager);
         });
 
-        await Step("Phiếu nhập đã duyệt, lô không đạt bị khóa", async () =>
+        await Step("Lô không đạt bị khóa, đã trả nhà cung cấp (đã xử lý)", async () =>
         {
             var r = await receipts.CreateAsync(new ReceiptInput(Sup("KHA-03"), null,
                 [new(Pid("KHA-03"), 20, 2, null, null, "Ngăn hộp bị bung keo, không sử dụng được.")], "PT-HD-08830"), s2);
@@ -198,7 +200,26 @@ public static class DemoScenarios
             Tick();
             await receipts.ApproveAsync(r.ReceiptId, manager);
             Tick();
-            await abnormal.ApproveAsync(await ReceiptReport(r.ReceiptId), manager);
+            var report = await ReceiptReport(r.ReceiptId);
+            await abnormal.ApproveAsync(report, manager, handling: new(HandlingMethod.ReturnToSupplier,
+                "Đóng thùng 2 hộp lỗi, gửi trả Gỗ keo Phú Thịnh kèm biên bản; đề nghị giao bù."));
+            Tick();
+            await abnormal.ClaimAsync(report, s2);
+            Tick();
+            await abnormal.CompleteAsync(report, s2);
+        });
+
+        await Step("Lô không đạt bị khóa, chờ xử lý (tiêu hủy)", async () =>
+        {
+            var r = await receipts.CreateAsync(new ReceiptInput(Sup("DUA-02"), null,
+                [new(Pid("DUA-02"), 30, 4, null, null, "Đũa bị mốc đen ở đầu, nghi đóng gói khi gỗ chưa khô.")], "TA-1125-0471"), s1);
+            Tick();
+            await receipts.SubmitAsync(r.ReceiptId, s1);
+            Tick();
+            await receipts.ApproveAsync(r.ReceiptId, manager);
+            Tick();
+            await abnormal.ApproveAsync(await ReceiptReport(r.ReceiptId), manager, handling: new(HandlingMethod.Scrap,
+                "Tiêu hủy 4 hộp đũa mốc theo quy định, chụp ảnh lưu kèm biên bản."));
         });
 
         // ================= KIỂM KÊ =================
@@ -258,7 +279,7 @@ public static class DemoScenarios
                 "Kiểm tra thớt teak theo phản ánh của khách."), manager);
             Tick();
             await stocktakes.FileDefectAsync(plan.PlanId, new StockDefectInput(a, (await InStock(a)).Take(2).ToList(),
-                "Thớt bị nứt chân rãnh, phát hiện khi kiểm kê."), s2);
+                "Thớt bị nứt chân rãnh, phát hiện khi kiểm kê.", HandlingProposal: "Đề xuất thanh lý giảm giá cho khách sỉ, vết nứt nhỏ vẫn dùng được."), s2);
         });
 
         // ================= XUẤT KHO =================
@@ -289,17 +310,38 @@ public static class DemoScenarios
             var i = await NewIssue(o, s1);
             await Pick(i, s1, 2);
             var bad = (await Unpicked(i)).First();
-            await issues.ReportDefectAsync(i, [bad], "Muỗng bị nứt dọc cán, không giao cho khách được.", s1);
+            await issues.ReportDefectAsync(i, [bad], "Muỗng bị nứt dọc cán, không giao cho khách được.", s1,
+                handlingProposal: "Đề xuất tiêu hủy, vết nứt sâu không sửa được.");
         });
 
-        await Step("Biên bản lỗi khi xuất đã duyệt", async () =>
+        await Step("Biên bản lỗi khi xuất đã duyệt, đang xử lý (sửa chữa)", async () =>
         {
             var o = await NewOrder(5, null, ("MUO-02", 3));
             var i = await NewIssue(o, s2);
             await issues.ClaimAsync(i, s2);
             var r = await issues.ReportDefectAsync(i, [(await Unpicked(i)).First()], "Vá bị sứt mép, có dằm gỗ.", s2);
             Tick();
-            await abnormal.ApproveAsync(await ReportId(r.ReportCodes[0]), manager);
+            var report = await ReportId(r.ReportCodes[0]);
+            await abnormal.ApproveAsync(report, manager, handling: new(HandlingMethod.Repair,
+                "Chà nhám lại mép vá, phủ dầu khoáng, kiểm tra lại rồi đưa về kệ."));
+            Tick();
+            await abnormal.ClaimAsync(report, s2);
+        });
+
+        await Step("Biên bản lỗi khi xuất đã sửa xong, hàng về kho", async () =>
+        {
+            var o = await NewOrder(0, null, ("DUA-03", 2));
+            var i = await NewIssue(o, s1);
+            await issues.ClaimAsync(i, s1);
+            var r = await issues.ReportDefectAsync(i, [(await Unpicked(i)).First()], "Đũa bị xước nhẹ lớp phủ.", s1,
+                handlingProposal: "Phủ lại lớp dầu là dùng được.");
+            Tick();
+            var report = await ReportId(r.ReportCodes[0]);
+            await abnormal.ApproveAsync(report, manager, handling: new(HandlingMethod.Repair, "Phủ lại lớp dầu, để khô 1 ngày rồi đưa về kệ."));
+            Tick();
+            await abnormal.ClaimAsync(report, s1);
+            Tick();
+            await abnormal.CompleteAsync(report, s1);
         });
 
         await Step("Biên bản lỗi khi xuất bị từ chối", async () =>
@@ -317,7 +359,8 @@ public static class DemoScenarios
             var o = await NewOrder(1, null, ("KHA-01", 3));
             var i = await NewIssue(o, s2);
             await issues.ClaimAsync(i, s2);
-            await issues.ReportDefectAsync(i, [(await Unpicked(i)).First()], "Khay có lỗ mọt, nghi cả lô bị mọt.", s2, wholeLot: true);
+            await issues.ReportDefectAsync(i, [(await Unpicked(i)).First()], "Khay có lỗ mọt, nghi cả lô bị mọt.", s2, wholeLot: true,
+                handlingProposal: "Kiểm tra toàn bộ lô; nếu mọt lan rộng thì trả nhà cung cấp.");
         });
 
         await Step("Đơn bị hủy khi đang lấy hàng", async () =>

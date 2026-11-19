@@ -116,7 +116,7 @@ public class ReceivingTests
         Assert.Equal(4, await c.Db.AbnormalReportItems.CountAsync(x => x.ReportId == report.ReportId)); // every item of the failed lot
 
         // UC_05 step 7 comes after step 6.
-        await Assert.ThrowsAsync<RuleException>(() => c.Reports.ApproveAsync(report.ReportId, c.Manager));
+        await Assert.ThrowsAsync<RuleException>(() => c.Reports.ApproveAsync(report.ReportId, c.Manager, handling: TestStock.Scrap));
         await Assert.ThrowsAsync<RuleException>(() => c.Receipts.UpdateAsync(r.ReceiptId, Input(c, Line(c.Board, 40)))); // pending: read-only
 
         await c.Receipts.ApproveAsync(r.ReceiptId, c.Manager);
@@ -126,8 +126,9 @@ public class ReceivingTests
         Assert.All(r.Details.SelectMany(d => d.Items), i => Assert.Equal(ItemStatus.InStock, i.Status));
         Assert.Equal(before + 36, Available(c, c.Board)); // the quarantined 4 are not available
 
-        await c.Reports.ApproveAsync(report.ReportId, c.Manager);
+        await c.Reports.ApproveAsync(report.ReportId, c.Manager, handling: TestStock.Scrap);
         Assert.Equal(LotStatus.Locked, report.ReceiptDetail.Status);
+        Assert.Equal(HandlingStatus.Waiting, report.HandlingStatus);
         Assert.Equal(before + 36, Available(c, c.Board));
     }
 
@@ -201,11 +202,13 @@ public class ReceivingTests
         var report = await c.Db.AbnormalReports.SingleAsync(a => a.ReceiptDetail.ReceiptId == r.ReceiptId);
         await Assert.ThrowsAsync<RuleException>(() => c.Reports.RevokeAsync(report.ReportId, "Xem lại lô", c.Manager)); // still pending
 
-        await c.Reports.ApproveAsync(report.ReportId, c.Manager);
+        await c.Reports.ApproveAsync(report.ReportId, c.Manager, handling: TestStock.Scrap);
         Assert.Equal(LotStatus.Locked, report.ReceiptDetail.Status);
         await c.Reports.RevokeAsync(report.ReportId, "Kiểm tra lại, lỗi nhẹ", c.Manager);
         Assert.Equal(ApprovalStatus.Pending, report.Status);
         Assert.Equal(LotStatus.Quarantined, report.ReceiptDetail.Status);
+        Assert.Null(report.HandlingStatus);
+        Assert.Null(report.HandlingMethod);
 
         var before = Available(c, c.Ladle);
         await c.Reports.RejectAsync(report.ReportId, "Lỗi nhẹ, vẫn bán được", c.Manager);

@@ -98,7 +98,8 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
     public record CreateInput(int? OrderId);
     public record ScanInput(string? Code);
     /// <param name="WholeLot">Defect suspected in the whole lot: quarantine it too.</param>
-    public record DefectInput(List<string>? Serials, string? Description, bool WholeLot = false);
+    /// <param name="HandlingProposal">Hướng xử lý đề xuất (optional).</param>
+    public record DefectInput(List<string>? Serials, string? Description, bool WholeLot = false, string? HandlingProposal = null);
     public record DeliverInput(string? ReceiverName);
     public record DefectResponse(IssueView View, DefectResult Result);
 
@@ -161,7 +162,7 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
     [HttpPost("{id:int}/defects"), Authorize(Policy = Policies.Staff)]
     public async Task<DefectResponse> Defect(int id, DefectInput input)
     {
-        var result = await issues.ReportDefectAsync(id, input.Serials, input.Description, User.UserId(), input.WholeLot);
+        var result = await issues.ReportDefectAsync(id, input.Serials, input.Description, User.UserId(), input.WholeLot, input.HandlingProposal);
         return new DefectResponse(await View(id), result);
     }
 

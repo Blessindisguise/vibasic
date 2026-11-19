@@ -21,7 +21,7 @@ export function OrderListPage({ basePath }: { basePath: string }) {
   const [search, setSearch] = useState('');
   const [cancelling, setCancelling] = useState<OrderRow | null>(null);
   const all = orders.data ?? [];
-  const rows = all.filter(o => (view === 'open' ? isOpenOrder(o) : o.status === 'cancelled') && matches(search, o.externalCode, o.customerName ?? ''));
+  const rows = all.filter(o => (view === 'open' ? isOpenOrder(o) : o.status === 'cancelled') && matches(search, o.externalCode, o.customerName, o.customerPhone));
 
   const columns: DataTableColumn<OrderRow>[] = [
     { key: 'code', header: 'Đơn hàng', width: 130, render: o => <Code>{o.externalCode}</Code> },
@@ -69,7 +69,7 @@ export function OrderListPage({ basePath }: { basePath: string }) {
           { value: 'cancelled', label: 'Đã hủy', count: orders.data ? all.filter(o => o.status === 'cancelled').length : undefined },
         ]}
       />
-      <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Tìm theo mã đơn, khách hàng…" resultCount={orders.data ? rows.length : undefined} />
+      <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Tìm theo mã đơn, khách hàng, SĐT…" resultCount={orders.data ? rows.length : undefined} />
       {orders.isPending ? <Loading /> : orders.isError ? <ListError onRetry={() => orders.refetch()} /> : (
         <DataTable columns={columns} rows={rows} maxHeight="calc(100dvh - 340px)" caption="Đơn hàng"
           empty={<EmptyState icon="package-minus" title={view === 'open' ? 'Không có đơn chưa giao' : 'Chưa có đơn bị hủy'} />} />

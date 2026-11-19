@@ -7,7 +7,7 @@ import { Code, ListError, Loading } from '../../../app/ui';
 import { matches } from '../../../app/text';
 import { suggestFrom } from '../../../app/suggest';
 import { ReceiptStatusBadge, SCOPE_LABEL } from '../../../app/statusBadges';
-import { reportHref, useApprovalSummary, useReceipts, useReports, type ReceiptRow, type ReportRow } from '../../../app/receiving';
+import { REPORT_SEARCH_PLACEHOLDER, reportHref, reportSearchFields, useApprovalSummary, useReceipts, useReports, type ReceiptRow, type ReportRow } from '../../../app/receiving';
 import { useStocktakes, type StocktakeRow } from '../../../app/stock';
 import { stocktakeFields } from '../../stocktake/columns';
 import { ReportDecision } from '../../abnormal/ReportDecision';
@@ -16,12 +16,12 @@ type Tab = 'nhap-kho' | 'kiem-ke' | 'bat-thuong';
 
 // What the search box matches, per document type.
 const receiptFields = (r: ReceiptRow) => [r.code, r.supplierName, r.creatorName, r.deliveryNoteNo];
-const reportFields = (r: ReportRow) => [r.code, r.lotCode, r.sku, r.productName, r.description, r.receiptCode, r.creatorName];
+const reportFields = reportSearchFields;
 const NOT_FOUND = <EmptyState icon="search" title="Không tìm thấy chứng từ phù hợp" description="Thử từ khóa khác." />;
 const PLACEHOLDER: Record<Tab, string> = {
   'nhap-kho': 'Mã phiếu, NCC, số chứng từ, người lập…',
   'kiem-ke': 'Mã phiếu, kế hoạch, người kiểm…',
-  'bat-thuong': 'Mã biên bản, lô, mặt hàng, mô tả…',
+  'bat-thuong': REPORT_SEARCH_PLACEHOLDER,
 };
 
 /** UC_10 / UC_12 step 1: everything waiting for the manager, grouped by document type. Goods issues need no approval. */
@@ -120,7 +120,10 @@ function PendingReports({ search }: { search: string }) {
 
   const columns: DataTableColumn<ReportRow>[] = [
     { key: 'code', header: 'Biên bản', width: 130, render: r => <Code>{r.code}</Code> },
-    { key: 'createdAt', header: 'Lập lúc', width: 110, render: r => fmtShort(r.createdAt) },
+    {
+      key: 'createdAt', header: 'Lập', width: 140,
+      render: r => <span style={{ display: 'inline-flex', flexDirection: 'column' }}><span style={{ whiteSpace: 'nowrap' }}>{fmtShort(r.createdAt)}</span><span className="vb-muted" style={{ fontSize: 12 }}>{r.creatorName}</span></span>,
+    },
     { key: 'lot', header: 'Lô · mặt hàng', render: r => <span><Code>{r.lotCode}</Code> <span className="vb-muted">{r.sku}</span> {r.productName}</span> },
     { key: 'description', header: 'Mô tả lỗi', render: r => <span style={{ whiteSpace: 'normal' }}>{r.description}</span> },
     { key: 'quantity', header: 'SL lỗi', numeric: true, width: 80, render: r => fmt(r.quantity) },

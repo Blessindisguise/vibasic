@@ -23,14 +23,33 @@ export interface LotRow {
 export interface ReportRow {
   id: number; code: string; receiptDetailId: number; lotCode: string; sku: string; productName: string; unit: string;
   sourceType: AbnormalSource; description: string; quantity: number; status: ApprovalStatus;
-  creatorName: string; createdAt: string; approverName?: string; approvedAt?: string; rejectReason?: string;
+  createdBy: number; creatorName: string; createdAt: string; approverName?: string; approvedAt?: string; rejectReason?: string;
   receiptId: number; receiptCode: string; receiptStatus: ReceiptStatus;
   /** Goods issue during which the defect was found (source "Xuất kho"). */
   issueId?: number;
   /** items: only the listed items are out of stock; lot: the whole lot is quarantined / locked. */
   scope: ReportScope;
+  supplierName: string;
+  /** Hướng xử lý chosen by the manager on approval. */
+  handlingMethod?: HandlingMethod;
+  /** Mô tả hướng xử lý: the staff proposal while pending, the manager's once approved. */
+  handlingPlan?: string;
+  /** Set once approved. */
+  handlingStatus?: HandlingStatus;
+  handlerId?: number; handlerName?: string; handlingStartedAt?: string; handledAt?: string;
 }
 export type ReportScope = 'items' | 'lot';
+export type HandlingMethod = 'returnToSupplier' | 'scrap' | 'clearance' | 'repair';
+export type HandlingStatus = 'waiting' | 'inProgress' | 'done';
+/** One status for lists and filters: the approval while undecided or rejected, the handling once approved. */
+export type ReportState = 'pending' | 'rejected' | HandlingStatus;
+export const reportState = (r: ReportRow): ReportState =>
+  r.status === 'approved' ? r.handlingStatus ?? 'waiting' : r.status;
+
+/** Search a report by its codes, product and the people involved — never by its free-text description. */
+export const reportSearchFields = (r: ReportRow) =>
+  [r.code, r.lotCode, r.sku, r.productName, r.receiptCode, r.supplierName, r.creatorName, r.approverName, r.handlerName];
+export const REPORT_SEARCH_PLACEHOLDER = 'Mã biên bản, lô, SKU, tên hàng, NCC, người lập / duyệt / xử lý…';
 /** revokeBlock: approved receipt whose stock is already in use, and why "Hủy duyệt" is no longer possible. */
 export interface ReceiptView { header: ReceiptRow; note?: string; lots: LotRow[]; reports: ReportRow[]; revokeBlock?: string }
 export interface LabelSheet {
@@ -45,6 +64,9 @@ export interface ReceiptLineInput {
 export interface ReceiptInput { supplierId: number | null; note: string; deliveryNoteNo: string; lines: ReceiptLineInput[] }
 
 export interface ReceiptFilter { status?: string; supplierId?: string; from?: string; to?: string }
+
+/** Search a receipt by its codes, supplier and the people involved. */
+export const receiptSearchFields = (r: ReceiptRow) => [r.code, r.deliveryNoteNo, r.supplierName, r.creatorName, r.approverName];
 
 const qs = (f: object) => {
   const p = new URLSearchParams(Object.entries(f).filter(([, v]) => v !== undefined && v !== ''));
@@ -68,6 +90,8 @@ export interface ReportView {
   items: { status: ItemStatus; count: number }[]; others: ReportRow[];
   /** The items listed on the report and how they stand now; empty for reports filed before items were recorded. */
   defective: { id: number; serial: string; status: ItemStatus; issueCode?: string }[];
+  /** Items that would leave the warehouse / come back into stock if the handling were completed now. */
+  completeLeave: number; completeReturn: number;
 }
 export const useReport = (id: number) =>
   useQuery({ queryKey: ['abnormal-reports', 'detail', id], enabled: id > 0, queryFn: () => api<ReportView>(`/abnormal-reports/${id}`) });
@@ -104,11 +128,28 @@ export function useReceiptAction() {
   });
 }
 
+export interface HandlingInput { method: HandlingMethod | null; plan: string }
+
+/** approve/reject/revoke (manager), claim/complete (staff), release (the handler or a manager). */
+export type ReportActionKind = 'approve' | 'reject' | 'revoke' | 'claim' | 'release' | 'complete';
 export function useReportAction() {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: ({ id, action, reason, wholeLot }: { id: number; action: 'approve' | 'reject' | 'revoke'; reason?: string; wholeLot?: boolean }) =>
-      api<ReportRow>(`/abnormal-reports/${id}/${action}`, { method: 'POST', json: action === 'approve' ? { wholeLot } : { reason } }),
+    mutationFn: ({ id, action, reason, wholeLot, handling }: { id: number; action: ReportActionKind; reason?: string; wholeLot?: boolean; handling?: HandlingInput }) =>
+      api<ReportRow>(`/abnormal-reports/${id}/${action}`, {
+        method: 'POST',
+        json: action === 'approve' ? { wholeLot, ...handling } : action === 'reject' || action === 'revoke' ? { reason } : undefined,
+      }),
+    onSuccess: refresh,
+  });
+}
+
+/** The manager changes the hướng xử lý of an approved report (kind 'handling'), or staff propose one while it is pending ('proposal'). */
+export function useSaveHandling() {
+  const refresh = useRefresh();
+  return useMutation({
+    mutationFn: ({ id, kind, handling }: { id: number; kind: 'handling' | 'proposal'; handling: HandlingInput }) =>
+      api<ReportRow>(`/abnormal-reports/${id}/${kind}`, { method: 'PUT', json: kind === 'handling' ? handling : { plan: handling.plan } }),
     onSuccess: refresh,
   });
 }

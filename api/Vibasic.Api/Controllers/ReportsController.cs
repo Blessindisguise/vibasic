@@ -94,9 +94,18 @@ public class ReportsController(VibasicDbContext db, ReplenishmentService repleni
             .Select(d => new { d.ProductId, d.Quantity, d.IssueId, At = d.Issue.DeliveredAt!.Value }).ToListAsync();
         var adjs = await db.StocktakeDetails.Where(d => ids.Contains(d.ReceiptDetail.ProductId) && d.Stocktake.Status == ApprovalStatus.Approved && d.Stocktake.ApprovedAt >= start)
             .Select(d => new { d.ReceiptDetail.ProductId, Delta = d.ActualQuantity - d.SystemQuantity, At = d.Stocktake.ApprovedAt!.Value }).ToListAsync();
-        // Items set aside as defective left stock when they were reported: an adjustment of -1 each.
-        adjs.AddRange(await db.StockItems.Where(i => ids.Contains(i.ReceiptDetail.ProductId) && i.Status == ItemStatus.Defective && i.DefectiveAt >= start)
+        // Items set aside as defective left stock when they were reported: -1 each. That stays true once they are disposed of, and
+        // for a repaired item (DefectiveAt kept, HandledAt set), which then comes back: +1 when the handling was done.
+        adjs.AddRange(await db.StockItems.Where(i => ids.Contains(i.ReceiptDetail.ProductId) && i.DefectiveAt >= start
+                && (i.Status == ItemStatus.Defective || i.Status == ItemStatus.Disposed || i.HandledAt != null))
             .Select(i => new { i.ReceiptDetail.ProductId, Delta = -1, At = i.DefectiveAt!.Value }).ToListAsync());
+        adjs.AddRange(await db.StockItems.Where(i => ids.Contains(i.ReceiptDetail.ProductId) && i.HandledAt >= start && i.DefectiveAt != null
+                && i.Status != ItemStatus.Defective && i.Status != ItemStatus.Disposed)
+            .Select(i => new { i.ReceiptDetail.ProductId, Delta = 1, At = i.HandledAt!.Value }).ToListAsync());
+        // Items of a locked lot still on hand left stock when its report was handled (disposed of without being set aside first).
+        adjs.AddRange(await db.StockItems.Where(i => ids.Contains(i.ReceiptDetail.ProductId) && i.Status == ItemStatus.Disposed
+                && i.DefectiveAt == null && i.HandledAt >= start)
+            .Select(i => new { i.ReceiptDetail.ProductId, Delta = -1, At = i.HandledAt!.Value }).ToListAsync());
 
         var rows = products.Select(p =>
         {

@@ -88,7 +88,7 @@ function ReportView() {
   const suppliers = (report.data?.groups ?? []).map(g => [g.supplierId, g.supplierName] as const);
   const categories = [...new Map(all.map(r => [r.basis.categoryId, r.basis.categoryName])).entries()];
   const rows = all.filter(r => (!supplierId || r.basis.supplierId === Number(supplierId)) && (!categoryId || r.basis.categoryId === Number(categoryId))
-    && (!priority || r.priority === priority) && matches(search, r.basis.sku, r.basis.productName));
+    && (!priority || r.priority === priority) && matches(search, r.basis.sku, r.basis.productName, r.supplierName));
   const chips = [
     ...(supplierId ? [{ key: 'supplier', label: `NCC: ${suppliers.find(([id]) => id === Number(supplierId))?.[1]}` }] : []),
     ...(categoryId ? [{ key: 'category', label: `Nhóm: ${categories.find(([id]) => id === Number(categoryId))?.[1]}` }] : []),
@@ -169,8 +169,8 @@ function ReportView() {
         </Button>
       </div>
       <FilterBar
-        search={search} onSearchChange={setSearch} searchPlaceholder="Tìm theo mã SKU, tên hàng…"
-        suggestions={suggestFrom(all, search, r => [r.basis.sku, r.basis.productName], r => ({ key: String(r.id), label: r.basis.sku, hint: `${r.basis.productName} · ${r.supplierName}` }))}
+        search={search} onSearchChange={setSearch} searchPlaceholder="Tìm theo mã SKU, tên hàng, nhà cung cấp…"
+        suggestions={suggestFrom(all, search, r => [r.basis.sku, r.basis.productName, r.supplierName], r => ({ key: String(r.id), label: r.basis.sku, hint: `${r.basis.productName} · ${r.supplierName}` }))}
         onPickSuggestion={s => setSearch(s.label)}
         filters={[
           { key: 'supplier', label: 'Nhà cung cấp', value: supplierId, options: suppliers.map(([id, name]) => ({ value: String(id), label: name })) },
@@ -253,7 +253,7 @@ function HistoryView({ status }: { status: ProposalStatus }) {
   const proposals = useProposals(status);
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<ProposalRow | null>(null);
-  const rows: History[] = (proposals.data ?? []).filter(p => matches(search, p.basis.sku, p.basis.productName, p.basis.supplierName, p.reportCode ?? ''))
+  const rows: History[] = (proposals.data ?? []).filter(p => matches(search, p.basis.sku, p.basis.productName, p.basis.supplierName, p.reportCode, p.deciderName))
     .map(p => ({ ...p, supplierName: p.basis.supplierName }))
     .sort((a, b) => a.supplierName.localeCompare(b.supplierName, 'vi') || b.proposalDate.localeCompare(a.proposalDate));
   const columns: DataTableColumn<History>[] = [
@@ -278,7 +278,7 @@ function HistoryView({ status }: { status: ProposalStatus }) {
   ];
   return (
     <>
-      <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Tìm theo mã SKU, tên hàng, nhà cung cấp, mã báo cáo…" resultCount={proposals.data ? rows.length : undefined} />
+      <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Tìm theo mã SKU, tên hàng, nhà cung cấp, mã báo cáo, người quyết định…" resultCount={proposals.data ? rows.length : undefined} />
       {proposals.isPending ? <Loading /> : proposals.isError ? <ListError onRetry={() => proposals.refetch()} /> : (
         <DataTable columns={columns} rows={rows} groupBy="supplierName" onRowClick={setOpen} maxHeight="calc(100dvh - 380px)" caption="Đề xuất bổ sung đã xử lý"
           empty={<EmptyState icon="shopping-cart" title="Không có đề xuất" description="Đổi trạng thái hoặc từ khóa." />} />

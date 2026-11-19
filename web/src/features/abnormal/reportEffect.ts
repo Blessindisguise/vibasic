@@ -6,10 +6,15 @@ import type { LotRow } from '../../app/stock';
 export function reportEffect(r: ReportRow, lot: LotRow): { tone: 'danger' | 'info' | 'warning'; text: string } {
   const n = `${fmt(r.quantity)} ${lot.unit}`;
   const lotWide = r.scope === 'lot';
+  if (r.status === 'approved' && r.handlingStatus === 'done') {
+    return r.handlingMethod === 'repair'
+      ? { tone: 'info', text: lotWide ? `Đã sửa xong: lô ${r.lotCode} được mở khóa, hàng trở về Trong kho và xuất được.` : `Đã sửa xong: ${n} trở về Trong kho và xuất được.` }
+      : { tone: 'info', text: lotWide ? `Đã xử lý xong: hàng của lô ${r.lotCode} đã rời kho (Đã loại bỏ), lô không còn tồn.` : `Đã xử lý xong: ${n} lỗi đã rời kho (Đã loại bỏ).` };
+  }
   if (r.status === 'approved') {
     return lotWide
       ? { tone: 'danger', text: `Biên bản đã duyệt: lô ${r.lotCode} bị khóa, không được xuất và không tính vào tồn kho khả dụng.` }
-      : { tone: 'danger', text: `Biên bản đã duyệt: ${n} lỗi đã loại khỏi tồn kho (trạng thái Lỗi), chờ trả nhà cung cấp hoặc hủy. Phần còn lại của lô ${r.lotCode} xuất bình thường.` };
+      : { tone: 'danger', text: `Biên bản đã duyệt: ${n} lỗi đã loại khỏi tồn kho (trạng thái Lỗi), chờ xử lý theo hướng đã chọn. Phần còn lại của lô ${r.lotCode} xuất bình thường.` };
   }
   if (r.status === 'rejected') {
     return lotWide

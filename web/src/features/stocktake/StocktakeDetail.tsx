@@ -11,6 +11,7 @@ import { ApprovalBadge, LotStatusBadge } from '../../app/statusBadges';
 import { useStocktake, useStocktakeAction, type StocktakeDetailRow } from '../../app/stock';
 import { reportHref, type ReportRow } from '../../app/receiving';
 import { ReportDecision } from '../abnormal/ReportDecision';
+import { ReportStatusCell } from '../abnormal/ReportDecision';
 
 /** UC_15: system vs actual per lot, reasons, attached abnormal reports; approve to adjust stock or reject for a recount. */
 export function StocktakeDetail({ id, role, back }: { id: number; role: 'manager' | 'staff'; back: string }) {
@@ -82,7 +83,7 @@ export function StocktakeDetail({ id, role, back }: { id: number; role: 'manager
     { key: 'lot', header: 'Lô', width: 130, render: r => <Code>{r.lotCode}</Code> },
     { key: 'description', header: 'Mô tả lỗi', render: r => <span style={{ whiteSpace: 'normal' }}>{r.description}</span> },
     { key: 'quantity', header: 'SL lỗi', numeric: true, width: 80, render: r => fmt(r.quantity) },
-    { key: 'status', header: 'Trạng thái', width: 120, render: r => <ApprovalBadge status={r.status} /> },
+    { key: 'status', header: 'Trạng thái', width: 150, render: r => <ReportStatusCell report={r} /> },
     ...(role === 'manager' ? [{ key: 'actions', header: '', width: 220, align: 'right' as const, render: (r: ReportRow) => <ReportDecision report={r} /> }] : []),
   ];
 
@@ -129,7 +130,7 @@ export function StocktakeDetail({ id, role, back }: { id: number; role: 'manager
         </div>
         <DataTable
           columns={columns} density={touch ? 'default' : 'compact'} caption="Đối chiếu theo lô"
-          rows={details.filter(d => matches(search, d.lotCode, d.sku, d.productName, d.reason) && (!onlyDiff || d.actualQuantity !== d.systemQuantity))}
+          rows={details.filter(d => matches(search, d.lotCode, d.sku, d.productName) && (!onlyDiff || d.actualQuantity !== d.systemQuantity))}
           empty={search || onlyDiff ? NO_MATCH : undefined}
         />
       </section>

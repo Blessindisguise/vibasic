@@ -322,18 +322,21 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, IClock clock
     /// quarantined and every item of it reserved on open issues is replaced. If a replacement runs out (3.2), that issue is cancelled
     /// and its order goes "Chờ xử lý".
     /// </summary>
-    public async Task<DefectResult> ReportDefectAsync(int id, List<string>? serials, string? description, int userId, bool wholeLot = false)
+    /// <param name="handlingProposal">Hướng xử lý đề xuất (optional); the manager settles it when approving.</param>
+    public async Task<DefectResult> ReportDefectAsync(int id, List<string>? serials, string? description, int userId, bool wholeLot = false,
+        string? handlingProposal = null)
     {
         var issue = await LoadAsync(id);
         EnsureStatus(issue, IssueStatus.Ready, "không còn chờ lấy hàng");
         EnsurePicker(issue, userId);
         var text = CatalogService.Clean(description);
         var codesIn = (serials ?? []).Select(s => CatalogService.Clean(s)?.ToUpperInvariant()).OfType<string>().Distinct().ToList();
-        new Validator()
+        var v = new Validator()
             .Check(codesIn.Count > 0, "serials", "Chọn sản phẩm bị lỗi.")
             .Check(text is { Length: >= 5 }, "description", "Mô tả lỗi (tối thiểu 5 ký tự).")
-            .Check(text is null || text.Length <= 500, "description", "Mô tả lỗi tối đa 500 ký tự.")
-            .ThrowIfAny();
+            .Check(text is null || text.Length <= 500, "description", "Mô tả lỗi tối đa 500 ký tự.");
+        var proposal = Abnormal.AbnormalReportService.CleanProposal(handlingProposal, v, "handlingProposal");
+        v.ThrowIfAny();
         var items = issue.Details.SelectMany(d => d.Items).ToList();
         var defective = items.Where(i => codesIn.Contains(i.SerialCode)).ToList();
         var unknown = codesIn.Except(defective.Select(i => i.SerialCode)).ToList();
@@ -347,7 +350,7 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, IClock clock
             {
                 Code = await codes.NextDocumentAsync(CodeGenerator.Abnormal, now), ReceiptDetail = group.Key, SourceType = AbnormalSource.Issue,
                 Description = text!, Quantity = group.Count(), CreatedBy = userId, CreatedAt = now, Status = ApprovalStatus.Pending, IssueId = id,
-                Scope = wholeLot ? ReportScope.Lot : ReportScope.Items,
+                Scope = wholeLot ? ReportScope.Lot : ReportScope.Items, HandlingPlan = proposal,
             };
             report.Items.AddRange(group.Select(i => new AbnormalReportItem { Item = i }));
             db.AbnormalReports.Add(report);
