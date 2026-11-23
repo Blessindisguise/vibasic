@@ -18,6 +18,9 @@ public record OrderInput(string? ExternalCode, string? CustomerName, DateTime? O
 /// <param name="LotPicked">A lot label was scanned and the issue takes the whole lot: the number of its items marked picked by this scan.</param>
 public record ScanResult(string Serial, string LotCode, string Sku, bool AlreadyPicked, int Picked, int Total, string? ReplacedSerial = null, int LotPicked = 0);
 
+/// <summary>"Chọn mã": items newly marked picked by this call, and the issue's progress after it.</summary>
+public record PickResult(int Added, int Picked, int Total);
+
 /// <summary>Outcome of a defect report during picking (UC_08 3.1 / 3.2).</summary>
 /// <param name="Replaced">Items swapped out of this issue: the defective ones, or every item of a lot now quarantined.</param>
 /// <param name="ReturnPicked">Items already picked that must go back to the shelf (their lot is quarantined; never the defective ones).</param>
@@ -306,7 +309,7 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, IClock clock
         var onShelf = await db.StockItems.CountAsync(i => i.ReceiptDetailId == lot.ReceiptDetailId
             && (i.Status == ItemStatus.InStock || i.Status == ItemStatus.Reserved));
         if (onShelf > mine.Count)
-            throw new RuleException($"Phiếu chỉ lấy {mine.Count}/{onShelf} {lot.Product.Unit} của lô {lot.LotCode}. Quét từng tem sản phẩm.");
+            throw new RuleException($"Phiếu chỉ lấy {mine.Count}/{onShelf} {lot.Product.Unit} của lô {lot.LotCode}. Quét từng tem sản phẩm, hoặc bấm “Chọn mã” ở lô này.");
 
         var now = clock.UtcNow;
         var added = 0;
@@ -314,6 +317,36 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, IClock clock
         await db.SaveChangesAsync();
         var all = issue.Details.SelectMany(d => d.Items).ToList();
         return new ScanResult(lot.LotCode, lot.LotCode, lot.Product.SKU, added == 0, all.Count(i => i.PickedAt != null), all.Count, LotPicked: added);
+    }
+
+    /// <summary>
+    /// "Chọn mã": the picker marks items of the pick list as taken without scanning their labels (labels hard to scan, demos).
+    /// Only codes already on this issue are accepted — no same-lot swap as with a scan (X1) — so FIFO stays as allocated.
+    /// Codes already picked are skipped.
+    /// </summary>
+    public async Task<PickResult> PickAsync(int id, List<string>? serials, int userId)
+    {
+        var issue = await LoadAsync(id);
+        EnsureStatus(issue, IssueStatus.Ready, "không lấy hàng được");
+        EnsurePicker(issue, userId);
+        var wanted = (serials ?? []).Select(s => CatalogService.Clean(s)?.ToUpperInvariant()).OfType<string>().Distinct().ToList();
+        new Validator().Check(wanted.Count > 0, "serials", "Chọn sản phẩm cần lấy.").ThrowIfAny();
+
+        var items = issue.Details.SelectMany(d => d.Items).ToList();
+        var bySerial = items.ToDictionary(i => i.SerialCode);
+        var unknown = wanted.Where(s => !bySerial.ContainsKey(s)).ToList();
+        if (unknown.Count > 0)
+            throw new RuleException($"Không có trong phiếu {issue.Code}: {string.Join(", ", unknown.Take(5))}{(unknown.Count > 5 ? "…" : "")}.");
+        var chosen = wanted.Select(s => bySerial[s]).ToList();
+        var blocked = chosen.FirstOrDefault(i => i.ReceiptDetail.Status != LotStatus.Normal);
+        if (blocked is not null)
+            throw new RuleException($"Lô {blocked.ReceiptDetail.LotCode} đang “{Labels<LotStatus>.ToLabel(blocked.ReceiptDetail.Status)}”, không lấy hàng của lô này.");
+
+        var now = clock.UtcNow;
+        var added = 0;
+        foreach (var item in chosen.Where(i => i.PickedAt is null)) { item.PickedAt = now; added++; }
+        await db.SaveChangesAsync();
+        return new PickResult(added, items.Count(i => i.PickedAt != null), items.Count);
     }
 
     /// <summary>

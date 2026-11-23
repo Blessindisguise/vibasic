@@ -284,6 +284,21 @@ public static class DemoScenarios
 
         // ================= XUẤT KHO =================
 
+        await Step("Phiếu xuất lấy hết lô FIFO đầu (demo Lấy cả lô, Chọn mã)", async () =>
+        {
+            // The oldest lot is taken whole (its "Lấy cả lô" button shows); the next one only in part ("Chọn mã").
+            var pid = Pid("KHA-02");
+            var fifo = (await IssueService.Free(db).Where(i => i.ReceiptDetail.ProductId == pid)
+                    .GroupBy(i => new { i.ReceiptDetailId, i.ReceiptDetail.Receipt.ReceiptDate })
+                    .Select(g => new { g.Key.ReceiptDetailId, g.Key.ReceiptDate, Count = g.Count() })
+                    .ToListAsync())
+                .OrderBy(x => x.ReceiptDate).ThenBy(x => x.ReceiptDetailId).ToList();
+            if (fifo.Count == 0) throw new RuleException("KHA-02 không còn hàng tự do.");
+            var qty = Math.Min(fifo[0].Count + 3, fifo.Sum(x => x.Count));
+            var o = await NewOrder(4, "Đơn lớn: lấy hết lô cũ nhất trước.", ("KHA-02", qty));
+            await NewIssue(o, s1);
+        });
+
         await Step("Phiếu xuất chờ lấy hàng", async () =>
         {
             var o = await NewOrder(1, "Giao trước 10 giờ sáng mai.", ("THT-02", 5), ("MUO-03", 6));

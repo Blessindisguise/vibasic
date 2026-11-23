@@ -91,7 +91,9 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
         string? CustomerPhone, string? ShippingAddress, string? OrderNote,
         int? PickerId, string? PickerName, DateTime? PickStartedAt, DateTime? PickActiveAt);
     public record PickItem(int ItemId, string Serial, ItemStatus Status, DateTime? PickedAt);
-    public record PickLot(int ReceiptDetailId, string LotCode, DateTime ReceivedDate, LotStatus LotStatus, List<PickItem> Items);
+    /// <param name="OnShelf">Items of the whole lot still on the shelf ("Trong kho" or "Đã giữ chỗ", any issue). When it equals
+    /// the items of this issue in the lot, the issue takes the whole rest of the lot ("Lấy cả lô").</param>
+    public record PickLot(int ReceiptDetailId, string LotCode, DateTime ReceivedDate, LotStatus LotStatus, List<PickItem> Items, int OnShelf);
     public record IssueLine(int DetailId, int ProductId, string Sku, string ProductName, string Unit, int Quantity, int Picked, List<PickLot> Lots);
     public record IssueView(IssueRow Header, List<IssueLine> Lines, List<ReportRow> Reports);
 
@@ -101,6 +103,7 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
     /// <param name="HandlingProposal">Hướng xử lý đề xuất (optional).</param>
     public record DefectInput(List<string>? Serials, string? Description, bool WholeLot = false, string? HandlingProposal = null);
     public record DeliverInput(string? ReceiverName);
+    public record PickInput(List<string>? Serials);
     public record DefectResponse(IssueView View, DefectResult Result);
 
     [HttpGet]
@@ -129,12 +132,19 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
                 }).ToList(),
             })
             .ToListAsync();
+        // Same count as IssueService.ScanLotAsync: what is still on the shelf of each lot, whichever issue holds it.
+        var lotIds = details.SelectMany(d => d.Items.Select(i => i.ReceiptDetailId)).Distinct().ToList();
+        var onShelf = await db.StockItems
+            .Where(i => lotIds.Contains(i.ReceiptDetailId) && (i.Status == ItemStatus.InStock || i.Status == ItemStatus.Reserved))
+            .GroupBy(i => i.ReceiptDetailId).Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Key, x => x.Count);
         var lines = details.Select(d => new IssueLine(d.IssueDetailId, d.ProductId, d.SKU, d.ProductName, d.Unit, d.Quantity,
             d.Items.Count(i => i.PickedAt != null),
             d.Items.GroupBy(i => (i.ReceiptDetailId, i.LotCode, i.ReceiptDate, i.LotStatus))
                 .OrderBy(g => g.Key.ReceiptDate).ThenBy(g => g.Key.ReceiptDetailId)
                 .Select(g => new PickLot(g.Key.ReceiptDetailId, g.Key.LotCode, g.Key.ReceiptDate, g.Key.LotStatus,
-                    g.OrderBy(i => i.SerialCode).Select(i => new PickItem(i.ItemId, i.SerialCode, i.Status, i.PickedAt)).ToList()))
+                    g.OrderBy(i => i.SerialCode).Select(i => new PickItem(i.ItemId, i.SerialCode, i.Status, i.PickedAt)).ToList(),
+                    onShelf.GetValueOrDefault(g.Key.ReceiptDetailId)))
                 .ToList())).ToList();
         var reports = await db.AbnormalReports.Where(a => a.IssueId == id).OrderBy(a => a.Code).Rows().ToListAsync();
         return new IssueView(header, lines, reports);
@@ -149,6 +159,10 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
 
     [HttpPost("{id:int}/scan"), Authorize(Policy = Policies.Staff)]
     public Task<ScanResult> Scan(int id, ScanInput input) => issues.ScanAsync(id, input.Code, User.UserId());
+
+    /// <summary>"Chọn mã": mark items of the pick list as taken without scanning.</summary>
+    [HttpPost("{id:int}/pick"), Authorize(Policy = Policies.Staff)]
+    public Task<PickResult> Pick(int id, PickInput input) => issues.PickAsync(id, input.Serials, User.UserId());
 
     /// <summary>"Bắt đầu lấy hàng" / "Nhận lại phiếu": only one staff member picks an issue at a time.</summary>
     [HttpPost("{id:int}/claim"), Authorize(Policy = Policies.Staff)]

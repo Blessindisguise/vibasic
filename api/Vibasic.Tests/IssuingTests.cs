@@ -202,6 +202,56 @@ public class IssuingTests
     }
 
     [Fact]
+    public async Task Choosing_codes_marks_exactly_those_items_picked()
+    {
+        await using var c = await Setup();
+        var issue = await c.Ready("DH-T-P1", "MUO-01", 5);
+        var items = c.ItemsOf(issue).OrderBy(i => i.SerialCode).ToList();
+
+        var r = await c.Issues.PickAsync(issue.IssueId, [items[0].SerialCode.ToLower(), items[1].SerialCode, items[1].SerialCode], c.Staff);
+
+        Assert.Equal(new PickResult(2, 2, 5), r);
+        Assert.NotNull(items[0].PickedAt);
+        Assert.NotNull(items[1].PickedAt);
+        Assert.All(items.Skip(2), i => Assert.Null(i.PickedAt));
+        Assert.Equal(c.Staff, issue.PickerId); // a free issue is claimed on the spot, as with a scan
+        // Choosing an item again is not an error and adds nothing.
+        Assert.Equal(new PickResult(0, 2, 5), await c.Issues.PickAsync(issue.IssueId, [items[0].SerialCode], c.Staff));
+    }
+
+    [Fact]
+    public async Task Choosing_codes_refuses_codes_not_on_the_issue_and_issues_held_by_someone_else()
+    {
+        await using var c = await Setup();
+        var issue = await c.Ready("DH-T-P2", "MUO-01", 3);
+        var other = await c.Ready("DH-T-P3", "MUO-01", 1);
+        var mine = c.ItemsOf(issue);
+        var foreign = c.ItemsOf(other)[0].SerialCode;
+
+        var e = await Assert.ThrowsAsync<RuleException>(() => c.Issues.PickAsync(issue.IssueId, [mine[0].SerialCode, foreign], c.Staff));
+        Assert.Contains(foreign, e.Message);
+        Assert.All(c.ItemsOf(issue), i => Assert.Null(i.PickedAt)); // all or nothing
+        await Assert.ThrowsAsync<ValidationException>(() => c.Issues.PickAsync(issue.IssueId, [], c.Staff));
+
+        await c.Issues.ClaimAsync(issue.IssueId, c.Staff);
+        await Assert.ThrowsAsync<RuleException>(() => c.Issues.PickAsync(issue.IssueId, [mine[0].SerialCode], c.Staff2));
+    }
+
+    [Fact]
+    public async Task Issue_picked_by_choosing_every_code_can_be_delivered()
+    {
+        await using var c = await Setup();
+        var issue = await c.Ready("DH-T-P4", "MUO-01", 4);
+        var all = c.ItemsOf(issue).Select(i => i.SerialCode).ToList();
+        Assert.Equal(4, (await c.Issues.PickAsync(issue.IssueId, all, c.Staff)).Picked);
+
+        await c.Issues.DeliverAsync(issue.IssueId, "Anh Bình", c.Staff);
+
+        Assert.Equal(IssueStatus.Issued, issue.Status);
+        Assert.All(c.ItemsOf(issue), i => Assert.Equal(ItemStatus.Issued, i.Status));
+    }
+
+    [Fact]
     public async Task Defect_sets_aside_only_the_listed_items_and_the_lot_stays_issuable()
     {
         await using var c = await Setup();

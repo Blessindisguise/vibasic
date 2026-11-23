@@ -14,7 +14,8 @@ import { suggestFrom } from '../../app/suggest';
 import { IssueStatusBadge } from '../../app/statusBadges';
 import { fieldErrors, formError } from '../../app/catalog';
 import {
-  pickHoldExpired, pickHoldUntil, useDeliver, useIssue, usePicker, useReportDefect, useScan, type IssueLine, type IssueRow, type IssueView,
+  pickHoldExpired, pickHoldUntil, useDeliver, useIssue, usePick, usePicker, useReportDefect, useScan,
+  type IssueLine, type IssueRow, type IssueView, type PickLot,
 } from '../../app/issuing';
 import { OrderContact } from './OrderContact';
 import { CancelOrderDialog } from './CancelOrderDialog';
@@ -268,6 +269,7 @@ function PickingPanel({ view }: { view: IssueView }) {
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [defectOpen, setDefectOpen] = useState(false);
   const [deliverOpen, setDeliverOpen] = useState(false);
+  const [choosing, setChoosing] = useState<{ line: IssueLine; lot: PickLot } | null>(null);
   const [lastSerial, setLastSerial] = useState<string | null>(null);
   const total = lines.reduce((s, l) => s + l.lots.reduce((n, lot) => n + lot.items.length, 0), 0);
   const picked = lines.reduce((s, l) => s + l.picked, 0);
@@ -339,7 +341,7 @@ function PickingPanel({ view }: { view: IssueView }) {
           <ScanInput
             value={code} onChange={setCode} onSubmit={submitScan} autoFocus size="lg" scanKey={feedback?.key ?? 0}
             label="Quét tem hoặc tìm hàng trong phiếu" placeholder="SP-…, SKU, tên hàng, mã lô" state={feedback?.state ?? 'idle'}
-            message={feedback?.message ?? 'Quét tem sản phẩm hoặc tem lô'}
+            message={feedback?.message ?? 'Quét tem sản phẩm hoặc tem lô. Không quét được thì bấm “Chọn mã” ở từng lô.'}
             suggestions={suggestions} onPickSuggestion={s => { const l = lines.find(x => String(x.detailId) === s.key); if (l) focusLine(l); }}
           />
           <div className="vb-row" style={{ gap: 12 }}>
@@ -369,11 +371,26 @@ function PickingPanel({ view }: { view: IssueView }) {
               {line.lots.map((lot, i) => {
                 const lotPicked = lot.items.filter(it => it.pickedAt).length;
                 const state = lot.lotStatus !== 'normal' ? 'locked' : lotPicked === lot.items.length ? 'done' : i === firstOpen ? (lotPicked > 0 ? 'picking' : 'next') : 'waiting';
+                const left = lot.items.length - lotPicked;
+                // The issue holds everything of the lot still on the shelf: one tap takes the whole lot (same rule as its label).
+                const wholeLot = lot.items.length === lot.onShelf;
                 return (
                   <div key={lot.receiptDetailId} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <LotCard size="lg" fifoOrder={i + 1} lotCode={lot.lotCode} receivedAt={fmtDate(lot.receivedDate)} ageDays={ageDays(lot.receivedDate)}
                       toPick={lot.items.length} picked={lotPicked} unit={line.unit} state={state} />
-                    <div style={{ paddingLeft: 68 }}><LotSerials items={lot.items} unit={line.unit} /></div>
+                    <div style={{ paddingLeft: 68, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <LotSerials items={lot.items} unit={line.unit} />
+                      {lot.lotStatus === 'normal' && left > 0 && (
+                        <div className="vb-row" style={{ gap: 8 }}>
+                          {wholeLot && (
+                            <Button size="lg" variant="secondary" icon="package-check" loading={scan.isPending} onClick={() => submitScan(lot.lotCode)}>
+                              Lấy cả lô ({fmt(left)} {line.unit})
+                            </Button>
+                          )}
+                          <Button size="lg" variant="ghost" icon="list-checks" onClick={() => setChoosing({ line, lot })}>Chọn mã</Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -382,6 +399,10 @@ function PickingPanel({ view }: { view: IssueView }) {
         );
       })}
 
+      {choosing && (
+        <PickDialog issueId={h.id} line={choosing.line} lot={choosing.lot} onClose={() => setChoosing(null)}
+          onDone={message => { setFocused(choosing.line.detailId); setFeedback({ state: 'success', message, key: Date.now() }); }} />
+      )}
       {defectOpen && <DefectDialog view={view} preselect={lastSerial} onClose={() => setDefectOpen(false)} onDone={msg => toast(msg)} />}
       {deliverOpen && <DeliverDialog view={view} onClose={() => setDeliverOpen(false)} />}
       <ConfirmDialog
@@ -394,6 +415,48 @@ function PickingPanel({ view }: { view: IssueView }) {
         })}
       />
     </>
+  );
+}
+
+/**
+ * "Chọn mã": tick the items taken from one lot when their labels cannot be scanned (or for a demo). Only codes of this lot on the
+ * pick list are shown, so FIFO stays as allocated; "Chọn tất cả" takes the issue's whole share of the lot.
+ */
+function PickDialog({ issueId, line, lot, onClose, onDone }: {
+  issueId: number; line: IssueLine; lot: PickLot; onClose: () => void; onDone: (message: string) => void;
+}) {
+  const pick = usePick(issueId);
+  const open = lot.items.filter(i => !i.pickedAt).map(i => i.serial);
+  const [selected, setSelected] = useState<string[]>([]);
+  const errors = fieldErrors(pick.error);
+  const toggle = (s: string) => setSelected(sel => (sel.includes(s) ? sel.filter(x => x !== s) : [...sel, s]));
+  const submit = () => pick.mutate(selected, {
+    onSuccess: r => {
+      onDone(`Đã lấy ${fmt(r.added)} ${line.unit} lô ${lot.lotCode} (chọn mã) · ${fmt(r.picked)}/${fmt(r.total)}`);
+      onClose();
+    },
+  });
+
+  return (
+    <FormDialog
+      title={`Chọn mã đã lấy · lô ${lot.lotCode}`} width={680}
+      description={`${line.sku} ${line.productName} · còn ${fmt(open.length)} ${line.unit} của phiếu chưa lấy ở lô này`}
+      submitLabel={selected.length > 0 ? `Lấy ${fmt(selected.length)} sản phẩm` : 'Lấy sản phẩm'}
+      busy={pick.isPending} error={formError(pick.error)} onSubmit={submit} onClose={onClose}
+    >
+      <div className="vb-row" style={{ gap: 8 }}>
+        <Button type="button" size="lg" variant="secondary" icon="list-checks" onClick={() => setSelected(open)}>Chọn tất cả ({fmt(open.length)})</Button>
+        <Button type="button" size="lg" variant="ghost" onClick={() => setSelected([])} disabled={selected.length === 0}>Bỏ chọn</Button>
+        <span className="vb-muted" style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }}>Đã chọn {fmt(selected.length)}/{fmt(open.length)}</span>
+      </div>
+      <div className="vb-serials vb-serials--pick" style={{ maxHeight: 320, overflow: 'auto' }}>
+        {open.map(s => (
+          <button key={s} type="button" className="vb-serial" aria-pressed={selected.includes(s)} onClick={() => toggle(s)}>{s}</button>
+        ))}
+      </div>
+      {errors.serials && <div className="vb-field__help vb-field__help--error">{errors.serials}</div>}
+      <div className="vb-muted">Chỉ chọn các sản phẩm đã thực sự lấy khỏi kệ. Quét tem vẫn là cách chính xác nhất.</div>
+    </FormDialog>
   );
 }
 

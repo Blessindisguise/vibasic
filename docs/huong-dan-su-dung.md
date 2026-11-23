@@ -196,7 +196,11 @@ Màn hình có ba tab: **Đơn chờ xuất**, **Lấy hàng**, **Phiếu xuất
    - Gõ SKU hoặc tên hàng để xem cần lấy lô nào tiếp theo.
    - Lấy sai lô thì hệ thống báo lô đúng cần lấy trước.
    - **Quét tem lô (lấy nguyên lô):** chỉ dùng được khi phiếu lấy **toàn bộ** phần còn lại của lô. Điều kiện là không còn sản phẩm nào của lô nằm ngoài phiếu, kể cả sản phẩm đang giữ cho phiếu khác. Khi đó một lần quét đánh dấu đã lấy mọi sản phẩm của lô.
-   - Nếu phiếu chỉ lấy một phần lô, quét tem lô sẽ bị từ chối, ví dụ "Phiếu chỉ lấy 49/72 cái của lô …". Khi đó quét từng tem sản phẩm, để hệ thống biết chính xác mã nào đã ra khỏi kho.
+   - Nếu phiếu chỉ lấy một phần lô, quét tem lô sẽ bị từ chối, ví dụ "Phiếu chỉ lấy 49/72 cái của lô …". Khi đó quét từng tem sản phẩm, hoặc dùng **Chọn mã**.
+   - **Không quét được** (tem mờ, không có máy quét), mỗi lô còn hàng chưa lấy có hai nút:
+     - **Lấy cả lô (N cái):** chỉ hiện khi phiếu lấy toàn bộ phần còn lại của lô, cùng điều kiện với quét tem lô. Bấm một lần là đánh dấu đã lấy cả lô.
+     - **Chọn mã:** mở danh sách các mã của phiếu ở lô đó. Bấm chọn từng mã, hoặc **Chọn tất cả**, rồi **Lấy N sản phẩm**. Chỉ chọn được mã có trong danh sách lấy hàng, nên thứ tự FIFO vẫn giữ đúng.
+   - Quét tem vẫn là cách chính xác nhất. Khi chọn tay, chỉ chọn những sản phẩm đã thực sự lấy khỏi kệ.
 3. **Nhường phiếu:** dừng lấy hàng. Các mã đã quét được giữ nguyên và bàn giao cho người nhận phiếu sau.
 4. **Báo hàng lỗi** khi lấy hàng:
    - Quét các sản phẩm lỗi và ghi mô tả. Hệ thống lập biên bản bất thường, tách các sản phẩm đó khỏi tồn kho và **thay bằng sản phẩm kế tiếp theo FIFO**.

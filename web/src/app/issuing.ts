@@ -43,7 +43,8 @@ export const PICK_HOLD_MS = 3 * 86_400_000;
 export const pickHoldUntil = (h: IssueRow) => (h.pickStartedAt ? new Date(new Date(h.pickStartedAt).getTime() + PICK_HOLD_MS).toISOString() : undefined);
 export const pickHoldExpired = (h: IssueRow, now = Date.now()) => !h.pickStartedAt || now - new Date(h.pickStartedAt).getTime() >= PICK_HOLD_MS;
 export interface PickItem { itemId: number; serial: string; status: ItemStatus; pickedAt?: string }
-export interface PickLot { receiptDetailId: number; lotCode: string; receivedDate: string; lotStatus: LotStatus; items: PickItem[] }
+/** onShelf: items of the whole lot still on the shelf (any issue). Equal to items.length = this issue takes the rest of the lot. */
+export interface PickLot { receiptDetailId: number; lotCode: string; receivedDate: string; lotStatus: LotStatus; items: PickItem[]; onShelf: number }
 export interface IssueLine { detailId: number; productId: number; sku: string; productName: string; unit: string; quantity: number; picked: number; lots: PickLot[] }
 export interface IssueView { header: IssueRow; lines: IssueLine[]; reports: ReportRow[] }
 
@@ -53,6 +54,8 @@ export interface IssueView { header: IssueRow; lines: IssueLine[]; reports: Repo
  */
 export interface ScanResult { serial: string; lotCode: string; sku: string; alreadyPicked: boolean; picked: number; total: number; replacedSerial?: string; lotPicked: number }
 export interface DefectResult { reportCodes: string[]; replaced: number; returnPicked: string[]; onHold: boolean }
+/** "Chọn mã": items newly marked picked, and the issue's progress after it. */
+export interface PickResult { added: number; picked: number; total: number }
 
 const qs = (f: object) => {
   const p = new URLSearchParams(Object.entries(f).filter(([, v]) => v !== undefined && v !== ''));
@@ -99,6 +102,15 @@ export function useScan(id: number) {
   return useMutation({
     mutationFn: (code: string) => api<ScanResult>(`/issues/${id}/scan`, { method: 'POST', json: { code } }),
     // An error may mean someone else took the issue: reload it either way.
+    onSettled: () => qc.invalidateQueries({ queryKey: ['issue', id] }),
+  });
+}
+
+/** "Chọn mã": mark items of the pick list as taken without scanning. */
+export function usePick(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (serials: string[]) => api<PickResult>(`/issues/${id}/pick`, { method: 'POST', json: { serials } }),
     onSettled: () => qc.invalidateQueries({ queryKey: ['issue', id] }),
   });
 }

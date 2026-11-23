@@ -97,6 +97,8 @@ html, body, #root { height: 100%; }
 .vb-serial__count { margin-left: 6px; padding-left: 8px; border-left: 1px solid var(--border-default); color: var(--grey-600); font-weight: 500; letter-spacing: 0; }
 .vb-serial--picked .vb-serial__count { border-left-color: var(--green-200); color: var(--green-700); }
 button.vb-serial { cursor: pointer; height: 36px; }
+/* "Chọn mã" when picking: a chosen item is one being taken (green), not a defect (red). */
+.vb-serials--pick button.vb-serial[aria-pressed="true"] { background: var(--green-50); border-color: var(--green-600); color: var(--green-800); }
 button.vb-serial[aria-pressed="true"] { background: var(--red-50); border-color: var(--red-600); color: var(--red-700); }
 button.vb-serial:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
