@@ -4,11 +4,13 @@
 
 Đọc thêm: [README.md](README.md) (cấu trúc, cách chạy), [docs/huong-dan-su-dung.md](docs/huong-dan-su-dung.md) (quy tắc, trạng thái), [docs/tu-dien-du-lieu.md](docs/tu-dien-du-lieu.md) (22 bảng, từng cột), [docs/schema-changes.md](docs/schema-changes.md) (khác biệt so với CSDL trong báo cáo Chương 3).
 
+Sơ đồ trong `docs/`: sơ đồ lớp (`so-do-lop.puml`, `so-do-lop.mmd`) và sơ đồ hoạt động PlantUML (`so-do-hoat-dong-*.puml`: nhập kho, xuất kho, kiểm kê, xử lý biên bản bất thường). Thêm hoặc đổi cột thì sửa cả hai file sơ đồ lớp. Đổi luồng nghiệp vụ thì sửa sơ đồ hoạt động tương ứng.
+
 ## Chạy và kiểm tra
 
 - **API** (ASP.NET Core 8, EF Core 8, SQL Server): `cd api; dotnet run --project Vibasic.Api --launch-profile http`, cổng 5030. Ở môi trường Development, API tự áp migration và tự seed khi DB còn trống.
 - **Web** (React 18, Vite, TypeScript, TanStack Query): `cd web; npm run dev -- --host`, cổng 5173; Vite chuyển `/api` sang cổng 5030.
-- **Test API:** `cd api; dotnet test Vibasic.Tests`. Hiện có 88 test chạy trên InMemory DB, phải qua hết.
+- **Test API:** `cd api; dotnet test Vibasic.Tests`. Hiện có 92 test chạy trên InMemory DB, phải qua hết.
 - **Kiểm tra web:** `cd web; npm run build; npm run lint`. Lint có sẵn khoảng 19 cảnh báo `react-refresh/only-export-components` từ trước; yêu cầu là 0 lỗi.
 - **Máy không có LocalDB:** đặt biến môi trường user `ConnectionStrings__Vibasic` trỏ tới SQL Server khác (ví dụ `Server=.\SQLEXPRESS;Database=Vibasic;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True`). Không sửa `appsettings.json` trong repo vì máy khác vẫn dùng LocalDB.
 - **Nạp lại dữ liệu demo** (xóa hết dữ liệu): dừng API, chạy `cd api; dotnet tool restore; dotnet ef database drop -f -p Vibasic.Infrastructure -s Vibasic.Api`, rồi chạy lại API. Log phải có dòng `[demo seed] Tình huống demo: N bước xong, 0 bước bỏ qua.`
@@ -39,6 +41,7 @@ Chi tiết ở `docs/`. Ít nhất phải nhớ:
 - Lô là `GoodsReceiptDetail` (không có bảng StockLot). Mỗi sản phẩm (`StockItem`) có mã riêng. Với lô của phiếu nhập đã duyệt, `QuantityOnHand` luôn bằng số sản phẩm "Trong kho" cộng "Đã giữ chỗ".
 - Tồn kho chỉ ghi nhận khi phiếu nhập được duyệt. Lô "Tạm cách ly" và "Đã khóa" không xuất được và không tính vào tồn khả dụng.
 - Phiếu xuất không qua bước duyệt. FIFO xếp theo ngày phiếu nhập, rồi `ReceiptDetailId`. Mỗi lúc chỉ một nhân viên giữ một phiếu xuất.
+- **Lấy hàng** có bốn cách, đều chỉ nhận mã của phiếu: quét tem sản phẩm (`ScanAsync`), quét tem lô hoặc bấm "Lấy cả lô" (chỉ khi phiếu giữ hết phần còn trên kệ của lô), và "Chọn mã" (`PickAsync`, chọn trên màn hình, không đổi mã cùng lô). Giao hàng phải lấy đủ, ghi tên người nhận (bắt buộc), SĐT và biển số xe (không bắt buộc).
 - **Biên bản bất thường:**
   - Khi duyệt, bắt buộc có hướng xử lý (`HandlingMethod` + `HandlingPlan`). Sau đó biên bản đi qua Chờ xử lý → Đang xử lý (một nhân viên giữ) → Đã xử lý.
   - Hoàn thành thì tồn kho cập nhật theo hướng. Trả nhà cung cấp, tiêu hủy, thanh lý: sản phẩm chuyển "Đã loại bỏ", lô khóa về tồn 0. Sửa chữa: sản phẩm về "Trong kho", lô được mở khóa.

@@ -146,6 +146,7 @@ Mỗi thay đổi tồn kho đều đi qua cùng một luồng: controller gọi
 - [Từ điển dữ liệu](docs/tu-dien-du-lieu.md): 22 bảng, từng cột, màn hình nào dùng bảng nào, quy trình từng bước.
 - [Thay đổi so với CSDL trong báo cáo](docs/schema-changes.md).
 - Sơ đồ lớp: [ảnh](docs/so-do-lop.png), [PlantUML](docs/so-do-lop.puml), [Mermaid](docs/so-do-lop.mmd).
+- Sơ đồ hoạt động (PlantUML, theo quy trình hiện tại của app, thay cho Hình 3.5–3.7): [nhập kho](docs/so-do-hoat-dong-nhap-kho.puml), [xuất kho](docs/so-do-hoat-dong-xuat-kho.puml), [kiểm kê](docs/so-do-hoat-dong-kiem-ke.puml), [xử lý biên bản bất thường](docs/so-do-hoat-dong-bat-thuong.puml).
 - `anh-giao-dien/`: ảnh chụp từng màn hình và từng bước quy trình.
 
 ## Kiểm thử

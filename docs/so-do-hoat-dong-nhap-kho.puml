@@ -1,0 +1,87 @@
+@startuml
+!theme plain
+title Activity Diagram - Quy trình nhập kho
+
+|Nhân viên kho|
+|Hệ thống Vibasic|
+|Quản lý|
+
+|Nhân viên kho|
+start
+:Tiếp nhận hàng hóa và chứng từ giao hàng;
+:Kiểm tra số lượng và chất lượng;
+
+repeat :Lập phiếu nhập kho: chọn nhà cung cấp,\nghi số chứng từ giao hàng. Mỗi mặt hàng nhập\nsố thực nhận, số không đạt và mô tả lỗi;
+  |Hệ thống Vibasic|
+  :Kiểm tra dữ liệu phiếu nhập
+  (mặt hàng thuộc nhà cung cấp, số lượng);
+backward :Báo lỗi theo từng ô;
+repeat while (Dữ liệu hợp lệ?) is (Không) not (Có)
+
+:Lưu phiếu "Đang nhập kho";
+:Tạo lô "Bình thường" cho phần đạt
+và lô "Tạm cách ly" cho phần không đạt;
+:Tạo mã lô và mã định danh từng sản phẩm
+(sản phẩm ở trạng thái "Chờ nhập");
+:In tem lô và tem sản phẩm;
+
+|Nhân viên kho|
+:Dán tem, xếp hàng vào kho
+(hàng không đạt để ở khu riêng);
+
+repeat :Xác nhận nhập kho và gửi duyệt;
+  |Hệ thống Vibasic|
+  :Chuyển phiếu sang "Chờ duyệt";
+  if (Có lô không đạt?) then (Có)
+    :Lập biên bản bất thường "Chờ duyệt"
+    cho mỗi lô không đạt (phạm vi cả lô);
+  else (Không)
+  endif
+  |Quản lý|
+  :Kiểm tra phiếu nhập ở màn Chờ duyệt;
+  if (Phê duyệt phiếu nhập?) then (Có)
+  else (Không)
+    :Nhập lý do từ chối;
+    |Hệ thống Vibasic|
+    :Chuyển phiếu sang "Từ chối", ghi lý do;
+    |Nhân viên kho|
+    :Sửa phiếu theo lý do từ chối
+    (mặt hàng đổi số lượng được cấp mã mới,
+    phải in lại tem);
+  endif
+  |Nhân viên kho|
+repeat while (Phiếu bị từ chối?) is (Có) not (Không)
+
+|Hệ thống Vibasic|
+:Ghi người duyệt, chuyển phiếu sang "Đã duyệt";
+:Ghi nhận tồn của mọi lô trong phiếu,
+sản phẩm chuyển "Trong kho";
+:Kiểm tra ROP, cập nhật cảnh báo tồn kho thấp
+và đề xuất bổ sung hàng;
+
+if (Phiếu có lô không đạt?) then (Có)
+  |Quản lý|
+  :Xem xét biên bản bất thường của lô không đạt;
+  if (Phê duyệt biên bản?) then (Có)
+    :Chọn hướng xử lý và mô tả cách làm;
+    |Hệ thống Vibasic|
+    :Khóa lô, loại khỏi tồn kho khả dụng,
+    biên bản chuyển "Chờ xử lý";
+    note right
+      Nhân viên nhận xử lý và hoàn thành
+      theo quy trình xử lý biên bản bất thường
+    end note
+  else (Không)
+    :Nhập lý do từ chối;
+    |Hệ thống Vibasic|
+    :Lô trở về "Bình thường", được tính
+    vào tồn kho khả dụng;
+  endif
+  |Hệ thống Vibasic|
+  :Kiểm tra lại ROP;
+else (Không)
+endif
+
+|Hệ thống Vibasic|
+stop
+@enduml

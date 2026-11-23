@@ -240,6 +240,7 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
 - **Bảng 3.31 GoodsIssueDetail:** `LotId` → `ProductId` FK(Product); đổi mô tả thành "mỗi mặt hàng một dòng".
 - **Bảng 3.33, 3.35, 3.36** (StocktakePlanDetail, StocktakeDetail, AbnormalReport): `LotId` → `ReceiptDetailId`.
 - **UC_18 luồng 3.1** (nhóm "Chưa xác định nhà cung cấp"): `Product.SupplierId` là NOT NULL (bảng 3.23) nên trường hợp này không xảy ra. Nên bỏ luồng này hoặc cho phép SupplierId NULL.
+- **Sơ đồ hoạt động (Hình 3.5–3.7):** thay bằng các file `docs/so-do-hoat-dong-*.puml`. Thêm sơ đồ "Xử lý biên bản bất thường" (`so-do-hoat-dong-bat-thuong.puml`) mà cả ba quy trình dẫn tới. Sơ đồ xuất kho chỉ còn hai làn (nhân viên kho, hệ thống) vì phiếu xuất không qua duyệt, nên câu "theo ba làn" ở mục 3.2.4 cần sửa.
 - **Sơ đồ BFD (Hình 3.1):** có "Báo cáo bất thường" và "Báo cáo hỗ trợ bổ sung hàng", nhưng UC_19 chỉ có báo cáo tồn kho và báo cáo biến động nhập xuất. App làm theo UC_19.
 - **UC_14 (kiểm đếm):**
   - Thêm cách đếm bằng quét tem (luồng thay thế cho bước nhập số thực tế).

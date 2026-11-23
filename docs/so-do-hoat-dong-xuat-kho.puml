@@ -1,0 +1,107 @@
+@startuml
+!theme plain
+title Activity Diagram - Quy trình xuất kho
+
+|Nhân viên kho|
+|Hệ thống Vibasic|
+
+|Hệ thống Vibasic|
+start
+:Tiếp nhận đơn hàng từ hệ thống bán hàng
+(đơn "Chưa xuất"), kiểm tra ROP;
+
+|Nhân viên kho|
+:Chọn đơn hàng cần xuất;
+
+|Hệ thống Vibasic|
+:Trích xuất danh sách sản phẩm và số lượng cần xuất;
+:Kiểm tra tồn kho khả dụng
+(chỉ lô "Bình thường", sản phẩm chưa giữ chỗ);
+:Phân bổ lô và mã sản phẩm theo FIFO,
+hiển thị phần thiếu nếu có;
+
+|Nhân viên kho|
+:Xác nhận lập phiếu xuất;
+
+|Hệ thống Vibasic|
+if (Đủ hàng tồn kho?) then (Không)
+  :Thông báo không đủ hàng,
+  đơn chuyển "Chờ xử lý";
+  note right
+    Khi hàng về đủ, đơn có dấu "Đủ hàng"
+    để lập phiếu lại
+  end note
+  stop
+else (Có)
+  :Giữ chỗ sản phẩm theo FIFO ("Đã giữ chỗ"),
+  tạo phiếu xuất "Chờ lấy hàng",
+  đơn chuyển "Đang xuất";
+  note right
+    Phiếu xuất không qua bước duyệt.
+    Quản lý vẫn có thể hủy đơn (khách hủy)
+    hoặc gỡ người lấy hàng.
+  end note
+endif
+
+|Nhân viên kho|
+:Nhận phiếu ("Bắt đầu lấy hàng");
+|Hệ thống Vibasic|
+:Ghi người lấy hàng, mỗi lúc một nhân viên
+(người khác chỉ xem được phiếu);
+
+|Nhân viên kho|
+repeat :Lấy hàng: quét tem sản phẩm, quét tem lô,\nhoặc bấm "Chọn mã", "Lấy cả lô";
+  |Hệ thống Vibasic|
+  if (Mã hợp lệ?) then (Có)
+    :Đánh dấu sản phẩm đã lấy, cập nhật tiến độ
+    (mã khác nhưng cùng lô thì đổi chỗ giữ);
+  else (Không)
+    :Từ chối mã và báo lý do
+    (ngoài phiếu, sai lô FIFO, lô bị khóa
+    hoặc cách ly, sản phẩm lỗi);
+  endif
+  |Nhân viên kho|
+  :Kiểm tra số lượng và chất lượng;
+  if (Có hàng không đạt?) then (Có)
+    :Báo hàng lỗi: chọn mã lỗi, mô tả lỗi,
+    đề xuất hướng xử lý
+    (tick "Nghi lỗi cả lô" nếu cần);
+    |Hệ thống Vibasic|
+    :Lập biên bản bất thường "Chờ duyệt" cho mỗi lô,
+    tách sản phẩm lỗi (trạng thái "Lỗi"),
+    cả lô thì lô chuyển "Tạm cách ly";
+    note right
+      Quản lý xét biên bản theo
+      quy trình xử lý biên bản bất thường,
+      việc lấy hàng không phải chờ
+    end note
+    :Tìm sản phẩm thay thế theo FIFO ngay;
+    if (Đủ hàng thay thế?) then (Có)
+      :Cập nhật danh sách lấy hàng;
+    else (Không)
+      :Phiếu chuyển "Đã hủy", nhả hàng đã giữ chỗ,
+      đơn chuyển "Chờ xử lý";
+      |Nhân viên kho|
+      :Trả hàng đã lấy về kệ;
+      stop
+    endif
+  else (Không)
+  endif
+  |Nhân viên kho|
+repeat while (Còn sản phẩm chưa lấy?) is (Có) not (Không)
+
+:Xác nhận giao hàng: người nhận hàng tại kho,
+số điện thoại người nhận, biển số xe;
+
+|Hệ thống Vibasic|
+:Kiểm tra đã lấy đủ sản phẩm
+và thông tin giao hàng hợp lệ;
+:Chuyển sản phẩm sang "Đã xuất",
+trừ số lượng tồn của từng lô;
+:Lưu biên bản giao hàng (người nhận, số điện thoại,
+biển số xe, nhân viên giao, thời điểm giao);
+:Phiếu xuất và đơn hàng chuyển "Đã xuất";
+:Kiểm tra ROP, cập nhật cảnh báo tồn kho thấp
+và đề xuất bổ sung hàng;
+stop
+@enduml

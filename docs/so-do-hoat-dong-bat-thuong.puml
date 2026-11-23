@@ -1,0 +1,78 @@
+@startuml
+!theme plain
+title Activity Diagram - Xử lý biên bản bất thường
+
+|Nhân viên kho|
+|Hệ thống Vibasic|
+|Quản lý|
+
+|Nhân viên kho|
+start
+:Phát hiện hàng lỗi khi nhập kho,
+lấy hàng hoặc kiểm kê;
+:Lập biên bản: mã các sản phẩm lỗi, mô tả lỗi,
+đề xuất hướng xử lý (không bắt buộc),
+tick "Nghi lỗi cả lô" nếu cần;
+
+|Hệ thống Vibasic|
+:Lưu biên bản "Chờ duyệt";
+if (Phạm vi cả lô?) then (Có)
+  :Lô chuyển "Tạm cách ly";
+else (Không)
+  :Tách các sản phẩm lỗi (trạng thái "Lỗi"),
+  phần còn lại của lô vẫn xuất được;
+endif
+:Thay theo FIFO các sản phẩm bị tách ra
+đang giữ chỗ trên phiếu xuất;
+
+|Quản lý|
+:Xem xét biên bản;
+note right
+  Biên bản lập khi nhập kho chỉ
+  được xét sau khi phiếu nhập đã duyệt
+end note
+if (Phê duyệt biên bản?) then (Không)
+  :Nhập lý do từ chối;
+  |Hệ thống Vibasic|
+  :Biên bản chuyển "Từ chối",
+  sản phẩm về "Trong kho", lô về "Bình thường";
+  stop
+else (Có)
+  :Chọn phạm vi (sản phẩm lỗi hoặc cả lô),
+  hướng xử lý và mô tả cách làm;
+  |Hệ thống Vibasic|
+  :Biên bản chuyển "Đã duyệt", tình trạng "Chờ xử lý",
+  phạm vi cả lô thì lô chuyển "Đã khóa";
+endif
+
+|Nhân viên kho|
+repeat :Nhận xử lý biên bản;
+  |Hệ thống Vibasic|
+  :Ghi người xử lý, tình trạng "Đang xử lý"
+  (mỗi lúc một nhân viên);
+  |Nhân viên kho|
+  :Thực hiện theo hướng xử lý;
+  note right
+    Quản lý sửa được hướng xử lý
+    cho tới khi xử lý xong
+  end note
+backward :Tình trạng về "Chờ xử lý";
+repeat while (Trả lại việc, hoặc Quản lý gỡ người xử lý?) is (Có) not (Không)
+
+:Bấm "Hoàn thành xử lý";
+
+|Hệ thống Vibasic|
+if (Hướng xử lý?) then (Sửa chữa, tân trang)
+  :Sản phẩm lỗi về "Trong kho",
+  phạm vi cả lô thì lô được mở khóa;
+else (Trả NCC, tiêu hủy, thanh lý)
+  :Sản phẩm chuyển "Đã loại bỏ",
+  phạm vi cả lô thì mọi sản phẩm còn lại
+  cũng vậy và lô về tồn 0;
+endif
+:Tình trạng "Đã xử lý",
+ghi người và thời điểm xử lý xong;
+:Kiểm tra ROP, cập nhật cảnh báo tồn kho thấp
+và đề xuất bổ sung hàng;
+stop
+@enduml
