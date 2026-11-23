@@ -48,6 +48,7 @@ Chi tiết ở `docs/`. Ít nhất phải nhớ:
 ## Dữ liệu demo
 
 - `Vibasic.Infrastructure/Seed/DbSeeder.cs` sinh lịch sử 12 tuần lùi từ thời điểm seed, theo bộ quy tắc Q1–Q20. Nhiều test gọi `DbSeeder.SeedAsync`, nên sửa seeder có thể làm hỏng test.
+- Tên và địa chỉ kho (Long Biên, Hà Nội) nằm ở hai chỗ phải giữ khớp nhau: `DbSeeder.Warehouse` (server) và `web/src/app/warehouse.ts` (tiêu đề màn hình, đầu chứng từ in). Dữ liệu mẫu dùng tên doanh nghiệp hư cấu, địa chỉ ở Hà Nội và Bắc Ninh.
 - `Seed/DemoScenarios.cs` dựng các việc đang dở của hôm nay bằng chính các service, để mọi trạng thái đều có mẫu khi demo. Chỉ `Program.cs` gọi bước này, khi DB vừa được tạo; test không gọi. Bước nào lỗi thì ghi log rồi bỏ qua.
 - Thêm trạng thái hoặc luồng mới thì thêm tình huống tương ứng vào `DemoScenarios`, rồi nạp lại DB để kiểm tra "0 bước bỏ qua".
 - Tài khoản mẫu, mật khẩu `Vibasic@123`: `quanly` (Quản lý), `nhanvien1`, `nhanvien2` (Nhân viên kho).

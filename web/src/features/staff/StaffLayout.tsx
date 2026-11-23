@@ -5,6 +5,7 @@ import wordmarkWhite from '../../design/assets/wordmark-white.png';
 import { useAuth } from '../../app/auth';
 import { ToastProvider } from '../../app/toast';
 import { useMediaQuery } from '../../app/useMediaQuery';
+import { WAREHOUSE } from '../../app/warehouse';
 
 export const STAFF_NAV: (NavItem & { title?: string })[] = [
   { key: 'xuat-kho', label: 'Xuất kho', icon: 'package-minus', section: 'Nghiệp vụ', title: 'Xuất kho theo FIFO' },
@@ -37,7 +38,7 @@ export function StaffLayout() {
           onNavigate={k => nav(`/kho/${k}`)}
           user={{ name: user?.fullName }}
           title={item?.title ?? item?.label}
-          subtitle="Kho Bình Dương"
+          subtitle={WAREHOUSE.short}
           onLogout={logout}
           brand={phone
             ? <img src={markWhite} alt="Vibasic" style={{ height: 24 }} />

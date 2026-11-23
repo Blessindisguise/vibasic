@@ -109,6 +109,8 @@ package "Xuất kho" {
     Status : string
     CancelReason : string?
     ReceiverName : string?
+    ReceiverPhone : string?
+    VehiclePlate : string?
     DeliveredAt : DateTime?
     DeliveredBy : int? {FK}
     PickActiveAt : DateTime?

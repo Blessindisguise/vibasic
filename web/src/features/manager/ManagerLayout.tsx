@@ -7,9 +7,10 @@ import { ToastProvider } from '../../app/toast';
 import { fmtLongDate } from '../../app/format';
 import { useApprovalSummary } from '../../app/receiving';
 import { useDecisionSummary } from '../../app/decision';
+import { WAREHOUSE } from '../../app/warehouse';
 
 export const MANAGER_NAV: (NavItem & { title?: string; subtitle?: () => string })[] = [
-  { key: 'tong-quan', label: 'Tổng quan', icon: 'layout-dashboard', section: 'Theo dõi', title: 'Tổng quan kho', subtitle: () => `${fmtLongDate()} · Kho Bình Dương` },
+  { key: 'tong-quan', label: 'Tổng quan', icon: 'layout-dashboard', section: 'Theo dõi', title: 'Tổng quan kho', subtitle: () => `${fmtLongDate()} · ${WAREHOUSE.short}` },
   { key: 'canh-bao', label: 'Cảnh báo tồn kho', icon: 'bell', section: 'Theo dõi' },
   { key: 'de-xuat', label: 'Đề xuất bổ sung', icon: 'shopping-cart', section: 'Theo dõi', title: 'Đề xuất bổ sung hàng' },
   { key: 'cho-duyet', label: 'Chờ duyệt', icon: 'clipboard-check', section: 'Nghiệp vụ' },

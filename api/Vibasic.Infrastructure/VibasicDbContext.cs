@@ -138,6 +138,8 @@ public class VibasicDbContext(DbContextOptions<VibasicDbContext> options) : DbCo
             e.HasIndex(x => x.Code).IsUnique();
             e.Property(x => x.CancelReason).HasMaxLength(255);
             e.Property(x => x.ReceiverName).HasMaxLength(100);
+            e.Property(x => x.ReceiverPhone).HasMaxLength(20);
+            e.Property(x => x.VehiclePlate).HasMaxLength(20);
             e.HasOne(x => x.Order).WithMany().HasForeignKey(x => x.OrderId);
             e.HasOne(x => x.Creator).WithMany().HasForeignKey(x => x.CreatedBy);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.DeliveredBy);

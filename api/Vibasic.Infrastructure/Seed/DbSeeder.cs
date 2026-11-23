@@ -54,12 +54,28 @@ public static class DbSeeder
     /// <summary>Demo customers with their delivery contact. Also used by the PickingAndOrderContact migration to fill older orders.</summary>
     internal static readonly (string Name, string Phone, string Address)[] Customers =
     [
-        ("Siêu thị Co.opmart Bình Dương", "0274 3822 115", "Số 1 Đại lộ Bình Dương, P. Phú Hòa, TP. Thủ Dầu Một, Bình Dương"),
-        ("Nhà hàng Mộc Gia", "0908 214 667", "45 Nguyễn Thị Minh Khai, P. Bến Nghé, Quận 1, TP.HCM"),
-        ("Cửa hàng Bếp Việt Quận 7", "0932 558 019", "212 Huỳnh Tấn Phát, P. Tân Thuận Tây, Quận 7, TP.HCM"),
-        ("Khách sạn Lá Phong", "0283 9301 288", "18 Lý Tự Trọng, P. Bến Thành, Quận 1, TP.HCM"),
-        ("Đại lý Thanh Tâm Thủ Đức", "0916 773 402", "77 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM"),
-        ("Sàn TMĐT Vibasic Store", "1900 6868 12", "Kho trung chuyển Vibasic, KCN Sóng Thần, Dĩ An, Bình Dương"),
+        ("Siêu thị Minh Châu Long Biên", "024 3872 1156", "Số 9 Nguyễn Văn Cừ, P. Ngọc Lâm, Q. Long Biên, Hà Nội"),
+        ("Nhà hàng Mộc Gia", "0904 214 667", "28 Hàng Buồm, P. Hàng Buồm, Q. Hoàn Kiếm, Hà Nội"),
+        ("Cửa hàng Bếp Việt Cầu Giấy", "0936 558 019", "145 Trần Duy Hưng, P. Trung Hòa, Q. Cầu Giấy, Hà Nội"),
+        ("Khách sạn Lá Phong", "024 3938 1288", "36 Lý Thường Kiệt, P. Trần Hưng Đạo, Q. Hoàn Kiếm, Hà Nội"),
+        ("Đại lý Thanh Tâm Gia Lâm", "0916 773 402", "88 Ngô Xuân Quảng, TT. Trâu Quỳ, H. Gia Lâm, Hà Nội"),
+        ("Sàn TMĐT Vibasic Store", "1900 6868 12", $"Khu đóng gói đơn online, {Warehouse.Address}"),
+    ];
+
+    /// <summary>The Vibasic warehouse: deliveries go out from here and suppliers deliver here.</summary>
+    public static class Warehouse
+    {
+        public const string Name = "Kho Vibasic Long Biên";
+        public const string Address = "Số A15, NO-06B, Lô HH06, Khu ĐTM Việt Hưng, P. Giang Biên, Q. Long Biên, Hà Nội";
+    }
+
+    /// <summary>Drivers who collect the goods at the warehouse: name, phone, vehicle plate (biên bản giao hàng).</summary>
+    internal static readonly (string Name, string Phone, string Plate)[] Drivers =
+    [
+        ("Nguyễn Văn Bình", "0912 345 678", "29C-123.45"),
+        ("Trần Đức Hải", "0983 221 457", "29H-456.78"),
+        ("Lê Quang Huy", "0868 902 113", "29C-218.66"),
+        ("Phạm Minh Tuấn", "0975 118 390", "29H-090.12"),
     ];
 
     // ---- The manager's decisions, taken in turn by each new proposal (After = days later, at 08:30). ----
@@ -100,7 +116,7 @@ public static class DbSeeder
     private static readonly (string Customer, string Note, (string Sku, Target Target)[] Lines)[] Wholesale =
     [
         ("Sàn TMĐT Vibasic Store", "Đơn sỉ cho chương trình khuyến mãi cuối tuần.", [("MUO-01", Target.Urgent), ("DUA-01", Target.Order), ("KHA-03", Target.Watch)]),
-        ("Đại lý Thanh Tâm Thủ Đức", "Đơn sỉ nhập hàng cho cửa hàng mới.", [("THT-03", Target.Order), ("KHA-02", Target.Order), ("THT-01", Target.Watch)]),
+        ("Đại lý Thanh Tâm Gia Lâm", "Đơn sỉ nhập hàng cho cửa hàng mới.", [("THT-03", Target.Order), ("KHA-02", Target.Order), ("THT-01", Target.Watch)]),
     ];
 
     private sealed class Stock(P p, Product product)
@@ -154,9 +170,9 @@ public static class DbSeeder
 
         var sups = new Dictionary<string, Supplier>
         {
-            ["ml"] = new() { SupplierName = "Xưởng gỗ Minh Long", Phone = "0903 118 245", Address = "KCN Tân Uyên, Bình Dương" },
-            ["pt"] = new() { SupplierName = "Gỗ keo Phú Thịnh", Phone = "0918 402 771", Address = "Thuận An, Bình Dương" },
-            ["ta"] = new() { SupplierName = "Tre Việt Tân Á", Phone = "0937 650 112", Address = "Châu Thành, Bến Tre" },
+            ["ml"] = new() { SupplierName = "Xưởng gỗ Minh Long", Phone = "0912 118 245", Address = "Cụm công nghiệp làng nghề Đồng Kỵ, P. Đồng Kỵ, TP. Từ Sơn, Bắc Ninh" },
+            ["pt"] = new() { SupplierName = "Gỗ keo Phú Thịnh", Phone = "0918 402 771", Address = "KCN Phú Nghĩa, H. Chương Mỹ, Hà Nội" },
+            ["ta"] = new() { SupplierName = "Tre Việt Tân Á", Phone = "0977 650 112", Address = "Làng nghề mây tre Xuân Lai, H. Gia Bình, Bắc Ninh" },
         };
         db.Suppliers.AddRange(sups.Values);
 
@@ -394,10 +410,12 @@ public static class DbSeeder
             foreach (var g in shortages.GroupBy(x => x.S.P.Sup))
                 Supply(g.Key, o.IssueUtc.AddHours(-2), "Nhập gấp vì không đủ hàng giao đơn", g.Select(x => (x.S.P, x.Missing + Cover(x.S, 7))).ToList());
             var delivered = o.IssueUtc.AddHours(2);
+            // Drivers take turns (not drawn from rnd, so the rest of the history stays the same).
+            var driver = Drivers[issues.Count % Drivers.Length];
             var issue = new GoodsIssue
             {
                 Order = order, IssueDate = o.IssueUtc, Creator = rnd.Next(2) == 0 ? staff1 : staff2,
-                Status = IssueStatus.Issued, ReceiverName = "Tài xế Nguyễn Văn Bình",
+                Status = IssueStatus.Issued, ReceiverName = $"Tài xế {driver.Name}", ReceiverPhone = driver.Phone, VehiclePlate = driver.Plate,
                 DeliveredAt = delivered, DeliveredBy = null,
             };
             foreach (var (sku, qty) in o.Lines)
@@ -526,7 +544,7 @@ public static class DbSeeder
         var openOrders = new (string customer, string? note, (string sku, int qty)[] lines)[]
         {
             ("Nhà hàng Mộc Gia", "Giao trước 10 giờ sáng, gọi trước khi tới.", [("THT-02", 12), ("MUO-01", 15), ("DUA-03", 8)]),
-            ("Siêu thị Co.opmart Bình Dương", "Giao ở cổng nhận hàng phía sau, giờ hành chính.", [("DUA-01", 20), ("DUA-02", 10), ("KHA-02", 4)]),
+            ("Siêu thị Minh Châu Long Biên", "Giao ở cổng nhận hàng phía sau, giờ hành chính.", [("DUA-01", 20), ("DUA-02", 10), ("KHA-02", 4)]),
             ("Khách sạn Lá Phong", null, [("KHA-01", 3), ("THT-03", 4), ("MUO-02", 5), ("MUO-03", 8)]),
         };
         foreach (var (customer, note, lines) in openOrders)
@@ -544,7 +562,7 @@ public static class DbSeeder
         // A customer cancelled an order before it was picked; the manager recorded it for the sales system. Not demand, not ordered.
         var cancelled = WithContact(new Order
         {
-            ExternalCode = $"DH-{VnTime.Yymm(utcNow)}-{++orderNo:D4}", CustomerName = "Đại lý Thanh Tâm Thủ Đức", OrderDate = utcNow.AddHours(-20),
+            ExternalCode = $"DH-{VnTime.Yymm(utcNow)}-{++orderNo:D4}", CustomerName = "Đại lý Thanh Tâm Gia Lâm", OrderDate = utcNow.AddHours(-20),
             Status = OrderStatus.Cancelled, CancelReason = "Khách đổi sang mẫu khác, sẽ đặt đơn mới.", CancelledAt = utcNow.AddHours(-3), Canceller = manager,
         });
         cancelled.Details.Add(new OrderDetail { Product = stock["THT-01"].Product, Quantity = 6 });

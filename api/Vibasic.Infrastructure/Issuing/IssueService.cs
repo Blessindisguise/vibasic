@@ -59,7 +59,6 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, IClock clock
         var phone = CatalogService.Clean(input.CustomerPhone);
         var address = CatalogService.Clean(input.ShippingAddress);
         var note = CatalogService.Clean(input.Note);
-        var phoneDigits = phone?.Count(char.IsDigit) ?? 0;
         var lines = input.Lines ?? [];
         var skus = lines.Select(l => CatalogService.Clean(l.Sku)?.ToUpperInvariant()).OfType<string>().ToList();
         var products = await db.Products.Where(p => skus.Contains(p.SKU)).ToDictionaryAsync(p => p.SKU);
@@ -67,8 +66,7 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, IClock clock
         var v = new Validator()
             .Check(code is { Length: <= 50 }, "externalCode", "Nhập mã đơn hàng (tối đa 50 ký tự).")
             .Check(customer is null || customer.Length <= 150, "customerName", "Tên khách hàng tối đa 150 ký tự.")
-            .Check(phone is null || (phone.Length <= 20 && phone.All(ch => char.IsDigit(ch) || " +.-".Contains(ch)) && phoneDigits is >= 8 and <= 15),
-                "customerPhone", "Số điện thoại gồm 8–15 chữ số (được dùng dấu cách, +, ., -).")
+            .Check(phone is null || ValidPhone(phone), "customerPhone", "Số điện thoại gồm 8–15 chữ số (được dùng dấu cách, +, ., -).")
             .Check(address is null || address.Length <= 300, "shippingAddress", "Địa chỉ giao hàng tối đa 300 ký tự.")
             .Check(note is null || note.Length <= 500, "note", "Ghi chú tối đa 500 ký tự.")
             .Check(lines.Count > 0, "lines", "Đơn hàng cần ít nhất một mặt hàng.");
@@ -413,16 +411,24 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, IClock clock
         return new DefectResult(reports, wholeLot ? mineBefore.Count : defective.Count, returnPicked, held.Contains(issue.IssueId));
     }
 
-    /// <summary>UC_08 steps 4–8: every reserved item must be scanned; items leave stock lot by lot.</summary>
-    public async Task<GoodsIssue> DeliverAsync(int id, string? receiverName, int userId)
+    /// <summary>
+    /// UC_08 steps 4–8: every reserved item must be scanned; items leave stock lot by lot. The handover record keeps who took the
+    /// goods at the warehouse (driver or customer), their phone and the vehicle plate; phone and plate are optional.
+    /// </summary>
+    public async Task<GoodsIssue> DeliverAsync(int id, string? receiverName, int userId, string? receiverPhone = null, string? vehiclePlate = null)
     {
         var issue = await LoadAsync(id);
         EnsureStatus(issue, IssueStatus.Ready, "không còn chờ lấy hàng");
         EnsurePicker(issue, userId);
         var receiver = CatalogService.Clean(receiverName);
+        var phone = CatalogService.Clean(receiverPhone);
+        var plate = CatalogService.Clean(vehiclePlate)?.ToUpperInvariant();
         new Validator()
             .Check(receiver is not null, "receiverName", "Nhập tên người nhận hàng.")
             .Check(receiver is null || receiver.Length <= 100, "receiverName", "Tên người nhận tối đa 100 ký tự.")
+            .Check(phone is null || ValidPhone(phone), "receiverPhone", "Số điện thoại gồm 8–15 chữ số (được dùng dấu cách, +, ., -).")
+            .Check(plate is null || (plate.Length <= 20 && plate.Any(char.IsDigit) && plate.All(ch => char.IsLetterOrDigit(ch) || " .-".Contains(ch))),
+                "vehiclePlate", "Biển số xe gồm chữ, số, dấu chấm hoặc gạch ngang, tối đa 20 ký tự (ví dụ 29C-123.45).")
             .ThrowIfAny();
         var items = issue.Details.SelectMany(d => d.Items).ToList();
         var missing = items.Count(i => i.PickedAt is null);
@@ -436,6 +442,8 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, IClock clock
         var now = clock.UtcNow;
         issue.Status = IssueStatus.Issued;
         issue.ReceiverName = receiver;
+        issue.ReceiverPhone = phone;
+        issue.VehiclePlate = plate;
         issue.DeliveredAt = now;
         issue.DeliveredBy = userId;
         issue.Order.Status = OrderStatus.Issued;
@@ -474,6 +482,10 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, IClock clock
     }
 
     // ---------------- helpers ----------------
+
+    /// <summary>8–15 digits, with spaces, +, . or - allowed; at most 20 characters (customer and receiver phones).</summary>
+    private static bool ValidPhone(string phone) =>
+        phone.Length <= 20 && phone.All(ch => char.IsDigit(ch) || " +.-".Contains(ch)) && phone.Count(char.IsDigit) is >= 8 and <= 15;
 
     /// <summary>
     /// Lots in <paramref name="lotIds"/> are no longer issuable (quarantined). Swap their reserved items on every open issue for the

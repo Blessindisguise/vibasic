@@ -89,7 +89,8 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
         int ProductCount, int TotalQuantity, int Picked, string? CancelReason,
         string? ReceiverName, DateTime? DeliveredAt, string? DelivererName,
         string? CustomerPhone, string? ShippingAddress, string? OrderNote,
-        int? PickerId, string? PickerName, DateTime? PickStartedAt, DateTime? PickActiveAt);
+        int? PickerId, string? PickerName, DateTime? PickStartedAt, DateTime? PickActiveAt,
+        string? ReceiverPhone, string? VehiclePlate);
     public record PickItem(int ItemId, string Serial, ItemStatus Status, DateTime? PickedAt);
     /// <param name="OnShelf">Items of the whole lot still on the shelf ("Trong kho" or "Đã giữ chỗ", any issue). When it equals
     /// the items of this issue in the lot, the issue takes the whole rest of the lot ("Lấy cả lô").</param>
@@ -102,7 +103,10 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
     /// <param name="WholeLot">Defect suspected in the whole lot: quarantine it too.</param>
     /// <param name="HandlingProposal">Hướng xử lý đề xuất (optional).</param>
     public record DefectInput(List<string>? Serials, string? Description, bool WholeLot = false, string? HandlingProposal = null);
-    public record DeliverInput(string? ReceiverName);
+    /// <param name="ReceiverName">Who takes the goods at the warehouse (driver or customer).</param>
+    /// <param name="ReceiverPhone">Their phone (optional).</param>
+    /// <param name="VehiclePlate">Biển số xe (optional).</param>
+    public record DeliverInput(string? ReceiverName, string? ReceiverPhone = null, string? VehiclePlate = null);
     public record PickInput(List<string>? Serials);
     public record DefectResponse(IssueView View, DefectResult Result);
 
@@ -181,7 +185,8 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
     }
 
     [HttpPost("{id:int}/deliver"), Authorize(Policy = Policies.Staff)]
-    public async Task<IssueView> Deliver(int id, DeliverInput input) => await View((await issues.DeliverAsync(id, input.ReceiverName, User.UserId())).IssueId);
+    public async Task<IssueView> Deliver(int id, DeliverInput input) =>
+        await View((await issues.DeliverAsync(id, input.ReceiverName, User.UserId(), input.ReceiverPhone, input.VehiclePlate)).IssueId);
 
     private async Task<IssueView> View(int id) => (await Get(id)).Value!;
 
@@ -193,5 +198,6 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
         i.CancelReason, i.ReceiverName, i.DeliveredAt,
         db.Users.Where(u => u.UserId == i.DeliveredBy).Select(u => u.FullName).FirstOrDefault(),
         i.Order.CustomerPhone, i.Order.ShippingAddress, i.Order.Note,
-        i.PickerId, i.Picker != null ? i.Picker.FullName : null, i.PickStartedAt, i.PickActiveAt));
+        i.PickerId, i.Picker != null ? i.Picker.FullName : null, i.PickStartedAt, i.PickActiveAt,
+        i.ReceiverPhone, i.VehiclePlate));
 }

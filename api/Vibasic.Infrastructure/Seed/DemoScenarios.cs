@@ -400,7 +400,7 @@ public static class DemoScenarios
             var i = await NewIssue(o, s1);
             await Pick(i, s1);
             Tick();
-            await issues.DeliverAsync(i, "Anh Trần Minh Quân (tài xế)", s1);
+            await issues.DeliverAsync(i, "Tài xế Trần Minh Quân", s1, "0966 432 781", "29C-335.07");
         });
 
         log($"[demo seed] Tình huống demo: {ok} bước xong, {failed} bước bỏ qua.");

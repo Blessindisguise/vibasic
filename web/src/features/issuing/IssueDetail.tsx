@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AlertBanner, ApprovalStepper, Button, Checkbox, ConfirmDialog, DataTable, EmptyState, LotCard, ScanInput, TextField, type DataTableColumn,
+  AlertBanner, ApprovalStepper, Button, Checkbox, ConfirmDialog, DataTable, EmptyState, LotCard, ScanInput, SearchField, TextField, type DataTableColumn,
 } from '../../design';
 import { ApiError } from '../../app/api';
 import { fmt, fmtDate, fmtDateTime } from '../../app/format';
@@ -107,7 +107,8 @@ export function IssueDetail({ id, role, basePath }: { id: number; role: Role; ba
           )}
           {h.status === 'issued' && (
             <AlertBanner tone="success" title="Đã giao hàng">
-              Giao cho {h.receiverName} lúc {fmtDateTime(h.deliveredAt)}{h.delivererName && `, nhân viên ${h.delivererName}`}{h.shippingAddress && `, tới ${h.shippingAddress}`}.
+              Giao cho {h.receiverName}{h.receiverPhone && ` (ĐT ${h.receiverPhone})`}{h.vehiclePlate && `, xe ${h.vehiclePlate}`} lúc {fmtDateTime(h.deliveredAt)}
+              {h.delivererName && `, nhân viên ${h.delivererName}`}{h.shippingAddress && `, tới ${h.shippingAddress}`}.
             </AlertBanner>
           )}
         </div>
@@ -473,6 +474,7 @@ function DefectDialog({ view, preselect, onClose, onDone }: {
   const [description, setDescription] = useState('');
   const [proposal, setProposal] = useState('');
   const [wholeLot, setWholeLot] = useState(false);
+  const [filter, setFilter] = useState('');
   const errors = fieldErrors(report.error);
   const toggle = (s: string) => setSelected(sel => (sel.includes(s) ? sel.filter(x => x !== s) : [...sel, s]));
 
@@ -500,17 +502,24 @@ function DefectDialog({ view, preselect, onClose, onDone }: {
     >
       <div className="vb-field">
         <span className="vb-field__label">Sản phẩm lỗi<span className="req" aria-hidden="true">*</span> <span className="vb-muted">({selected.length} đã chọn)</span></span>
+        <SearchField size="lg" value={filter} onChange={setFilter} placeholder="Tìm theo mã sản phẩm, vài số cuối, mã lô hoặc SKU" aria-label="Tìm sản phẩm lỗi" />
         <div style={{ maxHeight: 240, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {view.lines.map(line => line.lots.map(lot => (
-            <div key={lot.receiptDetailId}>
-              <div className="vb-muted"><Code>{line.sku}</Code> · lô {lot.lotCode}</div>
-              <div className="vb-serials">
-                {lot.items.map(it => (
-                  <button key={it.itemId} type="button" className="vb-serial" aria-pressed={selected.includes(it.serial)} onClick={() => toggle(it.serial)}>{it.serial}</button>
-                ))}
+          {view.lines.map(line => line.lots.map(lot => {
+            const items = lot.items.filter(it => selected.includes(it.serial) || matches(filter, it.serial, lot.lotCode, line.sku, line.productName));
+            if (items.length === 0) return null;
+            return (
+              <div key={lot.receiptDetailId}>
+                <div className="vb-muted"><Code>{line.sku}</Code> · lô {lot.lotCode}</div>
+                <div className="vb-serials">
+                  {items.map(it => (
+                    <button key={it.itemId} type="button" className="vb-serial" aria-pressed={selected.includes(it.serial)} onClick={() => toggle(it.serial)}>{it.serial}</button>
+                  ))}
+                </div>
               </div>
-            </div>
-          )))}
+            );
+          }))}
+          {filter && !view.lines.some(l => l.lots.some(lot => lot.items.some(it => matches(filter, it.serial, lot.lotCode, l.sku, l.productName))))
+            && <span className="vb-muted">Không có sản phẩm nào của phiếu khớp “{filter}”.</span>}
         </div>
         {errors.serials && <div className="vb-field__help vb-field__help--error">{errors.serials}</div>}
       </div>
@@ -529,8 +538,10 @@ function DeliverDialog({ view, onClose }: { view: IssueView; onClose: () => void
   const deliver = useDeliver(view.header.id);
   const toast = useToast();
   const [receiver, setReceiver] = useState('');
+  const [phone, setPhone] = useState('');
+  const [plate, setPlate] = useState('');
   const errors = fieldErrors(deliver.error);
-  const submit = () => deliver.mutate(receiver, {
+  const submit = () => deliver.mutate({ receiverName: receiver, receiverPhone: phone, vehiclePlate: plate }, {
     onSuccess: () => { toast({ tone: 'success', title: `Đã xuất kho phiếu ${view.header.code}` }); onClose(); },
   });
   return (
@@ -545,11 +556,19 @@ function DeliverDialog({ view, onClose }: { view: IssueView; onClose: () => void
       {(view.header.shippingAddress || view.header.customerPhone) && (
         <div className="vb-muted">Giao tới {view.header.shippingAddress ?? '—'}{view.header.customerPhone && ` · ĐT ${view.header.customerPhone}`}</div>
       )}
-      <TextField size="lg" required autoFocus label="Người nhận hàng" value={receiver} onChange={e => setReceiver(e.target.value)}
-        error={errors.receiverName} placeholder="Họ tên tài xế hoặc người nhận" />
+      <TextField size="lg" required autoFocus label="Người nhận hàng tại kho" value={receiver} onChange={e => setReceiver(e.target.value)}
+        error={errors.receiverName} placeholder="Họ tên tài xế, hoặc khách tự đến lấy" />
       {view.header.customerName && !receiver && (
-        <div><Button variant="ghost" icon="user" onClick={() => setReceiver(view.header.customerName!)}>Điền tên khách: {view.header.customerName}</Button></div>
+        <div><Button variant="ghost" icon="user" onClick={() => { setReceiver(view.header.customerName!); setPhone(view.header.customerPhone ?? ''); }}>
+          Khách tự lấy: {view.header.customerName}
+        </Button></div>
       )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+        <TextField size="lg" label="Số điện thoại người nhận" type="tel" inputMode="tel" value={phone} onChange={e => setPhone(e.target.value)}
+          error={errors.receiverPhone} placeholder="0912 345 678" />
+        <TextField size="lg" label="Biển số xe" value={plate} onChange={e => setPlate(e.target.value.toUpperCase())}
+          error={errors.vehiclePlate} placeholder="29C-123.45" helper="Bỏ trống nếu khách tự lấy không dùng xe." />
+      </div>
     </FormDialog>
   );
 }

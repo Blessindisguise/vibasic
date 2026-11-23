@@ -158,7 +158,12 @@ public class GoodsIssue
     public IssueStatus Status { get; set; }
     /// <summary>Why the issue was cancelled ("Đã hủy"). // + ext</summary>
     public string? CancelReason { get; set; }
-    public string? ReceiverName { get; set; }              // + ext (biên bản giao hàng)
+    /// <summary>Who took the goods at the warehouse: the driver or the customer collecting them (biên bản giao hàng). // + ext</summary>
+    public string? ReceiverName { get; set; }
+    /// <summary>Phone of the receiver, to reach the driver while the goods are on the road. // + ext</summary>
+    public string? ReceiverPhone { get; set; }
+    /// <summary>Biển số xe chở hàng, e.g. 29C-123.45. Empty when the customer collects without a vehicle. // + ext</summary>
+    public string? VehiclePlate { get; set; }
     public DateTime? DeliveredAt { get; set; }             // + ext
     public int? DeliveredBy { get; set; }                  // + ext
     /// <summary>Staff member who claimed the issue for picking; only they may scan, report defects and deliver.</summary>

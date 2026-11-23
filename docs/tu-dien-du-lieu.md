@@ -158,7 +158,9 @@ Mỗi dòng chi tiết là một **lô**; không có bảng Lô riêng. Hàng đ
 | CreatedBy ★ | int | Không | FK → User | Nhân viên lập phiếu |
 | Status | nvarchar(20) | Không | | Chờ lấy hàng★ / Đã hủy★ / Đã xuất |
 | CancelReason ★ | nvarchar(255) | Có | | Lý do phiếu "Đã hủy": đơn bị hủy, hoặc không đủ hàng thay thế khi báo lỗi |
-| ReceiverName ★ | nvarchar(100) | Có | | Người nhận hàng (biên bản giao hàng) |
+| ReceiverName ★ | nvarchar(100) | Có | | Người nhận hàng tại kho: tài xế, hoặc khách tự đến lấy (biên bản giao hàng) |
+| ReceiverPhone ★ | nvarchar(20) | Có | | Số điện thoại người nhận, để liên lạc khi hàng đang trên đường |
+| VehiclePlate ★ | nvarchar(20) | Có | | Biển số xe chở hàng, ví dụ 29C-123.45. Trống nếu khách tự lấy không dùng xe |
 | DeliveredAt ★ | datetime2 | Có | | Thời điểm giao |
 | DeliveredBy ★ | int | Có | FK → User | Nhân viên giao hàng |
 | PickActiveAt ★ | datetime2 | Có | | Lần cuối người lấy hàng nhận phiếu hoặc quét |
@@ -624,7 +626,7 @@ Biên bản lập khi nhập kho chỉ được xử lý sau khi phiếu nhập 
 ![](anh-giao-dien/quy-trinh/x13-kho-xac-nhan-giao-hang.png)
 ![](anh-giao-dien/quy-trinh/x14-kho-da-xuat-kho.png)
 *Dữ liệu:*
-- GoodsIssue: Status = Đã xuất, ReceiverName, DeliveredAt, DeliveredBy;
+- GoodsIssue: Status = Đã xuất, ReceiverName, ReceiverPhone, VehiclePlate, DeliveredAt, DeliveredBy;
 - StockItem: Đã xuất;
 - GoodsReceiptDetail.QuantityOnHand giảm theo từng lô;
 - Order: Status = Đã xuất.

@@ -286,8 +286,15 @@ function StockDefectDialog({ planId, lot, onClose }: { planId: number; lot: Shee
   const [description, setDescription] = useState('');
   const [proposal, setProposal] = useState('');
   const [wholeLot, setWholeLot] = useState(false);
+  const [filter, setFilter] = useState('');
   const errors = fieldErrors(file.error);
   const bySerial = useMemo(() => new Map((items.data?.items ?? []).map(i => [i.serial, i])), [items.data]);
+  // "Chọn mã" without scanning: the items a scan would accept (on the shelf, not set aside, not picked for an issue).
+  const choosable = useMemo(() => (items.data?.items ?? [])
+    .filter(i => (i.status === 'inStock' || i.status === 'reserved') && !i.picked)
+    .map(i => i.serial).sort(), [items.data]);
+  const shown = choosable.filter(s => !serials.includes(s) && matches(filter, s));
+  const SHOW_MAX = 60;
 
   const scan = (value: string) => {
     const s = value.trim().toUpperCase();
@@ -325,12 +332,28 @@ function StockDefectDialog({ planId, lot, onClose }: { planId: number; lot: Shee
       </>}>
       {formError(file.error) && <AlertBanner tone="danger">{formError(file.error)}</AlertBanner>}
       {items.isPending ? <Loading /> : items.isError ? <ListError onRetry={() => items.refetch()} /> : (
-        <ScanInput size="md" value={code} onChange={setCode} onSubmit={scan} scanKey={feedback?.key ?? 0} label="Quét tem sản phẩm lỗi"
-          placeholder="SP-…" state={feedback?.state ?? 'idle'} message={feedback?.message ?? 'Quét lần lượt từng sản phẩm bị lỗi.'} />
+        <>
+          <ScanInput size="md" value={code} onChange={setCode} onSubmit={scan} scanKey={feedback?.key ?? 0} label="Quét tem sản phẩm lỗi"
+            placeholder="SP-…" state={feedback?.state ?? 'idle'} message={feedback?.message ?? 'Quét lần lượt từng sản phẩm bị lỗi, hoặc tìm và chọn mã bên dưới.'} />
+          <div className="vb-field">
+            <span className="vb-field__label">Hoặc tìm và chọn mã <span className="vb-muted">({fmt(choosable.length)} sản phẩm của lô còn trên kệ)</span></span>
+            <SearchField size="md" value={filter} onChange={setFilter} placeholder="Gõ mã hoặc vài số cuối, ví dụ 0012" aria-label="Tìm mã sản phẩm của lô" />
+            {shown.length === 0
+              ? <span className="vb-muted">{filter ? `Không có mã nào khớp “${filter}”.` : 'Đã chọn hết các mã của lô.'}</span>
+              : (
+                <div className="vb-serials" style={{ maxHeight: 180, overflow: 'auto' }}>
+                  {shown.slice(0, SHOW_MAX).map(s => (
+                    <button key={s} type="button" className="vb-serial" onClick={() => scan(s)} title="Chọn mã này là hàng lỗi">{s}</button>
+                  ))}
+                  {shown.length > SHOW_MAX && <span className="vb-muted" style={{ alignSelf: 'center' }}>… còn {fmt(shown.length - SHOW_MAX)} mã, gõ thêm để lọc.</span>}
+                </div>
+              )}
+          </div>
+        </>
       )}
       <div className="vb-field">
         <span className="vb-field__label">Sản phẩm lỗi<span className="req" aria-hidden="true">*</span> <span className="vb-muted">({serials.length} {lot.unit})</span></span>
-        {serials.length === 0 ? <span className="vb-muted">Chưa quét sản phẩm nào.</span> : (
+        {serials.length === 0 ? <span className="vb-muted">Chưa quét hoặc chọn sản phẩm nào.</span> : (
           <div className="vb-serials">
             {serials.map(s => (
               <button key={s} type="button" className="vb-serial" aria-pressed="true" title="Bỏ mã này" onClick={() => setSerials(list => list.filter(x => x !== s))}>

@@ -249,6 +249,26 @@ public class IssuingTests
 
         Assert.Equal(IssueStatus.Issued, issue.Status);
         Assert.All(c.ItemsOf(issue), i => Assert.Equal(ItemStatus.Issued, i.Status));
+        Assert.Null(issue.ReceiverPhone); // phone and plate are optional
+        Assert.Null(issue.VehiclePlate);
+    }
+
+    [Fact]
+    public async Task Delivery_records_the_receiver_phone_and_vehicle_plate()
+    {
+        await using var c = await Setup();
+        var issue = await c.Ready("DH-T-G1", "MUO-01", 2);
+        await c.Issues.PickAsync(issue.IssueId, c.ItemsOf(issue).Select(i => i.SerialCode).ToList(), c.Staff);
+
+        var e = await Assert.ThrowsAsync<ValidationException>(() => c.Issues.DeliverAsync(issue.IssueId, "Tài xế Bình", c.Staff, "09ab", "29C_123#"));
+        Assert.Equal(["receiverPhone", "vehiclePlate"], e.Errors.Keys.Order());
+        Assert.Equal(IssueStatus.Ready, issue.Status);
+
+        await c.Issues.DeliverAsync(issue.IssueId, "Tài xế Bình", c.Staff, " 0912 345 678 ", "29c-123.45");
+
+        Assert.Equal(IssueStatus.Issued, issue.Status);
+        Assert.Equal("0912 345 678", issue.ReceiverPhone);
+        Assert.Equal("29C-123.45", issue.VehiclePlate);
     }
 
     [Fact]
@@ -556,9 +576,9 @@ public class IssuingTests
     {
         await using var c = await Setup();
         var order = await c.Issues.RecordOrderAsync(new OrderInput("DH-C-01", "Nhà hàng Mộc Gia", null, [new("DUA-02", 1)],
-            " 0903 118 245 ", "12 Lê Lợi, Quận 1, TP.HCM", "Giao giờ hành chính"));
+            " 0903 118 245 ", "28 Hàng Buồm, Q. Hoàn Kiếm, Hà Nội", "Giao giờ hành chính"));
         Assert.Equal("0903 118 245", order.CustomerPhone);
-        Assert.Equal("12 Lê Lợi, Quận 1, TP.HCM", order.ShippingAddress);
+        Assert.Equal("28 Hàng Buồm, Q. Hoàn Kiếm, Hà Nội", order.ShippingAddress);
         Assert.Equal("Giao giờ hành chính", order.Note);
 
         var e = await Assert.ThrowsAsync<ValidationException>(() => c.Issues.RecordOrderAsync(

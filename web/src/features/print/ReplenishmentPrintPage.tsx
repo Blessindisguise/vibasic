@@ -3,6 +3,7 @@ import { fmt, fmtDate, fmtDateTime, fmtDocDate, fmtTime } from '../../app/format
 import { ListError, Loading } from '../../app/ui';
 import { PRIORITY_LABEL, useSavedReport, type ReportRow } from '../../app/decision';
 import { DocFoot, DocSheet, DocSigns, DocTop, PrintToolbar } from './doc';
+import { WAREHOUSE } from '../../app/warehouse';
 
 const dash = (n?: number | null, digits = 0) => (n == null ? '-' : fmt(n, digits));
 
@@ -128,7 +129,7 @@ export function ReplenishmentPrintPage() {
           </table>
         )}
 
-        <DocSigns place={`Bình Dương, ${fmtDocDate(now)}`} people={[{ role: 'Người lập biểu', name: h.creatorName }, { role: 'Quản lý kho' }]} />
+        <DocSigns place={`${WAREHOUSE.city}, ${fmtDocDate(now)}`} people={[{ role: 'Người lập biểu', name: h.creatorName }, { role: 'Quản lý kho' }]} />
         <DocFoot code="Báo cáo đề xuất bổ sung hàng hóa" />
       </DocSheet>
     </div>

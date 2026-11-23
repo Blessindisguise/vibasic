@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Button } from '../../design';
 import { fmtDateTime } from '../../app/format';
+import { WAREHOUSE } from '../../app/warehouse';
 
 /** Screen-only bar above a printable document: what is printed, paper hint, close and print. */
 export function PrintToolbar({ title, hint, action, wide }: { title: string; hint: string; action: string; wide?: boolean }) {
@@ -22,7 +23,8 @@ export function DocTop() {
     <header className="vb-doc__top">
       <div style={{ textAlign: 'center' }}>
         <div className="vb-doc__strong">KHO HÀNG GỖ VIBASIC</div>
-        <div className="vb-doc__motto" style={{ fontWeight: 400 }}>Kho Bình Dương</div>
+        <div className="vb-doc__motto" style={{ fontWeight: 400 }}>{WAREHOUSE.name}</div>
+        <div className="vb-doc__hint" style={{ maxWidth: 300, margin: '2px auto 0' }}>{WAREHOUSE.address}</div>
       </div>
       <div style={{ textAlign: 'center' }}>
         <div className="vb-doc__strong">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>

@@ -27,15 +27,16 @@ export interface IssueRow {
   id: number; code: string; issueDate: string; orderId: number; orderCode: string; customerName?: string;
   createdBy: number; creatorName: string; status: IssueStatus;
   productCount: number; totalQuantity: number; picked: number; cancelReason?: string;
-  /** Cancelled issue: items that had been picked, to put back on the shelf. */
-  receiverName?: string; deliveredAt?: string; delivererName?: string;
+  /** Handover record: who took the goods at the warehouse (driver or customer), their phone, the vehicle plate. */
+  receiverName?: string; receiverPhone?: string; vehiclePlate?: string; deliveredAt?: string; delivererName?: string;
   customerPhone?: string; shippingAddress?: string; orderNote?: string;
   /** Staff member picking the issue; only they may scan, report defects and deliver. */
   pickerId?: number; pickerName?: string; pickStartedAt?: string; pickActiveAt?: string;
 }
 
-/** Search an issue by its codes, customer and the people involved (creator, picker, who delivered). */
-export const issueSearchFields = (i: IssueRow) => [i.code, i.orderCode, i.customerName, i.customerPhone, i.creatorName, i.pickerName, i.delivererName];
+/** Search an issue by its codes, customer, vehicle plate and the people involved (creator, picker, staff and driver at handover). */
+export const issueSearchFields = (i: IssueRow) =>
+  [i.code, i.orderCode, i.customerName, i.customerPhone, i.creatorName, i.pickerName, i.delivererName, i.receiverName, i.vehiclePlate];
 
 /** Same rule as the server (IssueService.PickHold): an issue stays with its picker for 3 days from the claim. */
 export const PICK_HOLD_MS = 3 * 86_400_000;
@@ -136,7 +137,8 @@ export function useReportDefect(id: number) {
 export function useDeliver(id: number) {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: (receiverName: string) => api<IssueView>(`/issues/${id}/deliver`, { method: 'POST', json: { receiverName } }),
+    mutationFn: (input: { receiverName: string; receiverPhone: string; vehiclePlate: string }) =>
+      api<IssueView>(`/issues/${id}/deliver`, { method: 'POST', json: input }),
     onSuccess: refresh,
   });
 }

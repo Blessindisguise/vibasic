@@ -28,7 +28,8 @@ Các bảng dưới đây liệt kê những cột và giá trị **được th�
 | GoodsReceiptDetail | `LotCode` | nvarchar(50), UNIQUE | Mã lô LOT-yymm-nnn in trên mã vạch lô (UC_04 bước 8). Sơ đồ lớp không có cột mã lô. |
 | GoodsReceiptDetail | `DocumentQuantity`, `Note` | int NULL, nvarchar(255) NULL | UC_04 3.1: số lượng trên chứng từ khác số thực nhận, ghi chú chênh lệch |
 | GoodsIssue | `CreatedBy` | int FK(User) | NFR bảo mật: ghi người lập trên mọi chứng từ |
-| GoodsIssue | `ReceiverName`, `DeliveredAt`, `DeliveredBy` | nvarchar(100), datetime2, int FK(User) | UC_08 bước 6: biên bản giao hàng |
+| GoodsIssue | `ReceiverName`, `DeliveredAt`, `DeliveredBy` | nvarchar(100), datetime2, int FK(User) | UC_08 bước 6: biên bản giao hàng. `DeliveredBy` là nhân viên kho giao, `ReceiverName` là người nhận hàng tại kho (tài xế hoặc khách tự lấy) |
+| GoodsIssue | `ReceiverPhone`, `VehiclePlate` | nvarchar(20) NULL, nvarchar(20) NULL | Biên bản giao hàng ghi thêm số điện thoại người nhận và biển số xe chở hàng, để đối chiếu khi hàng đã rời kho (migration `DeliveryContact`) |
 | GoodsIssue | `CancelReason` (trước là `HoldReason`) | nvarchar(255) NULL | UC_07 3.1, UC_08 3.2: lý do phiếu "Đã hủy" (không đủ hàng thay thế, hoặc đơn bị hủy) |
 | Order | `CustomerName` | nvarchar(150) NULL | Hiển thị khách hàng khi chọn đơn cần xuất |
 | Order | `CancelReason`, `CancelledAt`, `CancelledBy` | nvarchar(255) NULL, datetime2 NULL, int FK(User) NULL | Khách hủy đơn: Quản lý (thay cho hệ thống bán hàng) hủy đơn chưa giao, ghi lý do (migration `OrderCancel`) |

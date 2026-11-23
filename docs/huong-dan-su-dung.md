@@ -17,6 +17,8 @@ Tài liệu này gom các quy tắc, ý nghĩa trạng thái và cách thao tác
 
 ## 1. Bắt đầu
 
+Kho: **Kho Vibasic Long Biên**, Số A15, NO-06B, Lô HH06, Khu ĐTM Việt Hưng, P. Giang Biên, Q. Long Biên, Hà Nội. Địa chỉ này in ở đầu mọi chứng từ.
+
 ### Vai trò
 
 | Vai trò | Làm gì | Màn hình |
@@ -203,11 +205,14 @@ Màn hình có ba tab: **Đơn chờ xuất**, **Lấy hàng**, **Phiếu xuất
    - Quét tem vẫn là cách chính xác nhất. Khi chọn tay, chỉ chọn những sản phẩm đã thực sự lấy khỏi kệ.
 3. **Nhường phiếu:** dừng lấy hàng. Các mã đã quét được giữ nguyên và bàn giao cho người nhận phiếu sau.
 4. **Báo hàng lỗi** khi lấy hàng:
-   - Quét các sản phẩm lỗi và ghi mô tả. Hệ thống lập biên bản bất thường, tách các sản phẩm đó khỏi tồn kho và **thay bằng sản phẩm kế tiếp theo FIFO**.
+   - Chọn các sản phẩm lỗi trong danh sách của phiếu, có ô tìm theo mã, vài số cuối, mã lô hoặc SKU. Ghi mô tả. Hệ thống lập biên bản bất thường, tách các sản phẩm đó khỏi tồn kho và **thay bằng sản phẩm kế tiếp theo FIFO**.
    - Để sản phẩm lỗi ở khu hàng lỗi, rồi quét sản phẩm thay thế theo danh sách mới.
    - **Nghi lỗi cả lô** (mốc, ẩm, lỗi sấy…): cả lô chuyển "Tạm cách ly" và không xuất cho tới khi quản lý xử lý. Các sản phẩm đã lấy từ lô đó được đổi sang lô kế tiếp; trả lại kệ các sản phẩm đã lấy từ lô đó.
    - Không đủ hàng thay thế thì phiếu chuyển **Đã hủy** và đơn chuyển "Chờ xử lý". Trả lại kệ các mã ghi trên phiếu đã hủy; lập phiếu mới khi có hàng.
-5. Quét đủ thì **Giao hàng**: ghi người nhận. Tồn kho trừ theo từng lô.
+5. Quét đủ thì **Xác nhận giao hàng** và ghi biên bản giao hàng. Tồn kho trừ theo từng lô.
+   - **Người nhận hàng tại kho** (bắt buộc): tài xế đến lấy hàng, hoặc khách tự đến lấy. Nút "Khách tự lấy" điền sẵn tên và số điện thoại của khách.
+   - **Số điện thoại người nhận** và **biển số xe** (ví dụ 29C-123.45): không bắt buộc, nhưng nên ghi để liên lạc và đối chiếu khi hàng đã rời kho.
+   - Nhân viên bấm xác nhận được ghi là người giao hàng.
 
 ### 3.3 Kiểm kê (`Kiểm kê`)
 
@@ -226,7 +231,7 @@ Quản lý lập kế hoạch; kế hoạch mới hiện ở màn Kiểm kê v�
    - mã đang soạn cho phiếu xuất;
    - mã đã tách ra do lỗi;
    - mã đang ghi "Thất thoát": nếu tìm thấy lại thì được khôi phục khi duyệt.
-6. Phát hiện hàng lỗi thì chọn **Báo hàng lỗi** ở lô đó, rồi đếm tiếp. Cách xử lý như khi xuất kho:
+6. Phát hiện hàng lỗi thì chọn **Báo hàng lỗi** ở lô đó, rồi đếm tiếp. Quét tem từng sản phẩm lỗi, hoặc gõ mã (hay vài số cuối) vào ô "Hoặc tìm và chọn mã" rồi bấm mã cần chọn. Danh sách chỉ gồm sản phẩm của lô còn trên kệ. Cách xử lý như khi xuất kho:
    - chỉ sản phẩm lỗi: các sản phẩm đã quét bị tách khỏi tồn kho, phần còn lại của lô vẫn xuất bình thường;
    - nghi lỗi cả lô: cả lô "Tạm cách ly".
 7. Đếm hết các lô thì kiểm tra lại rồi **Gửi phiếu kiểm kê**. Tồn kho chỉ điều chỉnh khi quản lý duyệt.

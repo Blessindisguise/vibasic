@@ -6,6 +6,7 @@ import { useAuth } from '../../app/auth';
 import { useCategories, useProducts } from '../../app/catalog';
 import { useInventoryReport, useMovementReport, type InventoryRow, type MovementRow } from '../../app/reports';
 import { DocFoot, DocSheet, DocSigns, DocTop, PrintToolbar } from './doc';
+import { WAREHOUSE } from '../../app/warehouse';
 
 /** Rows grouped by category, keeping the order the report returned them in. */
 function byCategory<T extends { categoryName: string }>(rows: T[]): [string, T[]][] {
@@ -44,7 +45,7 @@ function Frame({ title, action, children }: { title: string; action: string; chi
 function Closing({ code }: { code: string }) {
   const { user } = useAuth();
   return <>
-    <DocSigns place={`Bình Dương, ${fmtDocDate()}`} people={[{ role: 'Người lập biểu', name: user?.fullName }, { role: 'Quản lý kho' }]} />
+    <DocSigns place={`${WAREHOUSE.city}, ${fmtDocDate()}`} people={[{ role: 'Người lập biểu', name: user?.fullName }, { role: 'Quản lý kho' }]} />
     <DocFoot code={code} />
   </>;
 }

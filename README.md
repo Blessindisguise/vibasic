@@ -82,6 +82,8 @@ Sau đó chạy lại API: nếu CSDL có thay đổi, API tự áp migration m�
 
 ### Dữ liệu mẫu
 
+- Kho đặt tại Số A15, NO-06B, Lô HH06, Khu ĐTM Việt Hưng, P. Giang Biên, Q. Long Biên, Hà Nội (`DbSeeder.Warehouse` ở server, `web/src/app/warehouse.ts` ở web). Nhà cung cấp ở làng nghề gỗ, mây tre quanh Hà Nội (Đồng Kỵ, Xuân Lai ở Bắc Ninh; Chương Mỹ ở Hà Nội). Khách hàng và địa chỉ giao hàng ở các quận nội thành Hà Nội. Tên doanh nghiệp đều là tên hư cấu.
+- Phiếu xuất đã giao ghi tài xế, số điện thoại và biển số xe (29C-…, 29H-…).
 - 14 mặt hàng thuộc 4 nhóm hàng và 3 nhà cung cấp. Trong đó có 1 mặt hàng mới nhập 10 ngày ("Chưa đủ dữ liệu") và 1 mặt hàng 8 tuần không có đơn ("Chậm luân chuyển").
 - 12 tuần vận hành mô phỏng theo bộ quy tắc Q1–Q20:
   - nhập tồn đầu kỳ ngày đầu;
