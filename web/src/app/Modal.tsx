@@ -22,7 +22,8 @@ export function Modal({ title, description, onClose, children, footer, width = 5
   return (
     <div
       onMouseDown={e => e.target === e.currentTarget && onClose()}
-      style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'var(--surface-overlay)', display: 'grid', placeItems: 'center', padding: 16 }}
+      // One shrinkable column: without it the column grows to the dialog's width and maxWidth 100% cannot keep it on a phone screen.
+      style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'var(--surface-overlay)', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', placeItems: 'center', padding: 16 }}
     >
       <div
         role="dialog" aria-modal="true" aria-labelledby={titleId}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Button, ConfirmDialog, DataTable, EmptyState, FilterBar, SelectField, StatusBadge, TextField, type DataTableColumn } from '../../../design';
+import { Button, DataTable, EmptyState, FilterBar, SelectField, StatusBadge, TextField, type DataTableColumn } from '../../../design';
+import { ConfirmDialog } from '../../../app/ConfirmDialog';
 import { useAuth, type Role } from '../../../app/auth';
 import { matches } from '../../../app/text';
 import { suggestFrom } from '../../../app/suggest';
@@ -94,7 +95,7 @@ export function AccountsPage() {
       )}
 
       {editing && <AccountDialog account={editing === 'new' ? null : editing} isSelf={editing !== 'new' && editing.id === user?.id} onClose={() => setEditing(null)} />}
-      <ConfirmDialog
+      <ConfirmDialog busy={setActive.isPending}
         open={!!deactivating} tone="danger"
         title={`Ngừng hoạt động tài khoản ${deactivating?.username}?`}
         description={deactivating ? `${deactivating.fullName}` : undefined}

@@ -88,17 +88,20 @@ function InventoryReport({ categoryId, productId, conditions }: { categoryId: st
     rows.map(r => [r.sku, r.productName, r.categoryName, r.supplierName, r.unit, r.lots, r.onHand, r.available, r.reserved, r.quarantined, r.locked, r.defective, r.ordered, r.net, r.rop ?? null, r.belowRop ? 'Có' : '']),
     ['BÁO CÁO TỒN KHO', sub]);
 
+  // Fits a 1366 px screen: the category is in the CSV and the printout, quarantined and locked share one column.
   const columns: DataTableColumn<InventoryRow>[] = [
     { key: 'sku', header: 'Mã SKU', width: 90, render: r => <Code>{r.sku}</Code> },
     { key: 'productName', header: 'Tên hàng' },
-    { key: 'categoryName', header: 'Nhóm hàng', width: 120 },
     { key: 'unit', header: 'ĐVT', width: 50 },
     { key: 'lots', header: 'Số lô', numeric: true, width: 52, render: r => fmt(r.lots) },
     { key: 'onHand', header: 'Tồn thực tế', numeric: true, width: 100, render: r => fmt(r.onHand) },
     { key: 'available', header: 'Khả dụng', numeric: true, width: 90, render: r => <b>{fmt(r.available)}</b> },
     { key: 'reserved', header: 'Giữ chỗ', numeric: true, width: 80, render: r => fmt(r.reserved) },
-    { key: 'quarantined', header: 'Cách ly', numeric: true, width: 80, render: r => fmt(r.quarantined) },
-    { key: 'locked', header: 'Đã khóa', numeric: true, width: 80, render: r => fmt(r.locked) },
+    {
+      key: 'blocked', header: 'Cách ly / khóa', numeric: true, width: 100,
+      render: r => r.quarantined + r.locked === 0 ? <span className="vb-muted">—</span>
+        : <span title={`Tạm cách ly ${fmt(r.quarantined)} · Đã khóa ${fmt(r.locked)}`}>{fmt(r.quarantined + r.locked)}</span>,
+    },
     { key: 'defective', header: 'Hàng lỗi', numeric: true, width: 72, render: r => (r.defective ? fmt(r.defective) : <span className="vb-muted">—</span>) },
     { key: 'net', header: 'Tồn ròng', numeric: true, width: 84, render: r => fmt(r.net) },
     { key: 'rop', header: 'ROP', numeric: true, width: 70, render: r => r.rop == null ? '—' : fmt(r.rop, 1) },

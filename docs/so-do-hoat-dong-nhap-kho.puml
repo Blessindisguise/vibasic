@@ -11,7 +11,7 @@ start
 :Tiếp nhận hàng hóa và chứng từ giao hàng;
 :Kiểm tra số lượng và chất lượng;
 
-repeat :Lập phiếu nhập kho: chọn nhà cung cấp,\nghi số chứng từ giao hàng. Mỗi mặt hàng nhập\nsố thực nhận, số không đạt và mô tả lỗi;
+repeat :Lập phiếu nhập kho: chọn nhà cung cấp, số chứng từ\ngiao hàng. Mỗi mặt hàng nhập số thực nhận,\nsố không đạt và mô tả lỗi;
   |Hệ thống Vibasic|
   :Kiểm tra dữ liệu phiếu nhập
   (mặt hàng thuộc nhà cung cấp, số lượng);
@@ -21,20 +21,24 @@ repeat while (Dữ liệu hợp lệ?) is (Không) not (Có)
 :Lưu phiếu "Đang nhập kho";
 :Tạo lô "Bình thường" cho phần đạt
 và lô "Tạm cách ly" cho phần không đạt;
-:Tạo mã lô và mã định danh từng sản phẩm
+:Cấp mã lô và mã định danh từng sản phẩm
 (sản phẩm ở trạng thái "Chờ nhập");
-:In tem lô và tem sản phẩm;
 
 |Nhân viên kho|
+:In tem lô và tem sản phẩm;
 :Dán tem, xếp hàng vào kho
 (hàng không đạt để ở khu riêng);
+note right
+  Phiếu "Đang nhập kho" vẫn sửa được
+  trước khi gửi duyệt
+end note
 
 repeat :Xác nhận nhập kho và gửi duyệt;
   |Hệ thống Vibasic|
-  :Chuyển phiếu sang "Chờ duyệt";
+  :Phiếu chuyển "Chờ duyệt";
   if (Có lô không đạt?) then (Có)
-    :Lập biên bản bất thường "Chờ duyệt"
-    cho mỗi lô không đạt (phạm vi cả lô);
+    :Tự lập biên bản bất thường "Chờ duyệt"
+    cho mỗi lô không đạt (phạm vi "Cả lô");
   else (Không)
   endif
   |Quản lý|
@@ -43,21 +47,30 @@ repeat :Xác nhận nhập kho và gửi duyệt;
   else (Không)
     :Nhập lý do từ chối;
     |Hệ thống Vibasic|
-    :Chuyển phiếu sang "Từ chối", ghi lý do;
+    :Phiếu chuyển "Từ chối", ghi lý do;
     |Nhân viên kho|
     :Sửa phiếu theo lý do từ chối
-    (mặt hàng đổi số lượng được cấp mã mới,
+    (lô đổi số lượng được cấp mã mới,
     phải in lại tem);
   endif
   |Nhân viên kho|
 repeat while (Phiếu bị từ chối?) is (Có) not (Không)
 
 |Hệ thống Vibasic|
-:Ghi người duyệt, chuyển phiếu sang "Đã duyệt";
+:Phiếu chuyển "Đã duyệt", ghi người duyệt;
 :Ghi nhận tồn của mọi lô trong phiếu,
-sản phẩm chuyển "Trong kho";
+sản phẩm chuyển "Trong kho"
+(lô "Tạm cách ly" chưa tính vào tồn khả dụng);
 :Kiểm tra ROP, cập nhật cảnh báo tồn kho thấp
 và đề xuất bổ sung hàng;
+note right
+  Quản lý có thể "Hủy duyệt" (nhập lý do) khi hàng
+  của phiếu chưa được dùng tới: chưa giữ chỗ hay xuất,
+  chưa vào kiểm kê, biên bản chưa có người nhận xử lý.
+  Khi đó tồn của phiếu được gỡ, phiếu và biên bản
+  về "Chờ duyệt", lô không đạt về "Tạm cách ly",
+  hệ thống kiểm tra lại ROP.
+end note
 
 if (Phiếu có lô không đạt?) then (Có)
   |Quản lý|
@@ -65,23 +78,25 @@ if (Phiếu có lô không đạt?) then (Có)
   if (Phê duyệt biên bản?) then (Có)
     :Chọn hướng xử lý và mô tả cách làm;
     |Hệ thống Vibasic|
-    :Khóa lô, loại khỏi tồn kho khả dụng,
-    biên bản chuyển "Chờ xử lý";
+    :Biên bản "Đã duyệt", tình trạng xử lý "Chờ xử lý",
+    lô chuyển "Đã khóa";
     note right
       Nhân viên nhận xử lý và hoàn thành
-      theo quy trình xử lý biên bản bất thường
+      theo sơ đồ xử lý biên bản bất thường
     end note
   else (Không)
     :Nhập lý do từ chối;
     |Hệ thống Vibasic|
-    :Lô trở về "Bình thường", được tính
-    vào tồn kho khả dụng;
+    :Biên bản "Từ chối", lô về "Bình thường",
+    được tính vào tồn kho khả dụng;
   endif
-  |Hệ thống Vibasic|
-  :Kiểm tra lại ROP;
+  :Kiểm tra ROP;
+  note right
+    Khi chưa có người nhận xử lý, Quản lý
+    "Hủy quyết định" được: biên bản về "Chờ duyệt"
+  end note
 else (Không)
 endif
 
-|Hệ thống Vibasic|
 stop
 @enduml

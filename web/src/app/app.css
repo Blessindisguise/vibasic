@@ -9,6 +9,10 @@ html, body, #root { height: 100%; }
 /* Phone header: the page title needs the room, so the user's name is hidden (logout stays). */
 @media (max-width: 480px) { .vb-shell-user { display: none !important; } }
 
+/* Design-system ConfirmDialog overlay (a grid around a 480 px dialog): one shrinkable column, so the dialog's maxWidth 100% keeps it
+   on a phone screen instead of running off the right edge. */
+div:has(> [role="dialog"][aria-labelledby="vb-dlg-t"]) { grid-template-columns: minmax(0, 1fr); }
+
 /* Staff sidebar on tablets: 48 px rows, 16 px labels (touch targets ≥ 44 px). */
 .vb-nav-item.vb-nav-item--touch { height: 48px; font-size: 16px; line-height: 24px; gap: 12px; padding: 0 12px; }
 
@@ -80,6 +84,14 @@ html, body, #root { height: 100%; }
   /* No flex and no fixed height on paper: Chrome then splits the sheet cleanly and keeps the signatures with the text. */
   .vb-doc, .vb-doc--wide { display: block; min-height: 0; }
   .vb-doc__foot { margin-top: 0; }
+}
+
+/* Stocktake count, one lot per row: lot · count · difference side by side on a landscape tablet, stacked on an upright tablet or a phone. */
+.vb-count-lot { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(260px, 1.3fr) minmax(200px, 1.2fr); gap: 16px; align-items: start; padding-bottom: 16px; border-bottom: 1px solid var(--border-subtle); }
+.vb-count-lot__diff { margin-top: 52px; }
+@media (max-width: 1023px) {
+  .vb-count-lot { grid-template-columns: minmax(0, 1fr); }
+  .vb-count-lot__diff { margin-top: 0; }
 }
 
 /* Whole-card tap target on warehouse screens (orders, pick queue). */

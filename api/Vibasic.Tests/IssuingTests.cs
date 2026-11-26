@@ -238,6 +238,26 @@ public class IssuingTests
     }
 
     [Fact]
+    public async Task Unpicking_puts_items_back_on_the_shelf_still_reserved_and_delivery_waits_for_them()
+    {
+        await using var c = await Setup();
+        var issue = await c.Ready("DH-T-P4", "MUO-01", 3);
+        var items = c.ItemsOf(issue).OrderBy(i => i.SerialCode).ToList();
+        await c.Issues.PickAsync(issue.IssueId, items.Select(i => i.SerialCode).ToList(), c.Staff);
+
+        var r = await c.Issues.UnpickAsync(issue.IssueId, [items[2].SerialCode.ToLower()], c.Staff);
+
+        Assert.Equal(new PickResult(1, 2, 3), r);
+        Assert.Null(items[2].PickedAt);
+        Assert.Equal(ItemStatus.Reserved, items[2].Status);   // still held for this issue
+        Assert.Equal(issue.IssueId, items[2].IssueDetail!.IssueId);
+        Assert.Equal(new PickResult(0, 2, 3), await c.Issues.UnpickAsync(issue.IssueId, [items[2].SerialCode], c.Staff)); // not picked: skipped
+        await Assert.ThrowsAsync<RuleException>(() => c.Issues.DeliverAsync(issue.IssueId, "Nguyễn Văn A", c.Staff));
+        // Only the picker may put items back.
+        await Assert.ThrowsAsync<RuleException>(() => c.Issues.UnpickAsync(issue.IssueId, [items[0].SerialCode], c.Staff2));
+    }
+
+    [Fact]
     public async Task Issue_picked_by_choosing_every_code_can_be_delivered()
     {
         await using var c = await Setup();

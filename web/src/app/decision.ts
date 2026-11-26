@@ -78,7 +78,7 @@ export const useProposals = (status?: ProposalStatus) =>
 
 function useRefresh() {
   const qc = useQueryClient();
-  return () => ['decision', 'products'].forEach(k => qc.invalidateQueries({ queryKey: [k] }));
+  return () => ['decision', 'products', 'dashboard', 'reports'].forEach(k => qc.invalidateQueries({ queryKey: [k] }));
 }
 
 export function useRecalculate() {

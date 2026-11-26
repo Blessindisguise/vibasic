@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertBanner, ApprovalStepper, Button, Checkbox, ConfirmDialog, DataTable, EmptyState, type DataTableColumn } from '../../design';
+import { AlertBanner, ApprovalStepper, Button, Checkbox, DataTable, EmptyState, type DataTableColumn } from '../../design';
+import { ConfirmDialog } from '../../app/ConfirmDialog';
 import { ApiError } from '../../app/api';
 import { fmt, fmtDateTime, fmtShort } from '../../app/format';
 import { SerialRanges } from '../../app/SerialRanges';
@@ -140,12 +141,12 @@ export function StocktakeDetail({ id, role, back }: { id: number; role: 'manager
           <DataTable columns={reportColumns} rows={reports} density={touch ? 'default' : 'compact'} onRowClick={r => nav(reportHref(role, r.id))} caption="Biên bản kèm theo" />
         </section>
       )}
-      <ConfirmDialog
+      <ConfirmDialog busy={action.isPending}
         open={dialog === 'approve'} title={`Duyệt phiếu ${h.code}?`}
         description={h.diffLots === 0 ? 'Khớp hệ thống.' : `${h.diffLots} lô chênh lệch · thiếu ${fmt(h.shortage)} · thừa ${fmt(h.surplus)}.`}
         confirmLabel="Duyệt và điều chỉnh" onConfirm={() => run('approve')} onCancel={() => setDialog(null)}
       />
-      <ConfirmDialog
+      <ConfirmDialog busy={action.isPending}
         open={dialog === 'reject'} tone="danger" requireReason title={`Từ chối phiếu ${h.code}?`}
         confirmLabel="Từ chối, kiểm lại" onConfirm={reason => run('reject', reason)} onCancel={() => setDialog(null)}
       />

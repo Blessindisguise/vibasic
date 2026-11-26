@@ -1,0 +1,42 @@
+@startuml
+!theme plain
+title Activity Diagram - Hủy đơn hàng (UC_20)
+
+|Quản lý|
+|Hệ thống Vibasic|
+|Nhân viên kho|
+
+|Quản lý|
+start
+:Nhận yêu cầu hủy đơn từ khách hàng
+(qua hệ thống bán hàng);
+:Chọn đơn ở màn "Đơn hàng chưa giao"
+hoặc trên phiếu xuất của đơn;
+:Bấm "Hủy đơn", nhập lý do hủy;
+
+|Hệ thống Vibasic|
+if (Đơn đã "Đã xuất" hoặc "Đã hủy"?) then (Có)
+  :Từ chối hủy, báo trạng thái hiện tại của đơn;
+  stop
+else (Không)
+endif
+
+if (Đơn có phiếu xuất "Chờ lấy hàng"?) then (Có)
+  :Phiếu xuất chuyển "Đã hủy"
+  (lý do "Đơn bị hủy: ..."),
+  nhả hàng đã giữ chỗ về "Trong kho",
+  gỡ người lấy hàng;
+else (Không)
+endif
+:Đơn chuyển "Đã hủy",
+ghi lý do, người hủy, thời điểm hủy;
+:Kiểm tra ROP theo tồn ròng mới
+(cảnh báo và đề xuất có thể tự đóng);
+
+if (Phiếu đã có hàng được lấy?) then (Có)
+  |Nhân viên kho|
+  :Trả hàng đã lấy về kệ;
+else (Không)
+endif
+stop
+@enduml

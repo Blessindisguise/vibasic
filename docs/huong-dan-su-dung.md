@@ -203,9 +203,10 @@ Màn hình có ba tab: **Đơn chờ xuất**, **Lấy hàng**, **Phiếu xuất
      - **Lấy cả lô (N cái):** chỉ hiện khi phiếu lấy toàn bộ phần còn lại của lô, cùng điều kiện với quét tem lô. Bấm một lần là đánh dấu đã lấy cả lô.
      - **Chọn mã:** mở danh sách các mã của phiếu ở lô đó. Bấm chọn từng mã, hoặc **Chọn tất cả**, rồi **Lấy N sản phẩm**. Chỉ chọn được mã có trong danh sách lấy hàng, nên thứ tự FIFO vẫn giữ đúng.
    - Quét tem vẫn là cách chính xác nhất. Khi chọn tay, chỉ chọn những sản phẩm đã thực sự lấy khỏi kệ.
+   - **Bỏ lấy:** lô đã có mã được lấy thì có thêm nút này, dùng khi lấy nhầm hoặc bấm **Chọn tất cả** quá tay. Chọn các mã cần trả lại kệ rồi bấm **Bỏ lấy N sản phẩm**. Các mã đó vẫn giữ chỗ cho phiếu và phải lấy lại trước khi giao.
 3. **Nhường phiếu:** dừng lấy hàng. Các mã đã quét được giữ nguyên và bàn giao cho người nhận phiếu sau.
 4. **Báo hàng lỗi** khi lấy hàng:
-   - Chọn các sản phẩm lỗi trong danh sách của phiếu, có ô tìm theo mã, vài số cuối, mã lô hoặc SKU. Ghi mô tả. Hệ thống lập biên bản bất thường, tách các sản phẩm đó khỏi tồn kho và **thay bằng sản phẩm kế tiếp theo FIFO**.
+   - Chọn các sản phẩm lỗi trong danh sách của phiếu, có ô tìm theo mã, vài số cuối, mã lô hoặc SKU. Quét tem vào ô tìm cũng được: mã đó được chọn luôn, biên bản chưa được gửi. Ghi mô tả. Hệ thống lập biên bản bất thường, tách các sản phẩm đó khỏi tồn kho và **thay bằng sản phẩm kế tiếp theo FIFO**.
    - Để sản phẩm lỗi ở khu hàng lỗi, rồi quét sản phẩm thay thế theo danh sách mới.
    - **Nghi lỗi cả lô** (mốc, ẩm, lỗi sấy…): cả lô chuyển "Tạm cách ly" và không xuất cho tới khi quản lý xử lý. Các sản phẩm đã lấy từ lô đó được đổi sang lô kế tiếp; trả lại kệ các sản phẩm đã lấy từ lô đó.
    - Không đủ hàng thay thế thì phiếu chuyển **Đã hủy** và đơn chuyển "Chờ xử lý". Trả lại kệ các mã ghi trên phiếu đã hủy; lập phiếu mới khi có hàng.

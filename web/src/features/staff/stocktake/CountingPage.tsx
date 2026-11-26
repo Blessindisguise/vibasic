@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertBanner, Button, Checkbox, ConfirmDialog, EmptyState, Icon, ScanInput, SearchField, TextField } from '../../../design';
+import { AlertBanner, Button, Checkbox, EmptyState, Icon, ScanInput, SearchField, TextField } from '../../../design';
+import { ConfirmDialog } from '../../../app/ConfirmDialog';
 import { fmt, fmtDate } from '../../../app/format';
 import { Modal } from '../../../app/Modal';
 import { Segmented } from '../../../app/Segmented';
@@ -162,7 +163,7 @@ export function CountingPage({ planId }: { planId: number }) {
         </section>
       ))}
 
-      <ConfirmDialog
+      <ConfirmDialog busy={submit.isPending}
         open={confirm} title={`Gửi phiếu kiểm kê cho kế hoạch ${p.code}?`}
         description={`${lots.length} lô đã đếm, ${diffs} lô có chênh lệch.`}
         confirmLabel="Gửi phiếu" onConfirm={send} onCancel={() => setConfirm(false)}
@@ -181,7 +182,7 @@ function LotCount({ lot: l, draft: d, errors, onChange, onDefect }: {
   const expected = expectedOf(l, d);
   const diff = actual == null ? null : actual - expected;
   return (
-    <div id={`lot-${l.receiptDetailId}`} style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) minmax(260px, 1.3fr) minmax(200px, 1.2fr)', gap: 16, alignItems: 'start', paddingBottom: 16, borderBottom: '1px solid var(--border-subtle)' }}>
+    <div id={`lot-${l.receiptDetailId}`} className="vb-count-lot">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <span style={{ font: '600 17px/24px var(--font-sans)', letterSpacing: 'var(--tracking-code)' }}>{l.lotCode}</span>
         <span className="vb-row" style={{ gap: 8 }}><LotStatusBadge status={l.status} /><span className="vb-muted">nhập {fmtDate(l.receivedDate)}</span></span>
@@ -205,7 +206,7 @@ function LotCount({ lot: l, draft: d, errors, onChange, onDefect }: {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {diff == null ? null : (
-          <span style={{ marginTop: 52, font: 'var(--type-touch-body)', fontVariantNumeric: 'tabular-nums' }}>
+          <span className="vb-count-lot__diff" style={{ font: 'var(--type-touch-body)', fontVariantNumeric: 'tabular-nums' }}>
             Trên kệ theo hệ thống {fmt(expected)} ·{' '}
             {diff === 0 ? <b style={{ color: 'var(--green-700)' }}><Icon name="check" size={16} style={{ verticalAlign: -3 }} /> Khớp</b>
               : <b style={{ color: diff < 0 ? 'var(--red-700)' : 'var(--blue-700)' }}>{diff < 0 ? 'Thiếu' : 'Thừa'} {fmt(Math.abs(diff))} {l.unit}</b>}
@@ -253,7 +254,8 @@ function ScanCounter({ lot: l, draft: d, onChange, error }: {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {!d.done && (
-        <ScanInput size="md" value={code} onChange={setCode} onSubmit={scan} scanKey={feedback?.key ?? 0} label="Quét tem sản phẩm"
+        // After a scan the field is rebuilt (scanKey): autoFocus puts the cursor back for the next scan.
+        <ScanInput size="md" value={code} onChange={setCode} onSubmit={scan} scanKey={feedback?.key ?? 0} autoFocus={feedback != null} label="Quét tem sản phẩm"
           placeholder="SP-…" state={feedback?.state ?? 'idle'} message={feedback?.message ?? `Quét lần lượt từng sản phẩm của lô ${l.lotCode}.`} />
       )}
       <div className="vb-row" style={{ gap: 8 }}>
@@ -282,7 +284,8 @@ function StockDefectDialog({ planId, lot, onClose }: { planId: number; lot: Shee
   const toast = useToast();
   const [code, setCode] = useState('');
   const [serials, setSerials] = useState<string[]>([]);
-  const [feedback, setFeedback] = useState<{ state: 'success' | 'error'; message: string; key: number } | null>(null);
+  // focus: the result came from the scan field, so the cursor goes back there (not after tapping a code in the list).
+  const [feedback, setFeedback] = useState<{ state: 'success' | 'error'; message: string; key: number; focus: boolean } | null>(null);
   const [description, setDescription] = useState('');
   const [proposal, setProposal] = useState('');
   const [wholeLot, setWholeLot] = useState(false);
@@ -296,11 +299,11 @@ function StockDefectDialog({ planId, lot, onClose }: { planId: number; lot: Shee
   const shown = choosable.filter(s => !serials.includes(s) && matches(filter, s));
   const SHOW_MAX = 60;
 
-  const scan = (value: string) => {
+  const scan = (value: string, scanned = true) => {
     const s = value.trim().toUpperCase();
     setCode('');
     if (!s) return;
-    const say = (state: 'success' | 'error', message: string) => setFeedback({ state, message, key: Date.now() });
+    const say = (state: 'success' | 'error', message: string) => setFeedback({ state, message, key: Date.now(), focus: scanned });
     const item = bySerial.get(s);
     if (s === lot.lotCode) return say('error', `${s} là mã lô. Quét tem sản phẩm bị lỗi.`);
     if (!item) return say('error', `${s} không thuộc lô ${lot.lotCode}.`);
@@ -333,7 +336,7 @@ function StockDefectDialog({ planId, lot, onClose }: { planId: number; lot: Shee
       {formError(file.error) && <AlertBanner tone="danger">{formError(file.error)}</AlertBanner>}
       {items.isPending ? <Loading /> : items.isError ? <ListError onRetry={() => items.refetch()} /> : (
         <>
-          <ScanInput size="md" value={code} onChange={setCode} onSubmit={scan} scanKey={feedback?.key ?? 0} label="Quét tem sản phẩm lỗi"
+          <ScanInput size="md" value={code} onChange={setCode} onSubmit={v => scan(v)} scanKey={feedback?.key ?? 0} autoFocus={feedback?.focus ?? true} label="Quét tem sản phẩm lỗi"
             placeholder="SP-…" state={feedback?.state ?? 'idle'} message={feedback?.message ?? 'Quét lần lượt từng sản phẩm bị lỗi, hoặc tìm và chọn mã bên dưới.'} />
           <div className="vb-field">
             <span className="vb-field__label">Hoặc tìm và chọn mã <span className="vb-muted">({fmt(choosable.length)} sản phẩm của lô còn trên kệ)</span></span>
@@ -343,7 +346,7 @@ function StockDefectDialog({ planId, lot, onClose }: { planId: number; lot: Shee
               : (
                 <div className="vb-serials" style={{ maxHeight: 180, overflow: 'auto' }}>
                   {shown.slice(0, SHOW_MAX).map(s => (
-                    <button key={s} type="button" className="vb-serial" onClick={() => scan(s)} title="Chọn mã này là hàng lỗi">{s}</button>
+                    <button key={s} type="button" className="vb-serial" onClick={() => scan(s, false)} title="Chọn mã này là hàng lỗi">{s}</button>
                   ))}
                   {shown.length > SHOW_MAX && <span className="vb-muted" style={{ alignSelf: 'center' }}>… còn {fmt(shown.length - SHOW_MAX)} mã, gõ thêm để lọc.</span>}
                 </div>

@@ -48,25 +48,37 @@ export function AbnormalReportsPage({ role, basePath }: { role: 'manager' | 'sta
     meta: <ReportStateBadge state={reportState(r)} />,
   }));
 
+  // Fits a 1366 px screen next to the sidebar: source sits under the date, scope under the quantity.
   const columns: DataTableColumn<ReportRow>[] = [
-    { key: 'code', header: 'Biên bản', width: 130, render: r => <Code>{r.code}</Code> },
+    { key: 'code', header: 'Biên bản', width: 120, render: r => <Code>{r.code}</Code> },
     {
       key: 'createdAt', header: 'Lập', width: 140,
-      render: r => <span style={{ display: 'inline-flex', flexDirection: 'column' }}><span style={{ whiteSpace: 'nowrap' }}>{fmtShort(r.createdAt)}</span><span className="vb-muted" style={{ fontSize: 12 }}>{r.creatorName}</span></span>,
+      render: r => (
+        <span style={{ display: 'inline-flex', flexDirection: 'column' }}>
+          <span style={{ whiteSpace: 'nowrap' }}>{fmtShort(r.createdAt)}</span>
+          <span className="vb-muted" style={{ fontSize: 12 }}>{r.creatorName} · {SOURCE_LABEL[r.sourceType]}</span>
+        </span>
+      ),
     },
-    { key: 'source', header: 'Phát hiện khi', width: 110, render: r => SOURCE_LABEL[r.sourceType] },
     { key: 'lot', header: 'Lô · mặt hàng', render: r => <span><Code>{r.lotCode}</Code> <span className="vb-muted">{r.sku}</span> {r.productName}</span> },
-    { key: 'quantity', header: 'SL lỗi', numeric: true, width: 80, render: r => `${fmt(r.quantity)} ${r.unit}` },
-    { key: 'scope', header: 'Phạm vi', width: 120, render: r => SCOPE_LABEL[r.scope] },
     {
-      key: 'handling', header: 'Hướng xử lý', width: 170,
+      key: 'quantity', header: 'SL lỗi', numeric: true, width: 100,
+      render: r => (
+        <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+          <span style={{ whiteSpace: 'nowrap' }}>{fmt(r.quantity)} {r.unit}</span>
+          <span className="vb-muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{SCOPE_LABEL[r.scope]}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'handling', header: 'Hướng xử lý', width: 150,
       render: r => r.handlingMethod
         ? <span title={r.handlingPlan}>{HANDLING_METHOD_LABEL[r.handlingMethod]}</span>
         : r.handlingPlan ? <span className="vb-muted" title={r.handlingPlan}>Có đề xuất</span> : <span className="vb-muted">—</span>,
     },
-    { key: 'status', header: 'Trạng thái', width: 170, render: r => <ReportStatusCell report={r} /> },
+    { key: 'status', header: 'Trạng thái', width: 160, render: r => <ReportStatusCell report={r} /> },
     {
-      key: 'actions', header: '', width: role === 'manager' ? 250 : 200, align: 'right' as const,
+      key: 'actions', header: '', width: role === 'manager' ? 230 : 200, align: 'right' as const,
       render: (r: ReportRow) => role === 'manager'
         ? (r.status === 'pending' || reportState(r) === 'waiting' ? <ReportDecision report={r} /> : <HandlingActions report={r} role={role} />)
         : <HandlingActions report={r} role={role} size="md" />,

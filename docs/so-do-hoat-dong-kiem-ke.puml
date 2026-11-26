@@ -9,11 +9,11 @@ title Activity Diagram - Kiểm kê và điều chỉnh tồn kho
 |Quản lý|
 start
 :Lập kế hoạch kiểm kê
-(loại kế hoạch, ngày dự kiến, loại phạm vi, ghi chú);
-if (Phạm vi là một số lô nhất định?) then (Có)
+(loại kế hoạch, ngày dự kiến, phạm vi, ghi chú);
+if (Phạm vi "Một số lô"?) then (Có)
   :Chọn các lô cần kiểm kê (lô còn tồn);
 else (Không)
-  :Phạm vi là toàn bộ kho;
+  :Phạm vi "Toàn bộ kho";
 endif
 
 |Hệ thống Vibasic|
@@ -27,26 +27,26 @@ end note
 |Nhân viên kho|
 repeat :Chọn kế hoạch kiểm kê cần thực hiện;
   |Hệ thống Vibasic|
-  :Xác định các lô cần kiểm theo phạm vi
+  :Lập danh sách lô cần kiểm theo phạm vi
   (toàn bộ kho: mọi lô còn tồn,
   kể cả lô tạm cách ly và đã khóa);
 
   |Nhân viên kho|
   repeat :Đếm từng lô: nhập số thực tế, hoặc quét tem\ntừng sản phẩm và ghi số sản phẩm không có tem;
-    |Hệ thống Vibasic|
-    :Lưu nháp số đếm và thời điểm đếm lô;
-    :Tính số trên kệ tại thời điểm đếm,
-    hiện chênh lệch sau khi đếm xong lô;
-    |Nhân viên kho|
-    if (Phát hiện hàng lỗi hoặc bất thường?) then (Có)
-      :Báo hàng lỗi: quét tem hoặc chọn mã,
-      mô tả lỗi, đề xuất hướng xử lý;
+    :Lưu nháp số đếm và thời điểm đếm
+    trên máy đang dùng;
+    if (Phát hiện hàng lỗi?) then (Có)
+      :Báo hàng lỗi: quét tem hoặc chọn mã, mô tả lỗi,
+      đề xuất hướng xử lý (tick "Nghi lỗi cả lô" nếu cần);
       |Hệ thống Vibasic|
       :Lập biên bản bất thường "Chờ duyệt",
-      tách sản phẩm lỗi, thay hàng đang
-      giữ chỗ trên phiếu xuất theo FIFO;
+      sản phẩm được chọn chuyển "Lỗi"
+      (nghi lỗi cả lô thì lô chuyển "Tạm cách ly");
+      :Thay theo FIFO hàng đang giữ chỗ trên phiếu xuất
+      (không đủ thì phiếu "Đã hủy", đơn "Chờ xử lý"),
+      kiểm tra ROP;
       note right
-        Xử lý tiếp theo quy trình
+        Xử lý tiếp theo sơ đồ
         xử lý biên bản bất thường
       end note
       |Nhân viên kho|
@@ -60,8 +60,15 @@ repeat :Chọn kế hoạch kiểm kê cần thực hiện;
 
   :Gửi phiếu kiểm kê;
   |Hệ thống Vibasic|
+  :Tính số hệ thống của từng lô
+  tại thời điểm đếm lô đó;
   :Kiểm tra đủ mọi lô, đủ lý do chênh lệch,
-  lô không nằm trong phiếu khác đang chờ duyệt;
+  mã quét hợp lệ, lô không nằm trong
+  phiếu khác đang chờ duyệt;
+  note right
+    Dữ liệu chưa hợp lệ thì báo lỗi theo từng lô,
+    nhân viên sửa rồi gửi lại
+  end note
   :Lưu phiếu kiểm kê "Chờ duyệt",
   kế hoạch chuyển "Đang kiểm kê";
 
@@ -71,23 +78,28 @@ repeat :Chọn kế hoạch kiểm kê cần thực hiện;
   else (Không)
     :Nhập lý do từ chối;
     |Hệ thống Vibasic|
-    :Chuyển phiếu sang "Từ chối", giữ nguyên tồn kho,
+    :Phiếu chuyển "Từ chối", giữ nguyên tồn kho,
     kế hoạch trở về "Chờ thực hiện" để kiểm lại;
+    note right
+      Quản lý sửa lại được kế hoạch
+      trước khi kiểm lại
+    end note
   endif
   |Hệ thống Vibasic|
 repeat while (Phiếu bị từ chối?) is (Có) not (Không)
 
-:Ghi người duyệt, chuyển phiếu sang "Đã duyệt";
-if (Có chênh lệch?) then (Có)
-  :Điều chỉnh tồn của các lô có chênh lệch:
-  phần thiếu chuyển "Thất thoát" (lô quét tem: đúng
-  các mã không quét thấy), phần thừa được tạo mã mới;
-  :Thay theo FIFO các sản phẩm thất thoát đang
-  giữ chỗ trên phiếu xuất (không đủ thì phiếu đó "Đã hủy");
-  :Kiểm tra ROP, cập nhật cảnh báo tồn kho thấp
-  và đề xuất bổ sung hàng;
-else (Không)
-endif
-:Cập nhật kế hoạch kiểm kê sang "Hoàn thành";
+:Phiếu chuyển "Đã duyệt", ghi người duyệt;
+:Điều chỉnh tồn từng lô theo số đếm.
+Lô nhập số: phần thiếu chuyển "Thất thoát"
+(hàng chưa giữ chỗ trước, rồi hàng giữ chỗ chưa lấy),
+phần thừa được cấp mã mới.
+Lô quét tem: mã không quét thấy chuyển "Thất thoát",
+mã "Thất thoát" quét thấy về "Trong kho",
+sản phẩm không có tem được cấp mã mới;
+:Thay theo FIFO hàng giữ chỗ bị thất thoát
+(không đủ thì phiếu xuất "Đã hủy", đơn "Chờ xử lý");
+:Kế hoạch kiểm kê chuyển "Hoàn thành";
+:Kiểm tra ROP, cập nhật cảnh báo tồn kho thấp
+và đề xuất bổ sung hàng;
 stop
 @enduml

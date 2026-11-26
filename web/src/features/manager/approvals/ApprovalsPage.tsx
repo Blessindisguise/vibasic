@@ -119,17 +119,25 @@ function PendingReports({ search }: { search: string }) {
   const nav = useNavigate();
 
   const columns: DataTableColumn<ReportRow>[] = [
-    { key: 'code', header: 'Biên bản', width: 130, render: r => <Code>{r.code}</Code> },
+    { key: 'code', header: 'Biên bản', width: 120, render: r => <Code>{r.code}</Code> },
     {
-      key: 'createdAt', header: 'Lập', width: 140,
+      key: 'createdAt', header: 'Lập', width: 130,
       render: r => <span style={{ display: 'inline-flex', flexDirection: 'column' }}><span style={{ whiteSpace: 'nowrap' }}>{fmtShort(r.createdAt)}</span><span className="vb-muted" style={{ fontSize: 12 }}>{r.creatorName}</span></span>,
     },
     { key: 'lot', header: 'Lô · mặt hàng', render: r => <span><Code>{r.lotCode}</Code> <span className="vb-muted">{r.sku}</span> {r.productName}</span> },
     { key: 'description', header: 'Mô tả lỗi', render: r => <span style={{ whiteSpace: 'normal' }}>{r.description}</span> },
-    { key: 'quantity', header: 'SL lỗi', numeric: true, width: 80, render: r => fmt(r.quantity) },
-    { key: 'scope', header: 'Phạm vi', width: 130, render: r => SCOPE_LABEL[r.scope] },
     {
-      key: 'receipt', header: 'Phát hiện khi', width: 210,
+      // Scope under the quantity, so the table fits a 1366 px screen.
+      key: 'quantity', header: 'SL lỗi', numeric: true, width: 100,
+      render: r => (
+        <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+          <span style={{ whiteSpace: 'nowrap' }}>{fmt(r.quantity)} {r.unit}</span>
+          <span className="vb-muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{SCOPE_LABEL[r.scope]}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'receipt', header: 'Phát hiện khi', width: 200,
       render: r => r.sourceType === 'issue' && r.issueId
         ? (
           <button type="button" className="vb-btn vb-btn--ghost vb-btn--sm" onClick={e => { e.stopPropagation(); nav(`/ql/xuat-kho/${r.issueId}`); }}>

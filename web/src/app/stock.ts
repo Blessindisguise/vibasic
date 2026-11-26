@@ -86,7 +86,7 @@ export const useStocktake = (id: number) => useQuery({ queryKey: ['stocktake', i
 /** Stocktake changes touch plans, lots, stock, issues and approvals. */
 function useRefresh() {
   const qc = useQueryClient();
-  return () => ['plans', 'stocktakes', 'stocktake', 'lots', 'lot', 'products', 'approvals', 'abnormal-reports', 'issues', 'issue', 'orders', 'decision']
+  return () => ['plans', 'stocktakes', 'stocktake', 'lots', 'lot', 'products', 'approvals', 'abnormal-reports', 'issues', 'issue', 'orders', 'decision', 'dashboard', 'reports']
     .forEach(k => qc.invalidateQueries({ queryKey: [k] }));
 }
 

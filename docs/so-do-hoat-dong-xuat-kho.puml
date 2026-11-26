@@ -8,57 +8,76 @@ title Activity Diagram - Quy trình xuất kho
 |Hệ thống Vibasic|
 start
 :Tiếp nhận đơn hàng từ hệ thống bán hàng
-(đơn "Chưa xuất"), kiểm tra ROP;
+(đơn "Chưa xuất"), kiểm tra ROP theo tồn ròng;
 
 |Nhân viên kho|
-:Chọn đơn hàng cần xuất;
+:Chọn đơn hàng cần xuất
+(đơn "Chưa xuất" hoặc "Chờ xử lý");
 
 |Hệ thống Vibasic|
-:Trích xuất danh sách sản phẩm và số lượng cần xuất;
 :Kiểm tra tồn kho khả dụng
-(chỉ lô "Bình thường", sản phẩm chưa giữ chỗ);
+(lô "Bình thường", sản phẩm "Trong kho" chưa giữ chỗ);
 :Phân bổ lô và mã sản phẩm theo FIFO,
 hiển thị phần thiếu nếu có;
 
-|Nhân viên kho|
-:Xác nhận lập phiếu xuất;
-
-|Hệ thống Vibasic|
 if (Đủ hàng tồn kho?) then (Không)
-  :Thông báo không đủ hàng,
-  đơn chuyển "Chờ xử lý";
+  |Nhân viên kho|
+  :Bấm "Ghi nhận thiếu hàng";
+  |Hệ thống Vibasic|
+  :Đơn chuyển "Chờ xử lý";
   note right
     Khi hàng về đủ, đơn có dấu "Đủ hàng"
     để lập phiếu lại
   end note
   stop
 else (Có)
+  |Nhân viên kho|
+  :Bấm "Lập phiếu xuất";
+  |Hệ thống Vibasic|
   :Giữ chỗ sản phẩm theo FIFO ("Đã giữ chỗ"),
   tạo phiếu xuất "Chờ lấy hàng",
   đơn chuyển "Đang xuất";
   note right
     Phiếu xuất không qua bước duyệt.
-    Quản lý vẫn có thể hủy đơn (khách hủy)
-    hoặc gỡ người lấy hàng.
+    Quản lý có thể hủy đơn khi khách hủy
+    (xem sơ đồ Hủy đơn hàng).
   end note
 endif
 
 |Nhân viên kho|
-:Nhận phiếu ("Bắt đầu lấy hàng");
+:Nhận phiếu: bấm "Bắt đầu lấy hàng"
+hoặc quét mã đầu tiên;
 |Hệ thống Vibasic|
-:Ghi người lấy hàng, mỗi lúc một nhân viên
-(người khác chỉ xem được phiếu);
+if (Phiếu đang do người khác giữ, chưa quá 3 ngày?) then (Có)
+  :Từ chối, báo tên người đang giữ
+  và hạn giữ phiếu;
+  stop
+else (Không)
+  :Ghi người lấy hàng, hạn giữ phiếu
+  3 ngày tính từ lúc nhận;
+  note right
+    Quá hạn thì nhân viên khác "Nhận lại phiếu".
+    Người lấy có thể "Nhường phiếu", Quản lý có thể
+    "Gỡ người lấy hàng" bất cứ lúc nào.
+    Hàng đã lấy vẫn giữ nguyên trên phiếu.
+  end note
+endif
 
 |Nhân viên kho|
-repeat :Lấy hàng: quét tem sản phẩm, quét tem lô,\nhoặc bấm "Chọn mã", "Lấy cả lô";
+repeat :Lấy hàng: quét tem sản phẩm, quét tem lô,\nbấm "Lấy cả lô" hoặc "Chọn mã";
   |Hệ thống Vibasic|
   if (Mã hợp lệ?) then (Có)
     :Đánh dấu sản phẩm đã lấy, cập nhật tiến độ
-    (mã khác nhưng cùng lô thì đổi chỗ giữ);
+    (mã khác nhưng cùng lô thì đổi chỗ giữ,
+    mã đã lấy rồi thì không tính thêm);
+    note right
+      "Lấy cả lô" chỉ dùng được khi phiếu
+      giữ hết phần còn trên kệ của lô
+    end note
   else (Không)
     :Từ chối mã và báo lý do
-    (ngoài phiếu, sai lô FIFO, lô bị khóa
-    hoặc cách ly, sản phẩm lỗi);
+    (ngoài phiếu, sai lô FIFO, lô bị khóa hoặc cách ly,
+    sản phẩm lỗi, đã lấy cho phiếu khác);
   endif
   |Nhân viên kho|
   :Kiểm tra số lượng và chất lượng;
@@ -68,14 +87,19 @@ repeat :Lấy hàng: quét tem sản phẩm, quét tem lô,\nhoặc bấm "Chọ
     (tick "Nghi lỗi cả lô" nếu cần);
     |Hệ thống Vibasic|
     :Lập biên bản bất thường "Chờ duyệt" cho mỗi lô,
-    tách sản phẩm lỗi (trạng thái "Lỗi"),
-    cả lô thì lô chuyển "Tạm cách ly";
+    sản phẩm được chọn chuyển "Lỗi";
+    if (Nghi lỗi cả lô?) then (Có)
+      :Lô chuyển "Tạm cách ly": mọi hàng giữ chỗ
+      của lô (trên mọi phiếu) cần thay,
+      hàng đã lấy của lô phải trả kệ;
+    else (Không)
+    endif
+    :Tìm hàng thay thế theo FIFO, kiểm tra ROP;
     note right
       Quản lý xét biên bản theo
-      quy trình xử lý biên bản bất thường,
+      sơ đồ xử lý biên bản bất thường,
       việc lấy hàng không phải chờ
     end note
-    :Tìm sản phẩm thay thế theo FIFO ngay;
     if (Đủ hàng thay thế?) then (Có)
       :Cập nhật danh sách lấy hàng;
     else (Không)
@@ -90,15 +114,15 @@ repeat :Lấy hàng: quét tem sản phẩm, quét tem lô,\nhoặc bấm "Chọ
   |Nhân viên kho|
 repeat while (Còn sản phẩm chưa lấy?) is (Có) not (Không)
 
-:Xác nhận giao hàng: người nhận hàng tại kho,
-số điện thoại người nhận, biển số xe;
+:Xác nhận giao hàng: tên người nhận (bắt buộc),
+số điện thoại, biển số xe (không bắt buộc);
 
 |Hệ thống Vibasic|
 :Kiểm tra đã lấy đủ sản phẩm
 và thông tin giao hàng hợp lệ;
-:Chuyển sản phẩm sang "Đã xuất",
+:Sản phẩm chuyển "Đã xuất",
 trừ số lượng tồn của từng lô;
-:Lưu biên bản giao hàng (người nhận, số điện thoại,
+:Lưu thông tin giao hàng (người nhận, số điện thoại,
 biển số xe, nhân viên giao, thời điểm giao);
 :Phiếu xuất và đơn hàng chuyển "Đã xuất";
 :Kiểm tra ROP, cập nhật cảnh báo tồn kho thấp

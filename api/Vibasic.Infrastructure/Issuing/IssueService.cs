@@ -327,15 +327,7 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, IClock clock
         var issue = await LoadAsync(id);
         EnsureStatus(issue, IssueStatus.Ready, "không lấy hàng được");
         EnsurePicker(issue, userId);
-        var wanted = (serials ?? []).Select(s => CatalogService.Clean(s)?.ToUpperInvariant()).OfType<string>().Distinct().ToList();
-        new Validator().Check(wanted.Count > 0, "serials", "Chọn sản phẩm cần lấy.").ThrowIfAny();
-
-        var items = issue.Details.SelectMany(d => d.Items).ToList();
-        var bySerial = items.ToDictionary(i => i.SerialCode);
-        var unknown = wanted.Where(s => !bySerial.ContainsKey(s)).ToList();
-        if (unknown.Count > 0)
-            throw new RuleException($"Không có trong phiếu {issue.Code}: {string.Join(", ", unknown.Take(5))}{(unknown.Count > 5 ? "…" : "")}.");
-        var chosen = wanted.Select(s => bySerial[s]).ToList();
+        var (items, chosen) = Chosen(issue, serials, "Chọn sản phẩm cần lấy.");
         var blocked = chosen.FirstOrDefault(i => i.ReceiptDetail.Status != LotStatus.Normal);
         if (blocked is not null)
             throw new RuleException($"Lô {blocked.ReceiptDetail.LotCode} đang “{Labels<LotStatus>.ToLabel(blocked.ReceiptDetail.Status)}”, không lấy hàng của lô này.");
@@ -345,6 +337,37 @@ public class IssueService(VibasicDbContext db, CodeGenerator codes, IClock clock
         foreach (var item in chosen.Where(i => i.PickedAt is null)) { item.PickedAt = now; added++; }
         await db.SaveChangesAsync();
         return new PickResult(added, items.Count(i => i.PickedAt != null), items.Count);
+    }
+
+    /// <summary>
+    /// "Bỏ lấy": the picker put items back on the shelf (taken by mistake, or "Chọn tất cả" tapped too soon). They stay reserved for
+    /// this issue, only no longer counted as taken, so delivery waits until they are picked again. Codes not picked are skipped;
+    /// <see cref="PickResult.Added"/> is the number of items put back.
+    /// </summary>
+    public async Task<PickResult> UnpickAsync(int id, List<string>? serials, int userId)
+    {
+        var issue = await LoadAsync(id);
+        EnsureStatus(issue, IssueStatus.Ready, "không bỏ lấy được");
+        EnsurePicker(issue, userId);
+        var (items, chosen) = Chosen(issue, serials, "Chọn sản phẩm cần bỏ lấy.");
+
+        var removed = 0;
+        foreach (var item in chosen.Where(i => i.PickedAt is not null)) { item.PickedAt = null; removed++; }
+        await db.SaveChangesAsync();
+        return new PickResult(removed, items.Count(i => i.PickedAt != null), items.Count);
+    }
+
+    /// <summary>The issue's items, and those named by <paramref name="serials"/> (all must be on the issue: all or nothing).</summary>
+    private static (List<StockItem> Items, List<StockItem> Chosen) Chosen(GoodsIssue issue, List<string>? serials, string emptyMessage)
+    {
+        var wanted = (serials ?? []).Select(s => CatalogService.Clean(s)?.ToUpperInvariant()).OfType<string>().Distinct().ToList();
+        new Validator().Check(wanted.Count > 0, "serials", emptyMessage).ThrowIfAny();
+        var items = issue.Details.SelectMany(d => d.Items).ToList();
+        var bySerial = items.ToDictionary(i => i.SerialCode);
+        var unknown = wanted.Where(s => !bySerial.ContainsKey(s)).ToList();
+        if (unknown.Count > 0)
+            throw new RuleException($"Không có trong phiếu {issue.Code}: {string.Join(", ", unknown.Take(5))}{(unknown.Count > 5 ? "…" : "")}.");
+        return (items, wanted.Select(s => bySerial[s]).ToList());
     }
 
     /// <summary>

@@ -64,7 +64,8 @@ export function LotLookupPage({ role, basePath }: { role: 'manager' | 'staff'; b
         <ScanInput
           size={touch ? 'lg' : 'md'} label="Quét hoặc tìm lô" placeholder="Mã lô, mã SP-…, SKU, tên hàng, phiếu nhập" value={code}
           onChange={v => { setCode(v); if (scan.state === 'error') setScan({ state: 'idle', key: scan.key }); }}
-          onSubmit={submitScan} state={scan.state} message={scan.message} scanKey={scan.key}
+          // A failed lookup rebuilds the field (scanKey): put the cursor back so the next scan goes in.
+          onSubmit={submitScan} state={scan.state} message={scan.message} scanKey={scan.key} autoFocus={scan.key !== 0}
           suggestions={lotSuggestions(suggest.data, code)} onPickSuggestion={s => openSuggestion(s.value as LotSuggestion | undefined)}
         />
         <div className="vb-row" style={{ gap: 12, alignItems: 'flex-end' }}>

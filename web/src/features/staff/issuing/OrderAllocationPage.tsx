@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertBanner, Button, ConfirmDialog, LotCard } from '../../../design';
+import { AlertBanner, Button, LotCard } from '../../../design';
+import { ConfirmDialog } from '../../../app/ConfirmDialog';
 import { fmt, fmtDate, fmtDateTime } from '../../../app/format';
 import { useToast } from '../../../app/toast';
 import { Code, ListError, Loading } from '../../../app/ui';
@@ -101,7 +102,7 @@ export function OrderAllocationPage({ orderId }: { orderId: number }) {
       ))}
 
       {a.sufficient ? (
-        <ConfirmDialog
+        <ConfirmDialog busy={create.isPending}
           open={confirmOpen && canIssue} title={`Lập phiếu xuất cho đơn ${order?.externalCode ?? ''}?`}
           description={order?.customerName ? `Khách: ${order.customerName}` : undefined}
           confirmLabel="Lập phiếu" onCancel={() => setConfirmOpen(false)} onConfirm={confirm}
@@ -117,7 +118,7 @@ export function OrderAllocationPage({ orderId }: { orderId: number }) {
           <div style={{ fontVariantNumeric: 'tabular-nums' }}>Tổng <b>{fmt(totalItems)}</b> sản phẩm · {fmt(totalLots)} lô</div>
         </ConfirmDialog>
       ) : (
-        <ConfirmDialog
+        <ConfirmDialog busy={create.isPending}
           open={confirmOpen && canIssue} tone="danger" title={`Ghi nhận thiếu hàng cho đơn ${order?.externalCode ?? ''}?`}
           description={order?.customerName ? `Khách: ${order.customerName}` : undefined}
           confirmLabel="Ghi nhận thiếu hàng" onCancel={() => setConfirmOpen(false)} onConfirm={confirm}

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, ConfirmDialog, DataTable, EmptyState, FilterBar, KpiTile, PriorityChip, StatusBadge, TextField, type DataTableColumn } from '../../design';
+import { Button, DataTable, EmptyState, FilterBar, KpiTile, PriorityChip, StatusBadge, TextField, type DataTableColumn } from '../../design';
+import { ConfirmDialog } from '../../app/ConfirmDialog';
 import { fmt, fmtDate, fmtDateTime, fmtShort } from '../../app/format';
 import { FormDialog } from '../../app/Modal';
 import { Segmented } from '../../app/Segmented';
@@ -205,7 +206,7 @@ function ReportView() {
         />
       )}
 
-      <ConfirmDialog
+      <ConfirmDialog busy={create.isPending}
         open={confirmReport} title={`Lập báo cáo ${picked.length} đề xuất bổ sung?`}
         description={`${new Set(picked.map(r => r.basis.supplierId)).size} nhà cung cấp, tổng ${fmt(picked.reduce((s, r) => s + r.proposal!.proposedQuantity, 0))} sản phẩm.`}
         confirmLabel="Lập báo cáo" onConfirm={runReport} onCancel={() => setConfirmReport(false)}
@@ -308,7 +309,7 @@ function RejectDialog({ proposal: p, onClose }: { proposal: ProposalRow; onClose
   const reject = useRejectProposal();
   const toast = useToast();
   return (
-    <ConfirmDialog
+    <ConfirmDialog busy={reject.isPending}
       tone="danger" requireReason title={`Loại đề xuất ${p.basis.sku}?`}
       description={`${fmt(p.proposedQuantity)} ${p.basis.unit} ${p.basis.productName}.`}
       confirmLabel="Không đề xuất"

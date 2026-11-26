@@ -1,4 +1,4 @@
-import { ConfirmDialog } from '../../design';
+import { ConfirmDialog } from '../../app/ConfirmDialog';
 import { fmt } from '../../app/format';
 import { useToast } from '../../app/toast';
 import { useCancelOrder } from '../../app/issuing';
@@ -16,7 +16,7 @@ export function CancelOrderDialog({ order, onClose }: {
     order.issueCode && `phiếu ${order.issueCode}${order.picked ? `, đã quét ${fmt(order.picked)}` : ''}`,
   ].filter(Boolean).join(' · ');
   return (
-    <ConfirmDialog
+    <ConfirmDialog busy={cancel.isPending}
       tone="danger" requireReason title={`Hủy đơn ${order.code}?`} description={`${facts}.`}
       reasonLabel="Lý do hủy" confirmLabel="Hủy đơn"
       onConfirm={reason => cancel.mutate({ id: order.id, reason }, {

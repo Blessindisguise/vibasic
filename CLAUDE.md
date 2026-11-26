@@ -4,13 +4,13 @@
 
 Đọc thêm: [README.md](README.md) (cấu trúc, cách chạy), [docs/huong-dan-su-dung.md](docs/huong-dan-su-dung.md) (quy tắc, trạng thái), [docs/tu-dien-du-lieu.md](docs/tu-dien-du-lieu.md) (22 bảng, từng cột), [docs/schema-changes.md](docs/schema-changes.md) (khác biệt so với CSDL trong báo cáo Chương 3).
 
-Sơ đồ trong `docs/`: sơ đồ lớp (`so-do-lop.puml`, `so-do-lop.mmd`) và sơ đồ hoạt động PlantUML (`so-do-hoat-dong-*.puml`: nhập kho, xuất kho, kiểm kê, xử lý biên bản bất thường). Thêm hoặc đổi cột thì sửa cả hai file sơ đồ lớp. Đổi luồng nghiệp vụ thì sửa sơ đồ hoạt động tương ứng.
+Sơ đồ trong `docs/`: sơ đồ lớp (`so-do-lop.puml`, `so-do-lop.mmd`) và sơ đồ hoạt động PlantUML (`so-do-hoat-dong-*.puml`: nhập kho, xuất kho, kiểm kê, xử lý biên bản bất thường, hủy đơn hàng). Thêm hoặc đổi cột thì sửa cả hai file sơ đồ lớp. Đổi luồng nghiệp vụ thì sửa sơ đồ hoạt động tương ứng.
 
 ## Chạy và kiểm tra
 
 - **API** (ASP.NET Core 8, EF Core 8, SQL Server): `cd api; dotnet run --project Vibasic.Api --launch-profile http`, cổng 5030. Ở môi trường Development, API tự áp migration và tự seed khi DB còn trống.
 - **Web** (React 18, Vite, TypeScript, TanStack Query): `cd web; npm run dev -- --host`, cổng 5173; Vite chuyển `/api` sang cổng 5030.
-- **Test API:** `cd api; dotnet test Vibasic.Tests`. Hiện có 92 test chạy trên InMemory DB, phải qua hết.
+- **Test API:** `cd api; dotnet test Vibasic.Tests`. Hiện có 93 test chạy trên InMemory DB, phải qua hết.
 - **Kiểm tra web:** `cd web; npm run build; npm run lint`. Lint có sẵn khoảng 19 cảnh báo `react-refresh/only-export-components` từ trước; yêu cầu là 0 lỗi.
 - **Máy không có LocalDB:** đặt biến môi trường user `ConnectionStrings__Vibasic` trỏ tới SQL Server khác (ví dụ `Server=.\SQLEXPRESS;Database=Vibasic;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True`). Không sửa `appsettings.json` trong repo vì máy khác vẫn dùng LocalDB.
 - **Nạp lại dữ liệu demo** (xóa hết dữ liệu): dừng API, chạy `cd api; dotnet tool restore; dotnet ef database drop -f -p Vibasic.Infrastructure -s Vibasic.Api`, rồi chạy lại API. Log phải có dòng `[demo seed] Tình huống demo: N bước xong, 0 bước bỏ qua.`
@@ -31,7 +31,7 @@ Sơ đồ trong `docs/`: sơ đồ lớp (`so-do-lop.puml`, `so-do-lop.mmd`) và
 - Mọi thay đổi tồn kho đi qua service trong `Vibasic.Infrastructure` (`Receiving`, `Issuing`, `Stocktaking`, `Abnormal`, `Decision`). Sau khi lưu, service gọi `ReplenishmentService.CheckAsync` / `CheckLotsAsync` để mở hoặc đóng cảnh báo và đề xuất. Controller chỉ kiểm tra vai trò rồi gọi service.
 - Thời gian lấy từ `IClock` (test dùng đồng hồ cố định). DB lưu UTC; ngày nghiệp vụ và mã chứng từ theo giờ Việt Nam (`VnTime`).
 - Lỗi nghiệp vụ: `RuleException` (HTTP 409, câu báo nói rõ chuyện gì xảy ra và cần làm gì). Lỗi nhập liệu: `Validator` → `ValidationException` (HTTP 400, lỗi theo từng trường, tên trường camelCase).
-- `web/src/design` là bản chép của `design-system/vibasic-design`: **không sửa**, lint cũng bỏ qua thư mục này. Chỉ dùng icon có sẵn trong `web/src/design/components/core/Icon.jsx`. Dùng các component có sẵn (`Segmented`, `SelectField`, `ConfirmDialog`, `DataTable`…) thay vì viết mới.
+- `web/src/design` là bản chép của `design-system/vibasic-design`: **không sửa**, lint cũng bỏ qua thư mục này. Chỉ dùng icon có sẵn trong `web/src/design/components/core/Icon.jsx`. Dùng các component có sẵn (`Segmented`, `SelectField`, `DataTable`…) thay vì viết mới. Hộp xác nhận dùng `ConfirmDialog` của `web/src/app/ConfirmDialog.tsx`, không dùng bản trong `design`: bản app có nút đóng "Quay lại" và nhận `busy={mutation.isPending}` để chặn bấm đúp.
 - **Ô tìm kiếm** chỉ tìm theo thuộc tính xác định: mã chứng từ, mã lô, SKU, tên hàng, đối tác, số điện thoại, người lập/duyệt/xử lý/lấy hàng. **Không** tìm trong ô văn bản tự do (mô tả, ghi chú, lý do, địa chỉ). Mỗi danh sách định nghĩa tập trường tìm kiếm ở một hàm duy nhất, dùng chung cho cả lọc bảng và gợi ý `suggestFrom` (ví dụ `reportSearchFields` trong `web/src/app/receiving.ts`, `issueSearchFields` trong `web/src/app/issuing.ts`). Placeholder ghi đúng những gì tìm được.
 
 ## Quy tắc nghiệp vụ dễ làm sai

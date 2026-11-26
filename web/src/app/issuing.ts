@@ -69,7 +69,7 @@ export function useCancelOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, reason }: { id: number; reason: string }) => api<CancelResponse>(`/orders/${id}/cancel`, { method: 'POST', json: { reason } }),
-    onSuccess: () => ['orders', 'issues', 'issue', 'decision', 'dashboard'].forEach(k => qc.invalidateQueries({ queryKey: [k] })),
+    onSuccess: () => ['orders', 'issues', 'issue', 'decision', 'dashboard', 'reports', 'lots', 'lot', 'products'].forEach(k => qc.invalidateQueries({ queryKey: [k] })),
   });
 }
 export const useAllocation = (orderId: number) =>
@@ -86,7 +86,7 @@ export const useIssue = (id: number) => useQuery({
 /** Issue changes move orders, stock, approvals (abnormal reports) and decision support. */
 function useRefresh() {
   const qc = useQueryClient();
-  return () => ['orders', 'issues', 'issue', 'approvals', 'abnormal-reports', 'products', 'receipt', 'decision']
+  return () => ['orders', 'issues', 'issue', 'approvals', 'abnormal-reports', 'products', 'receipt', 'decision', 'lots', 'lot', 'dashboard', 'reports']
     .forEach(k => qc.invalidateQueries({ queryKey: [k] }));
 }
 
@@ -112,6 +112,15 @@ export function usePick(id: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (serials: string[]) => api<PickResult>(`/issues/${id}/pick`, { method: 'POST', json: { serials } }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['issue', id] }),
+  });
+}
+
+/** "Bỏ lấy": put picked items back on the shelf; they stay reserved for the issue. `added` is the number put back. */
+export function useUnpick(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (serials: string[]) => api<PickResult>(`/issues/${id}/unpick`, { method: 'POST', json: { serials } }),
     onSettled: () => qc.invalidateQueries({ queryKey: ['issue', id] }),
   });
 }

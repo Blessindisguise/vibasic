@@ -10,39 +10,66 @@ title Activity Diagram - Xử lý biên bản bất thường
 start
 :Phát hiện hàng lỗi khi nhập kho,
 lấy hàng hoặc kiểm kê;
-:Lập biên bản: mã các sản phẩm lỗi, mô tả lỗi,
-đề xuất hướng xử lý (không bắt buộc),
-tick "Nghi lỗi cả lô" nếu cần;
-
-|Hệ thống Vibasic|
-:Lưu biên bản "Chờ duyệt";
-if (Phạm vi cả lô?) then (Có)
-  :Lô chuyển "Tạm cách ly";
-else (Không)
-  :Tách các sản phẩm lỗi (trạng thái "Lỗi"),
-  phần còn lại của lô vẫn xuất được;
+if (Phát hiện ở đâu?) then (Nhập kho)
+  |Hệ thống Vibasic|
+  :Tự lập biên bản "Chờ duyệt" khi phiếu nhập
+  được gửi duyệt: mọi sản phẩm của lô không đạt,
+  phạm vi "Cả lô" (lô đã "Tạm cách ly"
+  từ khi lập phiếu nhập);
+else (Lấy hàng hoặc kiểm kê)
+  |Nhân viên kho|
+  :Báo hàng lỗi: chọn mã các sản phẩm lỗi, mô tả lỗi,
+  đề xuất hướng xử lý (không bắt buộc),
+  tick "Nghi lỗi cả lô" nếu cần;
+  |Hệ thống Vibasic|
+  :Lưu biên bản "Chờ duyệt",
+  sản phẩm được chọn chuyển "Lỗi";
+  if (Nghi lỗi cả lô?) then (Có)
+    :Lô chuyển "Tạm cách ly";
+  else (Không)
+  endif
+  :Thay theo FIFO hàng đang giữ chỗ bị tách ra
+  (cả lô: mọi hàng giữ chỗ của lô), không đủ thì
+  phiếu xuất "Đã hủy", đơn "Chờ xử lý";
+  :Kiểm tra ROP;
+  note right
+    Khi biên bản còn "Chờ duyệt", nhân viên
+    vẫn bổ sung được đề xuất hướng xử lý
+  end note
 endif
-:Thay theo FIFO các sản phẩm bị tách ra
-đang giữ chỗ trên phiếu xuất;
 
 |Quản lý|
 :Xem xét biên bản;
 note right
-  Biên bản lập khi nhập kho chỉ
-  được xét sau khi phiếu nhập đã duyệt
+  Biên bản từ nhập kho chỉ được xét
+  sau khi phiếu nhập đã duyệt
 end note
 if (Phê duyệt biên bản?) then (Không)
   :Nhập lý do từ chối;
   |Hệ thống Vibasic|
-  :Biên bản chuyển "Từ chối",
-  sản phẩm về "Trong kho", lô về "Bình thường";
+  :Biên bản "Từ chối", sản phẩm "Lỗi" về "Trong kho",
+  lô về "Bình thường" (nếu không còn biên bản
+  cả lô khác đang chờ duyệt);
+  :Kiểm tra ROP;
   stop
 else (Có)
-  :Chọn phạm vi (sản phẩm lỗi hoặc cả lô),
+  :Chọn phạm vi (biên bản từ nhập kho cố định "Cả lô"),
   hướng xử lý và mô tả cách làm;
   |Hệ thống Vibasic|
-  :Biên bản chuyển "Đã duyệt", tình trạng "Chờ xử lý",
-  phạm vi cả lô thì lô chuyển "Đã khóa";
+  :Biên bản "Đã duyệt", tình trạng xử lý "Chờ xử lý";
+  if (Phạm vi?) then (Cả lô)
+    :Lô chuyển "Đã khóa",
+    thay hàng đang giữ chỗ của lô theo FIFO;
+  else (Sản phẩm lỗi)
+    :Lô trở lại "Bình thường" nếu đang tạm cách ly,
+    chỉ các sản phẩm lỗi bị tách ra;
+  endif
+  :Kiểm tra ROP;
+  note right
+    Khi chưa có người nhận xử lý, Quản lý
+    "Hủy quyết định" được (cả khi đã từ chối):
+    biên bản về "Chờ duyệt"
+  end note
 endif
 
 |Nhân viên kho|
@@ -53,22 +80,24 @@ repeat :Nhận xử lý biên bản;
   |Nhân viên kho|
   :Thực hiện theo hướng xử lý;
   note right
-    Quản lý sửa được hướng xử lý
-    cho tới khi xử lý xong
+    Quản lý sửa được hướng xử lý cho tới khi
+    xử lý xong, và gỡ được người xử lý
+    (tình trạng về "Chờ xử lý")
   end note
 backward :Tình trạng về "Chờ xử lý";
-repeat while (Trả lại việc, hoặc Quản lý gỡ người xử lý?) is (Có) not (Không)
+repeat while (Trả lại việc?) is (Có) not (Không)
 
 :Bấm "Hoàn thành xử lý";
 
 |Hệ thống Vibasic|
 if (Hướng xử lý?) then (Sửa chữa, tân trang)
   :Sản phẩm lỗi về "Trong kho",
-  phạm vi cả lô thì lô được mở khóa;
-else (Trả NCC, tiêu hủy, thanh lý)
+  phạm vi cả lô thì lô được mở khóa
+  (nếu không còn biên bản cả lô khác);
+else (Trả nhà cung cấp, Tiêu hủy, Thanh lý giảm giá)
   :Sản phẩm chuyển "Đã loại bỏ",
-  phạm vi cả lô thì mọi sản phẩm còn lại
-  cũng vậy và lô về tồn 0;
+  phạm vi cả lô thì mọi sản phẩm còn lại cũng vậy,
+  lô giữ "Đã khóa" với tồn 0;
 endif
 :Tình trạng "Đã xử lý",
 ghi người và thời điểm xử lý xong;

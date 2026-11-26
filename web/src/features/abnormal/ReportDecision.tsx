@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Button, ConfirmDialog, SelectField, TextField } from '../../design';
+import { Button, SelectField, TextField } from '../../design';
+import { ConfirmDialog } from '../../app/ConfirmDialog';
 import { fmt, fmtDateTime, fmtShort } from '../../app/format';
 import { Segmented } from '../../app/Segmented';
 import { useToast } from '../../app/toast';
@@ -77,7 +78,7 @@ export function ReportDecision({ report: r }: { report: ReportRow }) {
         <Button size="sm" variant="ghost" icon="undo-2" onClick={() => open('revoke')}>Hủy quyết định</Button>
       </>}
       {kind === 'approve' && (
-        <ConfirmDialog
+        <ConfirmDialog busy={action.isPending}
           title={`Duyệt biên bản ${r.code}?`}
           description={`Phát hiện khi ${SOURCE_LABEL[r.sourceType].toLowerCase()}: ${n} lô ${r.lotCode} (${r.sku} ${r.productName}) lỗi, lập ${fmtDateTime(r.createdAt)} bởi ${r.creatorName}.`}
           confirmLabel={scope === 'lot' ? 'Duyệt, khóa lô' : 'Duyệt'}
@@ -95,14 +96,14 @@ export function ReportDecision({ report: r }: { report: ReportRow }) {
         </ConfirmDialog>
       )}
       {kind === 'reject' && (
-        <ConfirmDialog
+        <ConfirmDialog busy={action.isPending}
           tone="danger" requireReason title={`Từ chối biên bản ${r.code}?`}
           description={`${n} lô ${r.lotCode} (${r.sku} ${r.productName}).`}
           confirmLabel="Từ chối biên bản" onConfirm={reason => run('reject', reason)} onCancel={() => setKind(null)}
         />
       )}
       {kind === 'revoke' && (
-        <ConfirmDialog
+        <ConfirmDialog busy={action.isPending}
           requireReason
           title={`Hủy quyết định “${r.status === 'approved' ? 'Đã duyệt' : 'Từ chối'}” của biên bản ${r.code}?`}
           description={`${n} lô ${r.lotCode} (${r.sku} ${r.productName}).`}
@@ -175,21 +176,21 @@ export function HandlingActions({ report: r, role, completeLeave = 0, completeRe
     <div className="vb-row" style={{ justifyContent: 'flex-end', gap: 8 }} onClick={e => e.stopPropagation()}>
       {buttons}
       {kind === 'complete' && (
-        <ConfirmDialog
+        <ConfirmDialog busy={action.isPending}
           title={`Hoàn thành xử lý biên bản ${r.code}?`}
           description={`${r.handlingMethod ? HANDLING_METHOD_LABEL[r.handlingMethod] : ''}: ${effectText()} Không hoàn tác được.`}
           confirmLabel="Hoàn thành" onConfirm={() => act('complete')} onCancel={() => setKind(null)}
         />
       )}
       {kind === 'release' && (
-        <ConfirmDialog
+        <ConfirmDialog busy={action.isPending}
           title={role === 'manager' ? `Gỡ ${r.handlerName} khỏi biên bản ${r.code}?` : `Trả lại việc xử lý biên bản ${r.code}?`}
           description="Biên bản trở về Chờ xử lý để nhân viên khác nhận."
           confirmLabel={role === 'manager' ? 'Gỡ người xử lý' : 'Trả lại việc'} onConfirm={() => act('release')} onCancel={() => setKind(null)}
         />
       )}
       {kind === 'edit' && (
-        <ConfirmDialog
+        <ConfirmDialog busy={save.isPending}
           title={`Hướng xử lý biên bản ${r.code}`}
           description={`${fmt(r.quantity)} ${r.unit} lô ${r.lotCode} (${r.sku} ${r.productName}) · ${SCOPE_LABEL[r.scope].toLowerCase()}.`}
           confirmLabel="Lưu" onConfirm={() => { setTried(true); if (handlingValid(handling)) store('handling'); }} onCancel={() => setKind(null)}
@@ -198,7 +199,7 @@ export function HandlingActions({ report: r, role, completeLeave = 0, completeRe
         </ConfirmDialog>
       )}
       {kind === 'propose' && (
-        <ConfirmDialog
+        <ConfirmDialog busy={save.isPending}
           title={`Đề xuất hướng xử lý biên bản ${r.code}`}
           description="Quản lý xem đề xuất này khi duyệt và chốt hướng xử lý."
           confirmLabel="Gửi đề xuất" onConfirm={() => store('proposal')} onCancel={() => setKind(null)}

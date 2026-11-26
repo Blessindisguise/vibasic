@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertBanner, ApprovalStepper, Button, ConfirmDialog, DataTable, EmptyState, Icon, type DataTableColumn } from '../../design';
+import { AlertBanner, ApprovalStepper, Button, DataTable, EmptyState, Icon, type DataTableColumn } from '../../design';
+import { ConfirmDialog } from '../../app/ConfirmDialog';
 import { fmt, fmtDateTime } from '../../app/format';
 import { useToast } from '../../app/toast';
 import { ApiError } from '../../app/api';
@@ -169,25 +170,25 @@ export function ReceiptDetail({ id, role, basePath }: { id: number; role: Role; 
         </section>
       )}
 
-      <ConfirmDialog
+      <ConfirmDialog busy={action.isPending}
         open={dialog === 'submit'} title={`Gửi phiếu ${h.code} cho quản lý duyệt?`}
         description={<>
           {fmt(normalQty)} sản phẩm đạt{quarantined.length > 0 && <>, {fmt(quarantined.reduce((s, l) => s + l.quantity, 0))} sản phẩm không đạt</>}.
         </>}
         confirmLabel="Gửi duyệt" onConfirm={() => run('submit')} onCancel={() => setDialog(null)}
       />
-      <ConfirmDialog
+      <ConfirmDialog busy={action.isPending}
         open={dialog === 'approve'} title={`Duyệt phiếu ${h.code}?`}
         description={<>
           {fmt(normalQty)} sản phẩm của {lots.filter(l => l.status === 'normal').length} lô Bình thường{quarantined.length > 0 && <>, {quarantined.length} lô tạm cách ly</>}.
         </>}
         confirmLabel="Duyệt phiếu" onConfirm={() => run('approve')} onCancel={() => setDialog(null)}
       />
-      <ConfirmDialog
+      <ConfirmDialog busy={action.isPending}
         open={dialog === 'reject'} tone="danger" title={`Từ chối phiếu ${h.code}?`} requireReason
         confirmLabel="Từ chối phiếu" onConfirm={reason => run('reject', reason)} onCancel={() => setDialog(null)}
       />
-      <ConfirmDialog
+      <ConfirmDialog busy={action.isPending}
         open={dialog === 'revoke'} requireReason
         title={`Hủy duyệt phiếu ${h.code}?`}
         description={<>

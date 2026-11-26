@@ -168,6 +168,10 @@ public class IssuesController(VibasicDbContext db, IssueService issues) : Contro
     [HttpPost("{id:int}/pick"), Authorize(Policy = Policies.Staff)]
     public Task<PickResult> Pick(int id, PickInput input) => issues.PickAsync(id, input.Serials, User.UserId());
 
+    /// <summary>"Bỏ lấy": items taken by mistake go back on the shelf, still reserved for the issue.</summary>
+    [HttpPost("{id:int}/unpick"), Authorize(Policy = Policies.Staff)]
+    public Task<PickResult> Unpick(int id, PickInput input) => issues.UnpickAsync(id, input.Serials, User.UserId());
+
     /// <summary>"Bắt đầu lấy hàng" / "Nhận lại phiếu": only one staff member picks an issue at a time.</summary>
     [HttpPost("{id:int}/claim"), Authorize(Policy = Policies.Staff)]
     public async Task<IssueView> Claim(int id) => await View((await issues.ClaimAsync(id, User.UserId())).IssueId);
